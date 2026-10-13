@@ -1,0 +1,861 @@
+{
+  "categorias": [
+    {
+      "id": 1,
+      "nome": "PRATOS PRINCIPAIS CAIPIRAS",
+      "ordem": 1
+    },
+    {
+      "id": 2,
+      "nome": "MARMITAS & EXECUTIVOS",
+      "ordem": 2
+    },
+    {
+      "id": 3,
+      "nome": "PORÇÕES DO FOGÃO A LENHA",
+      "ordem": 3
+    },
+    {
+      "id": 4,
+      "nome": "BEBIDAS & REFRIGERANTES",
+      "ordem": 4
+    },
+    {
+      "id": 5,
+      "nome": "SOBREMESAS CASEIRAS",
+      "ordem": 5
+    }
+  ],
+  "produtos": [
+    {
+      "id": 1,
+      "categoria_id": 1,
+      "nome": "FEIJOADA COMPLETA DA FAZENDA",
+      "descricao": "FEIJÃO PRETO SELECIONADO COM CARNES NOBRES, ARROZ BRANCO SOLTINHO, COUVE REFOGADA NO ALHO, FAROFA DA ROÇA, TORRESMO PURURUCA E LARANJA.",
+      "preco_salao": 54.9,
+      "preco_delivery": 49.9,
+      "url_imagem": "/src/assets/images/kaipira_dish_feijoada_1791836449716.jpg",
+      "dia_semana": [
+        3,
+        6
+      ],
+      "pausado": false,
+      "criado_em": "2026-10-13T18:59:25.513Z",
+      "opcionais": [
+        {
+          "id": 101,
+          "produto_id": 1,
+          "nome": "TORRESMO PURURUCA EXTRA",
+          "preco_adicional": 12
+        },
+        {
+          "id": 102,
+          "produto_id": 1,
+          "nome": "MOLHO DE PIMENTA DA CASA (EXTRA)",
+          "preco_adicional": 0
+        },
+        {
+          "id": 103,
+          "produto_id": 1,
+          "nome": "OVO FRITO CAIPIRA COM GEMA MOLE",
+          "preco_adicional": 4.5
+        },
+        {
+          "id": 104,
+          "produto_id": 1,
+          "nome": "PORÇÃO EXTRA DE COUVE",
+          "preco_adicional": 6
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "categoria_id": 1,
+      "nome": "FRANGO CAIPIRA COM QUIABO & POLENTA",
+      "descricao": "FRANGO CAIPIRA COZIDO LENTAMENTE AO MOLHO FERRUGEM TRADICIONAL, QUIABO FRESCO SEM BABA E POLENTA CREMOSA NO PONTO DA ROÇA.",
+      "preco_salao": 48.9,
+      "preco_delivery": 44.9,
+      "url_imagem": "/src/assets/images/kaipira_dish_frango_quiabo_1791836459955.jpg",
+      "dia_semana": [
+        1,
+        2,
+        4,
+        5
+      ],
+      "pausado": false,
+      "criado_em": "2026-10-13T18:59:25.513Z",
+      "opcionais": [
+        {
+          "id": 105,
+          "produto_id": 2,
+          "nome": "QUIABO TOSTADO EXTRA",
+          "preco_adicional": 8
+        },
+        {
+          "id": 106,
+          "produto_id": 2,
+          "nome": "QUEIJO MEIA CURA NA POLENTA",
+          "preco_adicional": 6
+        },
+        {
+          "id": 107,
+          "produto_id": 2,
+          "nome": "ARROZ BRANCO EXTRA",
+          "preco_adicional": 5
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "categoria_id": 1,
+      "nome": "COSTELINHA DE PORCO COM MANDIOCA NA MANTEIGA",
+      "descricao": "COSTELA SUÍNA DOURADA NO TACHO, GLACEADA COM ERVAS DA HORTA E SERVIDA COM MANDIOCA MANTEIGA DERRETENDO E ARROZ.",
+      "preco_salao": 52,
+      "preco_delivery": 47,
+      "url_imagem": "/src/assets/images/kaipira_hero_restaurant_1791836438343.jpg",
+      "dia_semana": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "pausado": false,
+      "criado_em": "2026-10-13T18:59:25.513Z",
+      "opcionais": [
+        {
+          "id": 108,
+          "produto_id": 3,
+          "nome": "MANDIOCA FRITA EXTRA",
+          "preco_adicional": 9
+        },
+        {
+          "id": 109,
+          "produto_id": 3,
+          "nome": "FAROFA DE CEBOLA QUEIMADA",
+          "preco_adicional": 5
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "categoria_id": 1,
+      "nome": "VIRADO À PAULISTA KAIPIRA",
+      "descricao": "TUTU DE FEIJÃO CREMOSO, BISTECA SUÍNA GRELHADA, COUVE FINA, OVO CAIPIRA ESTALADO, ARROZ E BANANA MILANESA.",
+      "preco_salao": 46,
+      "preco_delivery": 42,
+      "url_imagem": "/src/assets/images/kaipira_hero_restaurant_1791836438343.jpg",
+      "dia_semana": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "pausado": false,
+      "criado_em": "2026-10-13T18:59:25.513Z",
+      "opcionais": [
+        {
+          "id": 110,
+          "produto_id": 4,
+          "nome": "BISTECA EXTRA",
+          "preco_adicional": 14
+        },
+        {
+          "id": 111,
+          "produto_id": 4,
+          "nome": "BANANA À MILANESA EXTRA",
+          "preco_adicional": 5
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "categoria_id": 2,
+      "nome": "MARMITEX EXECUTIVA DO DIA (DELIVERY)",
+      "descricao": "ARROZ, FEIJÃO CASEIRO, CARNE DO DIA À ESCOLHA (FRANGO GRELHADO, BIFE DE ALCATRA OU CARNE DE PANELA), FAROFA E SALADA DO CHEF.",
+      "preco_salao": 34,
+      "preco_delivery": 29.9,
+      "dia_semana": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "pausado": false,
+      "criado_em": "2026-10-13T18:59:25.513Z",
+      "opcionais": [
+        {
+          "id": 112,
+          "produto_id": 5,
+          "nome": "OVO FRITO EXTRA",
+          "preco_adicional": 4
+        },
+        {
+          "id": 113,
+          "produto_id": 5,
+          "nome": "SEPARAR O FEIJÃO (POTE À PARTE)",
+          "preco_adicional": 2
+        },
+        {
+          "id": 114,
+          "produto_id": 5,
+          "nome": "TALHERES DESCARTÁVEIS (SIM)",
+          "preco_adicional": 0
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "categoria_id": 3,
+      "nome": "PORÇÃO DE TORRESMO EM ROLO CROCANTE (500G)",
+      "descricao": "BARRIGA SUÍNA CURADA, ASSADA E PURURUCADA NA HORA. ACOMPANHA LIMÃO ROSA E GELEIA DE PIMENTA DA ROÇA.",
+      "preco_salao": 42,
+      "preco_delivery": 39,
+      "dia_semana": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "pausado": false,
+      "criado_em": "2026-10-13T18:59:25.513Z"
+    },
+    {
+      "id": 7,
+      "categoria_id": 4,
+      "nome": "SUCO NATURAL DE LARANJA PIRACICABANA (500ML)",
+      "descricao": "ESPREMIDO NA HORA, COM LARANJAS DOCES DA REGIÃO DE PIRACICABA.",
+      "preco_salao": 12,
+      "preco_delivery": 12,
+      "dia_semana": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "pausado": false,
+      "criado_em": "2026-10-13T18:59:25.513Z",
+      "opcionais": [
+        {
+          "id": 115,
+          "produto_id": 7,
+          "nome": "SEM GELO",
+          "preco_adicional": 0
+        },
+        {
+          "id": 116,
+          "produto_id": 7,
+          "nome": "SEM AÇÚCAR (NATURAL)",
+          "preco_adicional": 0
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "categoria_id": 4,
+      "nome": "REFRIGERANTE GUARANÁ ANTARCTICA 2 LITROS",
+      "descricao": "GARRAFA FAMÍLIA GELADA.",
+      "preco_salao": 15,
+      "preco_delivery": 14,
+      "dia_semana": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "pausado": false,
+      "criado_em": "2026-10-13T18:59:25.513Z"
+    },
+    {
+      "id": 9,
+      "categoria_id": 5,
+      "nome": "PUDIM DE LEITE CONDENSADO DA ROÇA",
+      "descricao": "RECEITA TRADICIONAL DA NONNA COM CALDA DE CARAMELO DOURADA, TEXTURA LISINHA E SEM FURINHOS.",
+      "preco_salao": 14,
+      "preco_delivery": 13,
+      "dia_semana": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "pausado": false,
+      "criado_em": "2026-10-13T18:59:25.513Z"
+    }
+  ],
+  "mesas": [
+    {
+      "id": 1,
+      "numero": 1,
+      "status": "livre"
+    },
+    {
+      "id": 2,
+      "numero": 2,
+      "status": "livre"
+    },
+    {
+      "id": 3,
+      "numero": 3,
+      "status": "ocupada",
+      "cliente_nome": "FAMÍLIA ALMEIDA",
+      "pessoas": 4
+    },
+    {
+      "id": 4,
+      "numero": 4,
+      "status": "livre"
+    },
+    {
+      "id": 5,
+      "numero": 5,
+      "status": "livre"
+    },
+    {
+      "id": 6,
+      "numero": 6,
+      "status": "livre"
+    },
+    {
+      "id": 7,
+      "numero": 7,
+      "status": "conta",
+      "cliente_nome": "DR. MARCOS SILVA",
+      "pessoas": 2
+    },
+    {
+      "id": 8,
+      "numero": 8,
+      "status": "livre"
+    },
+    {
+      "id": 9,
+      "numero": 9,
+      "status": "livre"
+    },
+    {
+      "id": 10,
+      "numero": 10,
+      "status": "livre"
+    },
+    {
+      "id": 11,
+      "numero": 11,
+      "status": "livre"
+    },
+    {
+      "id": 12,
+      "numero": 12,
+      "status": "reservada",
+      "cliente_nome": "RESERVA CLUBE ROTARY (12:30)",
+      "pessoas": 8
+    },
+    {
+      "id": 13,
+      "numero": 13,
+      "status": "livre"
+    },
+    {
+      "id": 14,
+      "numero": 14,
+      "status": "livre"
+    },
+    {
+      "id": 15,
+      "numero": 15,
+      "status": "livre"
+    },
+    {
+      "id": 16,
+      "numero": 16,
+      "status": "livre"
+    },
+    {
+      "id": 17,
+      "numero": 17,
+      "status": "livre"
+    },
+    {
+      "id": 18,
+      "numero": 18,
+      "status": "livre"
+    },
+    {
+      "id": 19,
+      "numero": 19,
+      "status": "livre"
+    },
+    {
+      "id": 20,
+      "numero": 20,
+      "status": "livre"
+    }
+  ],
+  "clientes": [
+    {
+      "id": "c101-kaipira-pira",
+      "nome": "CARLOS EDUARDO TOLEDO (ADVOGADOS ASSOCIADOS)",
+      "telefone": "(19) 9-9812-4500",
+      "cep": "13400-010",
+      "endereco": "RUA DO ROSÁRIO",
+      "numero": "1240",
+      "bairro": "CENTRO",
+      "complemento": "SALA 42",
+      "eh_mensalista": true,
+      "saldo_devedor": 320,
+      "criado_em": "2026-10-01T10:00:00Z"
+    },
+    {
+      "id": "c102-kaipira-pira",
+      "nome": "OFICINA MECÂNICA SANTA CRUZ LTDA",
+      "telefone": "(19) 3-4221-8890",
+      "cep": "13405-240",
+      "endereco": "AVENIDA DONA JANE CONCEIÇÃO",
+      "numero": "850",
+      "bairro": "PAULISTA",
+      "complemento": "GALPÃO 2",
+      "eh_mensalista": true,
+      "saldo_devedor": 580.5,
+      "criado_em": "2026-10-02T11:00:00Z"
+    },
+    {
+      "id": "c103-kaipira-pira",
+      "nome": "MARIA APARECIDA MORAIS",
+      "telefone": "(19) 9-8234-9011",
+      "cep": "13403-855",
+      "endereco": "AVENIDA BEIRA RIO",
+      "numero": "410",
+      "bairro": "VILA REZENDE",
+      "complemento": "CASA",
+      "eh_mensalista": false,
+      "saldo_devedor": 0,
+      "criado_em": "2026-10-05T12:00:00Z"
+    },
+    {
+      "id": "c104-kaipira-pira",
+      "nome": "AGRO COMÉRCIO PIRACICABA EIRELI",
+      "telefone": "(19) 9-9111-7788",
+      "cep": "13416-000",
+      "endereco": "AVENIDA INDEPENDÊNCIA",
+      "numero": "2300",
+      "bairro": "BAIRRO ALTO",
+      "complemento": "RECEPCAO",
+      "eh_mensalista": true,
+      "saldo_devedor": 185,
+      "criado_em": "2026-10-08T12:00:00Z"
+    }
+  ],
+  "estoque": [
+    {
+      "id": 1,
+      "item_nome": "ARROZ AGULHINHA TIPO 1 (5KG)",
+      "quantidade_atual": 18,
+      "unidade_medida": "pct",
+      "estoque_minimo": 6,
+      "fornecedor_info": "DISTRIBUIDORA VALE DO TIETÊ",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    },
+    {
+      "id": 2,
+      "item_nome": "FEIJÃO CARIOCA DA ROÇA (1KG)",
+      "quantidade_atual": 24,
+      "unidade_medida": "pct",
+      "estoque_minimo": 10,
+      "fornecedor_info": "PRODUTOR LOCAL CAPIVARI",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    },
+    {
+      "id": 3,
+      "item_nome": "FEIJÃO PRETO SELECIONADO (1KG)",
+      "quantidade_atual": 15,
+      "unidade_medida": "pct",
+      "estoque_minimo": 5,
+      "fornecedor_info": "PRODUTOR LOCAL CAPIVARI",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    },
+    {
+      "id": 4,
+      "item_nome": "FRANGO CAIPIRA RESFRIADO (KG)",
+      "quantidade_atual": 22,
+      "unidade_medida": "kg",
+      "estoque_minimo": 12,
+      "fornecedor_info": "GRANJA SÃO BENTO PIRACICABA",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    },
+    {
+      "id": 5,
+      "item_nome": "COSTELA SUÍNA FRESCA (KG)",
+      "quantidade_atual": 14,
+      "unidade_medida": "kg",
+      "estoque_minimo": 8,
+      "fornecedor_info": "FRIGORÍFICO REGIONAL",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    },
+    {
+      "id": 6,
+      "item_nome": "BARRIGA DE PORCO PARA TORRESMO (KG)",
+      "quantidade_atual": 4.5,
+      "unidade_medida": "kg",
+      "estoque_minimo": 8,
+      "fornecedor_info": "FRIGORÍFICO REGIONAL",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    },
+    {
+      "id": 7,
+      "item_nome": "COUVE MANTEIGA HIGIENIZADA (MAÇO)",
+      "quantidade_atual": 3,
+      "unidade_medida": "un",
+      "estoque_minimo": 10,
+      "fornecedor_info": "HORTIFRUTI TANQUINHO",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    },
+    {
+      "id": 8,
+      "item_nome": "QUIABO FRESCO (KG)",
+      "quantidade_atual": 6,
+      "unidade_medida": "kg",
+      "estoque_minimo": 5,
+      "fornecedor_info": "CEASA PIRACICABA",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    },
+    {
+      "id": 9,
+      "item_nome": "MANDIOCA MANTEIGA DESCASCADA (KG)",
+      "quantidade_atual": 16,
+      "unidade_medida": "kg",
+      "estoque_minimo": 8,
+      "fornecedor_info": "CEASA PIRACICABA",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    },
+    {
+      "id": 10,
+      "item_nome": "EMBALAGEM TÉRMICA MARMITEX DELIVERY (CX 100UN)",
+      "quantidade_atual": 2,
+      "unidade_medida": "cx",
+      "estoque_minimo": 3,
+      "fornecedor_info": "PIRAPACK EMBALAGENS",
+      "atualizado_em": "2026-10-13T18:59:25.514Z"
+    }
+  ],
+  "perfis": [
+    {
+      "id": "usr-admin-1",
+      "nome": "DONA BENEDITA (ADMIN / GERENTE)",
+      "cargo": "admin",
+      "criado_em": "2026-01-01T08:00:00Z"
+    },
+    {
+      "id": "usr-atend-1",
+      "nome": "JULIANA ATENDENTE (BALCÃO & WHATSAPP)",
+      "cargo": "atendente",
+      "criado_em": "2026-01-01T08:00:00Z"
+    },
+    {
+      "id": "usr-coz-1",
+      "nome": "CHEF TIÃO (COZINHA & FOGÃO A LENHA)",
+      "cargo": "cozinha",
+      "criado_em": "2026-01-01T08:00:00Z"
+    },
+    {
+      "id": "usr-garc-1",
+      "nome": "MARCELO GARÇOM (SALÃO 20 MESAS)",
+      "cargo": "garcom",
+      "criado_em": "2026-01-01T08:00:00Z"
+    },
+    {
+      "id": "usr-moto-1",
+      "nome": "RODRIGO MOTOBOY (DELIVERY PRÓPRIO)",
+      "cargo": "entregador",
+      "criado_em": "2026-01-01T08:00:00Z"
+    }
+  ],
+  "caixa": {
+    "id": 1,
+    "data_caixa": "2026-10-13",
+    "valor_abertura": 250,
+    "status": "aberto",
+    "observacoes": "ABERTURA COM TROCO DE R$ 250,00 EM MOEDAS E NOTAS MIÚDAS.",
+    "aberto_em": "2026-10-13T18:59:25.514Z",
+    "movimentacoes": [
+      {
+        "id": 1,
+        "tipo": "suprimento",
+        "valor": 250,
+        "forma": "dinheiro",
+        "descricao": "FUNDO DE TROCO INICIAL DO CAIXA",
+        "hora": "10:45"
+      }
+    ]
+  },
+  "pedidos": [
+    {
+      "id": 101,
+      "codigo_senha": 42,
+      "tipo": "delivery",
+      "status": "em_preparacao",
+      "cliente_id": "c101-kaipira-pira",
+      "cliente": {
+        "id": "c101-kaipira-pira",
+        "nome": "CARLOS EDUARDO TOLEDO (ADVOGADOS ASSOCIADOS)",
+        "telefone": "(19) 9-9812-4500",
+        "cep": "13400-010",
+        "endereco": "RUA DO ROSÁRIO",
+        "numero": "1240",
+        "bairro": "CENTRO",
+        "complemento": "SALA 42",
+        "eh_mensalista": true,
+        "saldo_devedor": 320,
+        "criado_em": "2026-10-01T10:00:00Z"
+      },
+      "precisa_troco": false,
+      "motoboy_tipo": "proprio",
+      "entregador_nome": "RODRIGO MOTOBOY",
+      "valor_total": 106.8,
+      "taxa_entrega": 7,
+      "criado_em": "2026-10-13T18:41:25.514Z",
+      "atualizado_em": "2026-10-13T18:59:25.514Z",
+      "itens": [
+        {
+          "id": 1,
+          "pedido_id": 101,
+          "produto_id": 1,
+          "produto_nome": "FEIJOADA COMPLETA DA FAZENDA",
+          "quantidade": 2,
+          "preco_unitario": 49.9,
+          "observacao": "MANDAR BASTANTE TORRESMO E PIMENTA SEPARADA",
+          "opcionais_selecionados": [
+            {
+              "id": 101,
+              "nome": "TORRESMO PURURUCA EXTRA",
+              "preco_adicional": 12
+            }
+          ]
+        }
+      ],
+      "pagamentos": [
+        {
+          "id": 1,
+          "pedido_id": 101,
+          "forma": "pix",
+          "valor": 106.8,
+          "criado_em": "2026-10-13T18:59:25.514Z"
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "codigo_senha": 43,
+      "tipo": "retirada",
+      "status": "pronto",
+      "precisa_troco": false,
+      "valor_total": 44.9,
+      "taxa_entrega": 0,
+      "criado_em": "2026-10-13T18:34:25.514Z",
+      "atualizado_em": "2026-10-13T18:54:25.514Z",
+      "itens": [
+        {
+          "id": 2,
+          "pedido_id": 102,
+          "produto_id": 2,
+          "produto_nome": "FRANGO CAIPIRA COM QUIABO & POLENTA",
+          "quantidade": 1,
+          "preco_unitario": 44.9,
+          "observacao": "CLIENTE RETIRA NO BALCÃO - NOME: RENATO"
+        }
+      ],
+      "pagamentos": [
+        {
+          "id": 2,
+          "pedido_id": 102,
+          "forma": "cartao_debito",
+          "valor": 44.9,
+          "criado_em": "2026-10-13T18:59:25.514Z"
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "codigo_senha": 44,
+      "tipo": "salão",
+      "status": "em_preparacao",
+      "mesa_id": 3,
+      "precisa_troco": false,
+      "valor_total": 121.8,
+      "taxa_entrega": 0,
+      "criado_em": "2026-10-13T18:49:25.514Z",
+      "atualizado_em": "2026-10-13T18:59:25.514Z",
+      "itens": [
+        {
+          "id": 3,
+          "pedido_id": 103,
+          "produto_id": 3,
+          "produto_nome": "COSTELINHA DE PORCO COM MANDIOCA NA MANTEIGA",
+          "quantidade": 2,
+          "preco_unitario": 52,
+          "observacao": "MESA 3 - CAPRICHAR NO CHEIRO-VERDE"
+        },
+        {
+          "id": 4,
+          "pedido_id": 103,
+          "produto_id": 8,
+          "produto_nome": "REFRIGERANTE GUARANÁ ANTARCTICA 2 LITROS",
+          "quantidade": 1,
+          "preco_unitario": 15
+        }
+      ],
+      "pagamentos": []
+    },
+    {
+      "id": 104,
+      "codigo_senha": 45,
+      "tipo": "delivery",
+      "status": "a_caminho",
+      "cliente_id": "c102-kaipira-pira",
+      "cliente": {
+        "id": "c102-kaipira-pira",
+        "nome": "OFICINA MECÂNICA SANTA CRUZ LTDA",
+        "telefone": "(19) 3-4221-8890",
+        "cep": "13405-240",
+        "endereco": "AVENIDA DONA JANE CONCEIÇÃO",
+        "numero": "850",
+        "bairro": "PAULISTA",
+        "complemento": "GALPÃO 2",
+        "eh_mensalista": true,
+        "saldo_devedor": 580.5,
+        "criado_em": "2026-10-02T11:00:00Z"
+      },
+      "precisa_troco": true,
+      "troco_para": 100,
+      "motoboy_tipo": "proprio",
+      "entregador_nome": "RODRIGO MOTOBOY",
+      "valor_total": 69.8,
+      "taxa_entrega": 10,
+      "criado_em": "2026-10-13T18:24:25.514Z",
+      "atualizado_em": "2026-10-13T18:47:25.514Z",
+      "itens": [
+        {
+          "id": 5,
+          "pedido_id": 104,
+          "produto_id": 5,
+          "produto_nome": "MARMITEX EXECUTIVA DO DIA (DELIVERY)",
+          "quantidade": 2,
+          "preco_unitario": 29.9,
+          "observacao": "1 COM BIFE E 1 COM FRANGO GRELHADO"
+        }
+      ],
+      "pagamentos": [
+        {
+          "id": 3,
+          "pedido_id": 104,
+          "forma": "dinheiro",
+          "valor": 69.8,
+          "criado_em": "2026-10-13T18:59:25.514Z"
+        }
+      ]
+    }
+  ],
+  "reservas": [
+    {
+      "id": 1,
+      "cliente_nome": "CLUBE ROTARY DE PIRACICABA",
+      "telefone": "(19) 3-4221-5500",
+      "mesa_id": 12,
+      "data_hora": "2026-10-13T19:59:25.514Z",
+      "status": "confirmada",
+      "observacoes": "RESERVA ALMOÇO DIRETORIA - 8 PESSOAS"
+    }
+  ],
+  "bairros": [
+    {
+      "bairro": "CENTRO",
+      "taxa": 7
+    },
+    {
+      "bairro": "BAIRRO ALTO",
+      "taxa": 8
+    },
+    {
+      "bairro": "VILA REZENDE",
+      "taxa": 9
+    },
+    {
+      "bairro": "CIDADE ALTA",
+      "taxa": 8
+    },
+    {
+      "bairro": "PAULISTA",
+      "taxa": 10
+    },
+    {
+      "bairro": "PIRACICAMIRIM",
+      "taxa": 11
+    },
+    {
+      "bairro": "SÃO DIMAS",
+      "taxa": 8.5
+    },
+    {
+      "bairro": "NOVA PIRACICABA",
+      "taxa": 10
+    },
+    {
+      "bairro": "SANTA TERESINHA",
+      "taxa": 14
+    },
+    {
+      "bairro": "MORUMBI",
+      "taxa": 12
+    },
+    {
+      "bairro": "AGRONOMIA / ESALQ",
+      "taxa": 9
+    },
+    {
+      "bairro": "VILA SONIA",
+      "taxa": 13
+    },
+    {
+      "bairro": "JARAGUÁ",
+      "taxa": 11
+    },
+    {
+      "bairro": "ARTEMIS",
+      "taxa": 18
+    },
+    {
+      "bairro": "OUTROS (CONSULTAR)",
+      "taxa": 12
+    }
+  ],
+  "configuracoes": {
+    "supabaseUrl": "https://yybuuxaegmzmupcbliut.supabase.co",
+    "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5YnV1eGFlZ216bXVwY2JsaXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5MDEzMzgsImV4cCI6MjEwNzQ3NzMzOH0.hWGqg8PgAcQWkTlYYazhgqndJLu3elnPrRwjU2JIazQ",
+    "bancoStatus": "conectado",
+    "nomeRestaurante": "RESTAURANTE KAIPIRA",
+    "email": "contato@restaurantekaipira.com.br",
+    "telefone": "(19) 3-4221-1980",
+    "cep": "13400-010",
+    "endereco": "RUA DO ROSÁRIO",
+    "numero": "1240",
+    "bairro": "CENTRO",
+    "cidade": "PIRACICABA",
+    "uf": "SP",
+    "horarioFuncionamento": "SEGUNDA A SÁBADO, DAS 11H ÀS 14H",
+    "posicaoMenu": "direita",
+    "padraoCor": "ambar"
+  },
+  "proximoCodigoSenha": 46
+}

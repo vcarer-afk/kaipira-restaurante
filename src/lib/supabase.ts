@@ -1,17 +1,21 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { INITIAL_CONFIGURACOES } from '../data/seedData';
 
-// Determine initial Supabase credentials (from environment or seed defaults)
+// URL oficial fornecida pelo usuário do projeto Supabase
+export const DEFAULT_SUPABASE_URL = 'https://yybuuxaegmzmupcbliut.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5YnV1eGFlZ216bXVwY2JsaXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5MDEzMzgsImV4cCI6MjEwNzQ3NzMzOH0.hWGqg8PgAcQWkTlYYazhgqndJLu3elnPrRwjU2JIazQ';
+
+// Lê variáveis de ambiente caso existam ou utiliza a URL oficial hardcoded
 const ENV_SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL;
 const ENV_SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 
-const SUPABASE_URL = (ENV_SUPABASE_URL || INITIAL_CONFIGURACOES.supabaseUrl)?.trim();
-const SUPABASE_ANON_KEY = (ENV_SUPABASE_ANON_KEY || INITIAL_CONFIGURACOES.supabaseAnonKey)?.trim();
+export const SUPABASE_URL = (ENV_SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
+export const SUPABASE_ANON_KEY = (ENV_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY).trim();
 
 /**
  * Singleton Supabase Client
- * Initialized once in this central module to avoid:
- * "Multiple GoTrueClient instances detected in the same browser context"
+ * Inicializado uma única vez neste módulo centralizado com a URL oficial:
+ * https://yybuuxaegmzmupcbliut.supabase.co
  */
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {

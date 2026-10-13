@@ -12,8 +12,8 @@ import {
 } from '../types';
 
 export const INITIAL_CONFIGURACOES: ConfiguracoesSistema = {
-  supabaseUrl: 'https://kaipira-piracicaba.supabase.co',
-  supabaseAnonKey: 'sb_anon_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.kaipira_pira_key_2026',
+  supabaseUrl: 'https://yybuuxaegmzmupcbliut.supabase.co',
+  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5YnV1eGFlZ216bXVwY2JsaXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5MDEzMzgsImV4cCI6MjEwNzQ3NzMzOH0.hWGqg8PgAcQWkTlYYazhgqndJLu3elnPrRwjU2JIazQ',
   bancoStatus: 'conectado',
   nomeRestaurante: 'RESTAURANTE KAIPIRA',
   email: 'contato@restaurantekaipira.com.br',
