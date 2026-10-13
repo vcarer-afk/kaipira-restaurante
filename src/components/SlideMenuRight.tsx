@@ -4,7 +4,6 @@ import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor } from '../types';
 import { THEMES } from '../utils/theme';
 import {
   LayoutDashboard,
-  Settings,
   ShoppingBag,
   Utensils,
   ChefHat,
@@ -18,6 +17,7 @@ import {
   LogOut,
   UserCheck,
   ChevronRight,
+  Lock,
 } from 'lucide-react';
 
 interface SlideMenuRightProps {
@@ -60,13 +60,6 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
       roles: ['admin'],
     },
     {
-      id: 'configuracoes' as ActiveTab,
-      label: 'CONFIGURAÇÕES GERAIS',
-      desc: 'Banco de dados, email, layout e cores',
-      icon: Settings,
-      roles: ['admin'],
-    },
-    {
       id: 'pdv' as ActiveTab,
       label: 'ATENDIMENTO / PDV',
       desc: 'Cardápio do dia, delivery e balcão',
@@ -83,7 +76,7 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
     {
       id: 'kds' as ActiveTab,
       label: 'KDS COZINHA',
-      desc: 'Fogão a lenha em tempo real',
+      desc: 'Cozinha em tempo real',
       icon: ChefHat,
       badge: pendingKdsCount > 0 ? pendingKdsCount : undefined,
       roles: ['admin', 'cozinha', 'atendente'],
@@ -122,6 +115,13 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
       desc: 'Abertura, fechamento e sangrias',
       icon: Banknote,
       roles: ['admin', 'atendente'],
+    },
+    {
+      id: 'configuracoes' as ActiveTab,
+      label: 'CONFIGURAÇÕES GERAIS',
+      desc: 'Banco de dados, email, layout e cores',
+      icon: Lock,
+      roles: ['admin'],
     },
   ];
 

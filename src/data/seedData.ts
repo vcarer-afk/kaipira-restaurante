@@ -50,7 +50,7 @@ export const BAIRROS_PIRACICABA: BairroTaxa[] = [
 export const INITIAL_CATEGORIAS: Categoria[] = [
   { id: 1, nome: 'PRATOS PRINCIPAIS CAIPIRAS', ordem: 1 },
   { id: 2, nome: 'MARMITAS & EXECUTIVOS', ordem: 2 },
-  { id: 3, nome: 'PORÇÕES DO FOGÃO A LENHA', ordem: 3 },
+  { id: 3, nome: 'PORÇÕES DA COZINHA', ordem: 3 },
   { id: 4, nome: 'BEBIDAS & REFRIGERANTES', ordem: 4 },
   { id: 5, nome: 'SOBREMESAS CASEIRAS', ordem: 5 },
 ];
@@ -268,7 +268,7 @@ export const INITIAL_ESTOQUE: ItemEstoque[] = [
 export const INITIAL_PERFIS: Perfil[] = [
   { id: 'usr-admin-1', nome: 'DONA BENEDITA (ADMIN / GERENTE)', cargo: 'admin', criado_em: '2026-01-01T08:00:00Z' },
   { id: 'usr-atend-1', nome: 'JULIANA ATENDENTE (BALCÃO & WHATSAPP)', cargo: 'atendente', criado_em: '2026-01-01T08:00:00Z' },
-  { id: 'usr-coz-1', nome: 'CHEF TIÃO (COZINHA & FOGÃO A LENHA)', cargo: 'cozinha', criado_em: '2026-01-01T08:00:00Z' },
+  { id: 'usr-coz-1', nome: 'CHEF TIÃO (COZINHA)', cargo: 'cozinha', criado_em: '2026-01-01T08:00:00Z' },
   { id: 'usr-garc-1', nome: 'MARCELO GARÇOM (SALÃO 20 MESAS)', cargo: 'garcom', criado_em: '2026-01-01T08:00:00Z' },
   { id: 'usr-moto-1', nome: 'RODRIGO MOTOBOY (DELIVERY PRÓPRIO)', cargo: 'entregador', criado_em: '2026-01-01T08:00:00Z' },
 ];

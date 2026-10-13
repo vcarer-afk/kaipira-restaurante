@@ -174,7 +174,7 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
         <div>
           <h2 className="text-sm font-extrabold tracking-tight text-white uppercase flex items-center gap-2">
             <ChefHat className="w-5 h-5 text-amber-500" />
-            <span>KDS - Monitor da Cozinha (Fogão a Lenha)</span>
+            <span>KDS - Monitor da Cozinha</span>
           </h2>
           <p className="text-xs text-neutral-400 mt-0.5">
             Atualização em tempo real via Nuvem · Cozinheira Chefe & Assistentes
@@ -224,12 +224,12 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
         {/* Col 2: Em Preparo */}
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between px-2 text-xs font-bold text-amber-400 uppercase">
-            <span>2. No Fogão a Lenha / Preparando ({emPreparo.length})</span>
+            <span>2. Cozinha / Preparando ({emPreparo.length})</span>
           </div>
           <div className="space-y-3">
             {emPreparo.length === 0 ? (
               <div className="p-8 text-center text-xs text-neutral-500 bg-neutral-850/50 rounded-xl border border-neutral-800">
-                FOGÃO LIVRE NO MOMENTO
+                COZINHA LIVRE NO MOMENTO
               </div>
             ) : (
               emPreparo.map(renderOrderCard)

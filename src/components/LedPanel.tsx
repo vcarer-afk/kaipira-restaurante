@@ -163,7 +163,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
           <div className="bg-neutral-900/70 rounded-xl border border-amber-900/60 p-5 flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-amber-900/60 pb-3">
               <h3 className="text-sm font-black text-amber-400 uppercase tracking-wider">
-                EM PREPARAÇÃO NO FOGÃO A LENHA ({preparingOrders.length})
+                EM PREPARAÇÃO NA COZINHA ({preparingOrders.length})
               </h3>
             </div>
 

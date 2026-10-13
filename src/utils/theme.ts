@@ -34,7 +34,7 @@ export const THEMES: Record<PadraoCor, ThemeColors> = {
   },
   terracota: {
     id: 'terracota',
-    name: 'Terracota Fogão a Lenha',
+    name: 'Terracota Cozinha',
     desc: 'Inspirado nos tijolos e panelas de barro do fogão caipira',
     badge: 'bg-orange-600',
     primaryBg: 'bg-orange-600',

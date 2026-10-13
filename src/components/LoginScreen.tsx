@@ -65,7 +65,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         setIsLoading(false);
         onLoginSuccess({
           id: 'usr-coz-1',
-          nome: 'CHEF TIÃO (COZINHA & FOGÃO A LENHA)',
+          nome: 'CHEF TIÃO (COZINHA)',
           cargo: 'cozinha',
           criado_em: new Date().toISOString(),
         });

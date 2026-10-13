@@ -91,7 +91,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
             <span>Controle de Estoque Simplificado & Insumos</span>
           </h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Acompanhamento diário de carnes, grãos, embalagens e ingredientes do fogão a lenha
+            Acompanhamento diário de carnes, grãos, embalagens e ingredientes da cozinha
           </p>
         </div>
 

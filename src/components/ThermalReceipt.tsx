@@ -45,7 +45,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
               <h2 className="text-sm font-bold tracking-tight uppercase">
                 {configuracoes?.nomeRestaurante || 'RESTAURANTE KAIPIRA'}
               </h2>
-              <p className="text-[10px] uppercase">COMIDA TÍPICA DA ROÇA NO FOGÃO A LENHA</p>
+              <p className="text-[10px] uppercase">COMIDA TÍPICA DA ROÇA NA COZINHA</p>
               <p className="text-[10px] uppercase">
                 {configuracoes?.endereco
                   ? `${configuracoes.endereco}${configuracoes.numero ? `, ${configuracoes.numero}` : ''} - ${configuracoes.bairro || ''} (${configuracoes.cidade || 'PIRACICABA'} - ${configuracoes.uf || 'SP'})`

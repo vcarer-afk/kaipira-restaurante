@@ -12,7 +12,7 @@
     },
     {
       "id": 3,
-      "nome": "PORÇÕES DO FOGÃO A LENHA",
+      "nome": "PORÇÕES DA COZINHA",
       "ordem": 3
     },
     {
@@ -565,7 +565,7 @@
     },
     {
       "id": "usr-coz-1",
-      "nome": "CHEF TIÃO (COZINHA & FOGÃO A LENHA)",
+      "nome": "CHEF TIÃO (COZINHA)",
       "cargo": "cozinha",
       "criado_em": "2026-01-01T08:00:00Z"
     },

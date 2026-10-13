@@ -147,7 +147,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             Visão Geral das Operações & Resultados
           </h2>
           <p className="text-xs text-neutral-400 mt-1">
-            Gestão unificada de salão (20 mesas), delivery próprio em {configuracoes?.cidade || 'Piracicaba'}, fogão a lenha, caixa e configurações
+            Gestão unificada de salão (20 mesas), delivery próprio em {configuracoes?.cidade || 'Piracicaba'}, cozinha, caixa e configurações
           </p>
         </div>
 
@@ -384,7 +384,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="flex items-center gap-2">
                 <ChefHat className="w-4 h-4 text-amber-500" />
                 <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
-                  Cozinha & Fogão a Lenha (KDS em Tempo Real)
+                  Cozinha (KDS em Tempo Real)
                 </h3>
               </div>
               <button
@@ -408,7 +408,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="p-3 bg-neutral-900 rounded-xl border border-amber-900/60">
                 <span className="text-[10px] text-amber-300 uppercase font-bold block mb-1">
-                  2. No Fogão a Lenha
+                  2. Cozinha
                 </span>
                 <span className="text-2xl font-black text-amber-400 font-mono tabular-nums">
                   {emPreparoKds}

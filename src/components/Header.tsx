@@ -1,6 +1,6 @@
 import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { UtensilsCrossed, Database, Cloud, Menu, LayoutDashboard, Settings, RefreshCw } from 'lucide-react';
+import { UtensilsCrossed, Database, Cloud, Menu, LayoutDashboard, Lock, RefreshCw } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
@@ -125,20 +125,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {currentRole === 'admin' && (
-            <button
-              onClick={() => onSelectTab('configuracoes')}
-              className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'configuracoes'
-                  ? `bg-neutral-800 ${theme.textPrimary} font-bold border border-neutral-700`
-                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-850'
-              }`}
-            >
-              <Settings className="w-3.5 h-3.5" />
-              <span>Configurações</span>
-            </button>
-          )}
-
           <button
             onClick={() => onSelectTab('pdv')}
             className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
@@ -223,6 +209,22 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               Painel LED
+            </button>
+          )}
+
+          {/* Última opção do menu: apenas ícone de cadeado */}
+          {currentRole === 'admin' && (
+            <button
+              onClick={() => onSelectTab('configuracoes')}
+              className={`p-2 rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center justify-center ${
+                activeTab === 'configuracoes'
+                  ? `bg-neutral-800 ${theme.textPrimary} font-bold border border-neutral-700 shadow-xs`
+                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-850'
+              }`}
+              title="Configurações do Sistema"
+              aria-label="Configurações"
+            >
+              <Lock className="w-4 h-4" />
             </button>
           )}
         </nav>
