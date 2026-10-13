@@ -154,14 +154,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 relative z-10">
           <button
-            onClick={() => onNavigate('configuracoes')}
-            className="px-3.5 py-2.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-colors uppercase"
-          >
-            <Settings className="w-4 h-4 text-amber-400" />
-            <span>Configurações Gerais</span>
-          </button>
-
-          <button
             onClick={() => onNavigate('pdv')}
             className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-lg transition-transform hover:scale-105 active:scale-95 uppercase"
           >
