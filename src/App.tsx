@@ -44,8 +44,8 @@ import {
   BAIRROS_PIRACICABA,
   INITIAL_CONFIGURACOES,
 } from './data/seedData';
+import { supabase } from './lib/supabase';
 import {
-  supabase,
   fetchConfiguracoesFromSupabase,
   saveConfiguracoesToSupabase,
   atualizarStatusPedidoSupabase,

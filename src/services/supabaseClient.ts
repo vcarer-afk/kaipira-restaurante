@@ -1,4 +1,5 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 import {
   ConfiguracoesSistema,
   Pedido,
@@ -14,30 +15,13 @@ import {
 } from '../types';
 import { INITIAL_CONFIGURACOES } from '../data/seedData';
 
-// Determine initial Supabase credentials
-const ENV_SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL;
-const ENV_SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
-
-const INITIAL_URL = ENV_SUPABASE_URL || INITIAL_CONFIGURACOES.supabaseUrl;
-const INITIAL_KEY = ENV_SUPABASE_ANON_KEY || INITIAL_CONFIGURACOES.supabaseAnonKey;
-
-// Active client singleton
-export let supabase: SupabaseClient = createClient(INITIAL_URL, INITIAL_KEY);
+// Re-export singleton Supabase client
+export { supabase };
 
 /**
- * Re-initialize or retrieve a Supabase client with given credentials
+ * Returns the centralized singleton Supabase client
  */
-export function getSupabaseClient(url?: string, key?: string): SupabaseClient {
-  const targetUrl = url?.trim() || INITIAL_URL;
-  const targetKey = key?.trim() || INITIAL_KEY;
-
-  if (targetUrl && targetKey) {
-    try {
-      supabase = createClient(targetUrl, targetKey);
-    } catch (err) {
-      console.warn('Erro ao inicializar cliente Supabase:', err);
-    }
-  }
+export function getSupabaseClient(): SupabaseClient {
   return supabase;
 }
 
@@ -98,11 +82,6 @@ export async function saveConfiguracoesToSupabase(
   novas: ConfiguracoesSistema,
   client: SupabaseClient = supabase
 ): Promise<ConfiguracoesSistema> {
-  // If the user modified the Supabase credentials, update the client
-  if (novas.supabaseUrl && novas.supabaseAnonKey) {
-    client = getSupabaseClient(novas.supabaseUrl, novas.supabaseAnonKey);
-  }
-
   const payload = {
     id: 1,
     nome_restaurante: novas.nomeRestaurante,
@@ -160,11 +139,11 @@ export async function saveConfiguracoesToSupabase(
  * Test connection to Supabase database
  */
 export async function testarConexaoSupabase(
-  url?: string,
-  key?: string
+  _url?: string,
+  _key?: string
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const client = getSupabaseClient(url, key);
+    const client = supabase;
     const start = performance.now();
     const { error } = await client
       .from('configuracoes')

@@ -3,8 +3,8 @@ import { ConfiguracoesSistema, PosicaoMenu, PadraoCor } from '../types';
 import { THEMES } from '../utils/theme';
 import { UpperInput } from './UpperInput';
 import { consultarViaCep, cleanDigits } from '../utils/formatters';
+import { supabase } from '../lib/supabase';
 import {
-  supabase,
   saveConfiguracoesToSupabase,
   testarConexaoSupabase,
 } from '../services/supabaseClient';
