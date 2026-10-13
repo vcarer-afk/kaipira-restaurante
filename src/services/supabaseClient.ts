@@ -130,7 +130,7 @@ export async function saveConfiguracoesToSupabase(
     .upsert(payload, { onConflict: 'id' });
 
   if (error) {
-    console.warn('Tentando upsert alternativo de configuracoes no Supabase:', error.message);
+    console.warn('Tentando upsert simplificado de configuracoes no Supabase:', error.message);
     // Fallback: minimal columns in case table has simpler schema
     const fallbackPayload = {
       id: 1,
@@ -142,7 +142,11 @@ export async function saveConfiguracoesToSupabase(
       .upsert(fallbackPayload, { onConflict: 'id' });
 
     if (fallbackRes.error) {
-      throw new Error(`Erro Supabase: ${error.message || fallbackRes.error.message}`);
+      const finalErr: any = new Error(
+        `Erro Supabase: ${fallbackRes.error.message || error.message}`
+      );
+      finalErr.code = fallbackRes.error.code || error.code;
+      throw finalErr;
     }
   }
 

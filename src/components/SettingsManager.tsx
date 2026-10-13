@@ -116,9 +116,29 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
       await onSaveConfiguracoes(saved);
 
       setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 3000);
+      setTimeout(() => setSavedSuccess(false), 4000);
     } catch (err: any) {
-      alert(`FALHA AO SALVAR CONFIGURAÇÕES NO SUPABASE: ${err.message}`);
+      console.error('Erro ao salvar no Supabase:', err);
+      const isMissingTable =
+        err?.message?.includes('PGRST205') ||
+        err?.message?.includes('schema cache') ||
+        err?.message?.includes('Could not find the table') ||
+        err?.code === 'PGRST205';
+
+      if (isMissingTable) {
+        // Still update local memory so the user doesn't lose their edits while creating the table
+        await onSaveConfiguracoes(formData);
+        onOpenSupabaseModal();
+        alert(
+          'TABELA "configuracoes" AINDA NÃO CRIADA NO SEU SUPABASE!\n\n' +
+          'A tabela "configuracoes" não foi encontrada no seu banco Supabase. O script SQL foi aberto na tela:\n' +
+          '1. Copie o script SQL exibido\n' +
+          '2. Cole e execute no SQL Editor do seu projeto Supabase\n' +
+          '3. Em seguida, clique em Salvar novamente!'
+        );
+      } else {
+        alert(`FALHA AO SALVAR CONFIGURAÇÕES NO SUPABASE: ${err.message || 'Verifique as credenciais da nuvem'}`);
+      }
     } finally {
       setIsSaving(false);
     }
