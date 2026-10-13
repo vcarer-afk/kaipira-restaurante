@@ -1,0 +1,6 @@
+{
+  "name": "Restaurante Kaipira - Gestão & Delivery",
+  "description": "Sistema completo de gestão, salão, delivery próprio com busca por CEP, KDS cozinha, painel de senhas, caixa diário e mensalistas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
