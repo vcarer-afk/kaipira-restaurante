@@ -6,6 +6,7 @@ import {
   ItemEstoque,
   Cliente,
   FormaPagamento,
+  ConfiguracoesSistema,
 } from '../types';
 import { formatBRL, formatTime } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
@@ -32,6 +33,7 @@ import {
   Unlock,
   Banknote,
   Plus,
+  Cloud,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -40,6 +42,7 @@ interface AdminDashboardProps {
   caixa: CaixaDiario;
   estoque: ItemEstoque[];
   clientes: Cliente[];
+  configuracoes?: ConfiguracoesSistema;
   onNavigate: (tab: ActiveTab) => void;
   onAbrirCaixa: (valor: number, observacoes?: string) => void;
   onFecharCaixa: (valor: number, observacoes?: string) => void;
@@ -52,6 +55,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   caixa,
   estoque,
   clientes,
+  configuracoes,
   onNavigate,
   onAbrirCaixa,
   onFecharCaixa,
@@ -133,13 +137,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-1 text-xs font-black uppercase text-amber-500 tracking-wider">
             <ShieldCheck className="w-4 h-4 text-amber-500" />
-            <span>PAINEL DO ADMINISTRADOR · RESTAURANTE KAIPIRA</span>
+            <span>PAINEL DO ADMINISTRADOR · {configuracoes?.nomeRestaurante || 'RESTAURANTE KAIPIRA'}</span>
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-800 text-cyan-300 font-bold ml-2">
+              <Cloud className="w-3 h-3 text-cyan-400" />
+              Nuvem Ativa
+            </span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight uppercase">
             Visão Geral das Operações & Resultados
           </h2>
           <p className="text-xs text-neutral-400 mt-1">
-            Gestão unificada de salão (20 mesas), delivery próprio em Piracicaba, fogão a lenha, caixa e configurações
+            Gestão unificada de salão (20 mesas), delivery próprio em {configuracoes?.cidade || 'Piracicaba'}, fogão a lenha, caixa e configurações
           </p>
         </div>
 

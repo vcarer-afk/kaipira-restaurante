@@ -25,19 +25,33 @@ interface SettingsManagerProps {
   configuracoes: ConfiguracoesSistema;
   onSaveConfiguracoes: (novasConfiguracoes: ConfiguracoesSistema) => Promise<void>;
   onOpenSupabaseModal: () => void;
+  onReloadCloudConfig?: () => Promise<void>;
+  isCloudConfigLoading?: boolean;
+  cloudConfigSyncedAt?: Date | null;
 }
 
 export const SettingsManager: React.FC<SettingsManagerProps> = ({
   configuracoes,
   onSaveConfiguracoes,
   onOpenSupabaseModal,
+  onReloadCloudConfig,
+  isCloudConfigLoading = false,
+  cloudConfigSyncedAt,
 }) => {
   const [formData, setFormData] = useState<ConfiguracoesSistema>(configuracoes);
   const [isSaving, setIsSaving] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isTestingDb, setIsTestingDb] = useState(false);
   const [dbTestMessage, setDbTestMessage] = useState<string | null>(null);
   const [isCepLoading, setIsCepLoading] = useState(false);
+
+  // Sync state whenever configuracoes is updated from the cloud
+  React.useEffect(() => {
+    if (configuracoes) {
+      setFormData(configuracoes);
+    }
+  }, [configuracoes]);
 
   const activeTheme = THEMES[formData.padraoCor] || THEMES.ambar;
 
@@ -112,7 +126,27 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {onReloadCloudConfig && (
+            <button
+              type="button"
+              onClick={async () => {
+                setIsReloading(true);
+                try {
+                  await onReloadCloudConfig();
+                } finally {
+                  setIsReloading(false);
+                }
+              }}
+              disabled={isReloading || isCloudConfigLoading}
+              className="px-4 py-2.5 rounded-xl text-xs font-bold text-neutral-300 bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 flex items-center gap-2 shadow-sm transition-all uppercase"
+              title="Recarrega as configurações diretamente salvas na nuvem"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isReloading || isCloudConfigLoading ? 'animate-spin text-cyan-400' : 'text-neutral-400'}`} />
+              <span>{isReloading || isCloudConfigLoading ? 'Carregando Nuvem...' : 'Recarregar Nuvem'}</span>
+            </button>
+          )}
+
           <button
             onClick={handleSave}
             disabled={isSaving}
@@ -122,6 +156,24 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
             {isSaving ? 'Gravando na Nuvem...' : 'Salvar Alterações'}
           </button>
         </div>
+      </div>
+
+      {/* Cloud sync status indicator */}
+      <div className="flex items-center justify-between px-4 py-2 bg-neutral-900 border border-neutral-800 rounded-xl text-[11px] text-neutral-400">
+        <div className="flex items-center gap-2">
+          <Cloud className={`w-3.5 h-3.5 ${isCloudConfigLoading ? 'text-amber-400 animate-pulse' : 'text-cyan-400'}`} />
+          <span className="font-semibold text-neutral-300">Sincronização em Nuvem:</span>
+          <span>
+            {isCloudConfigLoading
+              ? 'Lendo configurações da nuvem...'
+              : cloudConfigSyncedAt
+              ? `Carregadas com sucesso às ${cloudConfigSyncedAt.toLocaleTimeString('pt-BR')}`
+              : 'Configurações ativas carregadas do servidor em nuvem'}
+          </span>
+        </div>
+        <span className="hidden sm:inline font-mono text-[10px] text-neutral-500 uppercase">
+          Todos os dispositivos sincronizados via SSE Realtime
+        </span>
       </div>
 
       {savedSuccess && (

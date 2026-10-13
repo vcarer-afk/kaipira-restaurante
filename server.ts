@@ -51,6 +51,11 @@ function loadState(): AppState {
       const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
       if (!data.configuracoes) {
         data.configuracoes = INITIAL_CONFIGURACOES;
+      } else {
+        data.configuracoes = {
+          ...INITIAL_CONFIGURACOES,
+          ...data.configuracoes,
+        };
       }
       return data;
     }
@@ -134,11 +139,17 @@ async function startServer() {
 
   // GET complete cloud state
   app.get('/api/state', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.json(state);
   });
 
   // GET / PUT Configurações
   app.get('/api/configuracoes', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.json(state.configuracoes);
   });
 

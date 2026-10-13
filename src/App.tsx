@@ -58,6 +58,9 @@ export default function App() {
 
   // Cloud Application State
   const [configuracoes, setConfiguracoes] = useState<ConfiguracoesSistema>(INITIAL_CONFIGURACOES);
+  const [isCloudConfigLoading, setIsCloudConfigLoading] = useState<boolean>(true);
+  const [cloudConfigSyncedAt, setCloudConfigSyncedAt] = useState<Date | null>(null);
+
   const [categorias, setCategorias] = useState<Categoria[]>(INITIAL_CATEGORIAS);
   const [produtos, setProdutos] = useState<Produto[]>(INITIAL_PRODUTOS);
   const [mesas, setMesas] = useState<Mesa[]>(INITIAL_MESAS);
@@ -88,13 +91,52 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Update browser document title based on cloud configuracoes
+  useEffect(() => {
+    if (configuracoes?.nomeRestaurante) {
+      document.title = `${configuracoes.nomeRestaurante} - Gestão & Delivery (${configuracoes.cidade || 'Piracicaba'} - ${configuracoes.uf || 'SP'})`;
+    }
+  }, [configuracoes?.nomeRestaurante, configuracoes?.cidade, configuracoes?.uf]);
+
+  // Dedicated fetch to load cloud configuracoes immediately on any device
+  const fetchCloudConfiguracoes = useCallback(async () => {
+    setIsCloudConfigLoading(true);
+    try {
+      const res = await fetch('/api/configuracoes', {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object' && data.nomeRestaurante) {
+          setConfiguracoes((prev) => ({ ...prev, ...data }));
+          setCloudConfigSyncedAt(new Date());
+        }
+      }
+    } catch (err) {
+      console.warn('Conectando às configurações em nuvem...', err);
+    } finally {
+      setIsCloudConfigLoading(false);
+    }
+  }, []);
+
   // Fetch full cloud state on load
   const fetchCloudState = useCallback(async () => {
     try {
-      const res = await fetch('/api/state');
+      const res = await fetch('/api/state', {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
       if (res.ok) {
         const data = await res.json();
-        if (data.configuracoes) setConfiguracoes(data.configuracoes);
+        if (data.configuracoes) {
+          setConfiguracoes(data.configuracoes);
+          setCloudConfigSyncedAt(new Date());
+        }
         if (data.categorias) setCategorias(data.categorias);
         if (data.produtos) setProdutos(data.produtos);
         if (data.mesas) setMesas(data.mesas);
@@ -107,10 +149,14 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Conectando ao backend em nuvem...', err);
+    } finally {
+      setIsCloudConfigLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    // Priority: always load cloud settings immediately on device start
+    fetchCloudConfiguracoes();
     fetchCloudState();
 
     let eventSource: EventSource | null = null;
@@ -119,7 +165,9 @@ export default function App() {
 
       eventSource.addEventListener('SETTINGS_UPDATED', (e: MessageEvent) => {
         try {
-          setConfiguracoes(JSON.parse(e.data));
+          const novasConfig = JSON.parse(e.data);
+          setConfiguracoes(novasConfig);
+          setCloudConfigSyncedAt(new Date());
         } catch {}
       });
 
@@ -234,6 +282,7 @@ export default function App() {
     if (!res.ok) throw new Error('Falha ao gravar configurações na nuvem');
     const saved = await res.json();
     setConfiguracoes(saved);
+    setCloudConfigSyncedAt(new Date());
   };
 
   // Order status updates
@@ -514,6 +563,10 @@ export default function App() {
         pendingKdsCount={pendingKdsCount}
         posicaoMenu={configuracoes.posicaoMenu}
         padraoCor={configuracoes.padraoCor}
+        configuracoes={configuracoes}
+        isCloudConfigLoading={isCloudConfigLoading}
+        cloudConfigSyncedAt={cloudConfigSyncedAt}
+        onRefreshCloudConfig={fetchCloudConfiguracoes}
       />
 
       {/* Main Viewport Container */}
@@ -526,6 +579,7 @@ export default function App() {
             caixa={caixa}
             estoque={estoque}
             clientes={clientes}
+            configuracoes={configuracoes}
             onNavigate={(tab) => {
               setActiveTab(tab);
               if (tab !== 'pdv') setSelectedMesaNumber(undefined);
@@ -542,6 +596,9 @@ export default function App() {
             configuracoes={configuracoes}
             onSaveConfiguracoes={handleSaveConfiguracoes}
             onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+            onReloadCloudConfig={fetchCloudConfiguracoes}
+            isCloudConfigLoading={isCloudConfigLoading}
+            cloudConfigSyncedAt={cloudConfigSyncedAt}
           />
         )}
 
@@ -651,6 +708,7 @@ export default function App() {
       <ThermalReceipt
         pedido={printReceiptPedido}
         onClose={() => setPrintReceiptPedido(null)}
+        configuracoes={configuracoes}
       />
 
       {/* Supabase SQL DDL Modal */}

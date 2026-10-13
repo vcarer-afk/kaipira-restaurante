@@ -1,7 +1,6 @@
-import React from 'react';
-import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor } from '../types';
+import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { UtensilsCrossed, Database, Cloud, Menu, LayoutDashboard, Settings } from 'lucide-react';
+import { UtensilsCrossed, Database, Cloud, Menu, LayoutDashboard, Settings, RefreshCw } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
@@ -28,6 +27,10 @@ interface HeaderProps {
   pendingKdsCount: number;
   posicaoMenu?: PosicaoMenu;
   padraoCor?: PadraoCor;
+  configuracoes?: ConfiguracoesSistema;
+  isCloudConfigLoading?: boolean;
+  cloudConfigSyncedAt?: Date | null;
+  onRefreshCloudConfig?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -42,6 +45,10 @@ export const Header: React.FC<HeaderProps> = ({
   pendingKdsCount,
   posicaoMenu = 'direita',
   padraoCor = 'ambar',
+  configuracoes,
+  isCloudConfigLoading = false,
+  cloudConfigSyncedAt,
+  onRefreshCloudConfig,
 }) => {
   const theme = THEMES[padraoCor] || THEMES.ambar;
 
@@ -78,10 +85,10 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-base font-extrabold tracking-tight text-white whitespace-nowrap">
-                RESTAURANTE KAIPIRA
+                {configuracoes?.nomeRestaurante || 'RESTAURANTE KAIPIRA'}
               </span>
               <span className="hidden sm:inline-block text-xs text-neutral-400 font-medium">
-                · Piracicaba - SP
+                · {configuracoes?.cidade || 'Piracicaba'} - {configuracoes?.uf || 'SP'}
               </span>
             </div>
             <div className="flex items-center gap-2 text-[11px] text-neutral-400">
@@ -89,10 +96,15 @@ export const Header: React.FC<HeaderProps> = ({
                 {isLunchTime ? 'Almoço Aberto (11h-14h)' : 'Fora do Almoço'}
               </span>
               <span aria-hidden="true">·</span>
-              <span className="text-neutral-400 flex items-center gap-1">
-                <Cloud className="w-3 h-3 text-cyan-400" />
-                Nuvem Ativa
-              </span>
+              <button
+                type="button"
+                onClick={onRefreshCloudConfig}
+                className="text-neutral-400 flex items-center gap-1 hover:text-cyan-300 transition-colors cursor-pointer"
+                title={cloudConfigSyncedAt ? `Configurações da Nuvem Carregadas (${cloudConfigSyncedAt.toLocaleTimeString('pt-BR')}) - Clique para recarregar` : 'Sincronizar com a nuvem'}
+              >
+                <Cloud className={`w-3 h-3 ${isCloudConfigLoading ? 'text-amber-400 animate-pulse' : 'text-cyan-400'}`} />
+                <span>{isCloudConfigLoading ? 'Carregando Nuvem...' : 'Nuvem Ativa'}</span>
+              </button>
             </div>
           </div>
         </div>

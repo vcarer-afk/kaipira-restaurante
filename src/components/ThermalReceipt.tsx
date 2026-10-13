@@ -1,14 +1,15 @@
 import React from 'react';
-import { Pedido } from '../types';
+import { Pedido, ConfiguracoesSistema } from '../types';
 import { formatBRL, formatDateTime } from '../utils/formatters';
 import { Printer, X } from 'lucide-react';
 
 interface ThermalReceiptProps {
   pedido: Pedido | null;
   onClose: () => void;
+  configuracoes?: ConfiguracoesSistema;
 }
 
-export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose }) => {
+export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose, configuracoes }) => {
   if (!pedido) return null;
 
   const handlePrint = () => {
@@ -41,9 +42,18 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose 
             className="w-[78mm] bg-white text-black p-4 font-mono text-[11px] leading-snug shadow-md rounded-xs border border-neutral-300"
           >
             <div className="text-center pb-2 border-b border-dashed border-black">
-              <h2 className="text-sm font-bold tracking-tight">RESTAURANTE KAIPIRA</h2>
-              <p className="text-[10px]">COMIDA TÍPICA DA ROÇA NO FOGÃO A LENHA</p>
-              <p className="text-[10px]">PIRACICABA - SP | (19) 3422-1980</p>
+              <h2 className="text-sm font-bold tracking-tight uppercase">
+                {configuracoes?.nomeRestaurante || 'RESTAURANTE KAIPIRA'}
+              </h2>
+              <p className="text-[10px] uppercase">COMIDA TÍPICA DA ROÇA NO FOGÃO A LENHA</p>
+              <p className="text-[10px] uppercase">
+                {configuracoes?.endereco
+                  ? `${configuracoes.endereco}${configuracoes.numero ? `, ${configuracoes.numero}` : ''} - ${configuracoes.bairro || ''} (${configuracoes.cidade || 'PIRACICABA'} - ${configuracoes.uf || 'SP'})`
+                  : 'PIRACICABA - SP'}
+              </p>
+              {configuracoes?.telefone && (
+                <p className="text-[10px] uppercase">TEL: {configuracoes.telefone}</p>
+              )}
             </div>
 
             <div className="py-2 border-b border-dashed border-black text-center">
