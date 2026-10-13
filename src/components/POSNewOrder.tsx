@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { UpperInput, UpperTextarea } from './UpperInput';
 import { formatBRL, consultarViaCep, cleanDigits, playAlertChime } from '../utils/formatters';
+import { salvarPedidoSupabase } from '../services/supabaseClient';
 import {
   Bike,
   Store,
@@ -286,14 +287,25 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
             : undefined,
       };
 
-      const res = await fetch('/api/pedidos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const pagamentosArray =
+        tipoPedido !== 'salão' || formaPagamento === 'mensalista'
+          ? [
+              {
+                id: Date.now(),
+                pedido_id: 0,
+                forma: formaPagamento,
+                valor: total,
+                criado_em: new Date().toISOString(),
+              },
+            ]
+          : [];
 
-      if (!res.ok) throw new Error('Erro ao salvar pedido na nuvem');
-      const novoPedido: Pedido = await res.json();
+      const novoPedido = await salvarPedidoSupabase({
+        ...payload,
+        status: 'pendente',
+        valor_total: total,
+        pagamentos: pagamentosArray,
+      });
 
       playAlertChime('order');
       onOrderCreated(novoPedido);

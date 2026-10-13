@@ -157,7 +157,35 @@ CREATE TABLE IF NOT EXISTS caixa_diario (
     fechado_em TIMESTAMP WITH TIME ZONE
 );
 
--- 9. ATIVAÇÃO DO SUPABASE REALTIME
+-- 9. CONFIGURAÇÕES GERAIS DO RESTAURANTE (100% NUVEM SUPABASE)
+CREATE TABLE IF NOT EXISTS configuracoes (
+    id INT PRIMARY KEY DEFAULT 1,
+    nome_restaurante VARCHAR(100),
+    email VARCHAR(100),
+    telefone VARCHAR(30),
+    cep VARCHAR(10),
+    endereco VARCHAR(200),
+    numero VARCHAR(20),
+    bairro VARCHAR(100),
+    cidade VARCHAR(100) DEFAULT 'PIRACICABA',
+    uf VARCHAR(2) DEFAULT 'SP',
+    horario_funcionamento VARCHAR(150),
+    posicao_menu VARCHAR(20) DEFAULT 'direita',
+    padrao_cor VARCHAR(20) DEFAULT 'ambar',
+    supabase_url TEXT,
+    supabase_anon_key TEXT,
+    banco_status VARCHAR(30) DEFAULT 'conectado',
+    dados JSONB,
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Inserir registro inicial se não existir
+INSERT INTO configuracoes (id, nome_restaurante, email, telefone, cep, endereco, numero, bairro, cidade, uf, horario_funcionamento, posicao_menu, padrao_cor)
+VALUES (1, 'RESTAURANTE KAIPIRA', 'contato@restaurantekaipira.com.br', '(19) 3-4221-1980', '13400-010', 'RUA DO ROSÁRIO', '1240', 'CENTRO', 'PIRACICABA', 'SP', 'SEGUNDA A SÁBADO, DAS 11H ÀS 14H', 'direita', 'ambar')
+ON CONFLICT (id) DO NOTHING;
+
+-- 10. ATIVAÇÃO DO SUPABASE REALTIME
+ALTER PUBLICATION supabase_realtime ADD TABLE configuracoes;
 ALTER PUBLICATION supabase_realtime ADD TABLE pedidos;
 ALTER PUBLICATION supabase_realtime ADD TABLE mesas;
 ALTER PUBLICATION supabase_realtime ADD TABLE estoque;

@@ -44,6 +44,21 @@ import {
   BAIRROS_PIRACICABA,
   INITIAL_CONFIGURACOES,
 } from './data/seedData';
+import {
+  supabase,
+  fetchConfiguracoesFromSupabase,
+  saveConfiguracoesToSupabase,
+  atualizarStatusPedidoSupabase,
+  atualizarMesaSupabase,
+  fecharMesaSupabase,
+  atualizarItemEstoqueSupabase,
+  adicionarItemEstoqueSupabase,
+  abrirCaixaSupabase,
+  fecharCaixaSupabase,
+  registrarMovimentacaoCaixaSupabase,
+  criarReservaSupabase,
+  abaterSaldoMensalistaSupabase,
+} from './services/supabaseClient';
 
 export default function App() {
   // Authentication State (In-Memory / Cloud Session - ZERO localStorage)
@@ -98,141 +113,145 @@ export default function App() {
     }
   }, [configuracoes?.nomeRestaurante, configuracoes?.cidade, configuracoes?.uf]);
 
-  // Dedicated fetch to load cloud configuracoes immediately on any device
+  // Dedicated fetch to load cloud configuracoes directly from Supabase
   const fetchCloudConfiguracoes = useCallback(async () => {
     setIsCloudConfigLoading(true);
     try {
-      const res = await fetch('/api/configuracoes', {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && typeof data === 'object' && data.nomeRestaurante) {
-          setConfiguracoes((prev) => ({ ...prev, ...data }));
-          setCloudConfigSyncedAt(new Date());
-        }
+      const data = await fetchConfiguracoesFromSupabase();
+      if (data && typeof data === 'object' && data.nomeRestaurante) {
+        setConfiguracoes((prev) => ({ ...prev, ...data }));
+        setCloudConfigSyncedAt(new Date());
       }
     } catch (err) {
-      console.warn('Conectando às configurações em nuvem...', err);
+      console.warn('Conectando às configurações no Supabase...', err);
     } finally {
       setIsCloudConfigLoading(false);
     }
   }, []);
 
-  // Fetch full cloud state on load
+  // Fetch full cloud state from Supabase on load
   const fetchCloudState = useCallback(async () => {
     try {
-      const res = await fetch('/api/state', {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.configuracoes) {
-          setConfiguracoes(data.configuracoes);
-          setCloudConfigSyncedAt(new Date());
+      await fetchCloudConfiguracoes();
+
+      // Query Supabase tables directly (100% cloud, no static /api 405 error)
+      const [pedidosRes, mesasRes, estoqueRes, caixaRes, reservasRes, clientesRes] = await Promise.allSettled([
+        supabase.from('pedidos').select('*').order('criado_em', { ascending: false }),
+        supabase.from('mesas').select('*').order('numero', { ascending: true }),
+        supabase.from('estoque').select('*').order('id', { ascending: true }),
+        supabase.from('caixa_diario').select('*').order('id', { ascending: false }).limit(1),
+        supabase.from('reservas').select('*').order('id', { ascending: false }),
+        supabase.from('clientes').select('*').order('nome', { ascending: true }),
+      ]);
+
+      if (pedidosRes.status === 'fulfilled' && pedidosRes.value.data && pedidosRes.value.data.length > 0) {
+        setPedidos(pedidosRes.value.data as Pedido[]);
+      }
+      if (mesasRes.status === 'fulfilled' && mesasRes.value.data && mesasRes.value.data.length > 0) {
+        setMesas(mesasRes.value.data as Mesa[]);
+      }
+      if (estoqueRes.status === 'fulfilled' && estoqueRes.value.data && estoqueRes.value.data.length > 0) {
+        setEstoque(estoqueRes.value.data as ItemEstoque[]);
+      }
+      if (caixaRes.status === 'fulfilled' && caixaRes.value.data && caixaRes.value.data.length > 0) {
+        const row = caixaRes.value.data[0];
+        if (row.dados) {
+          setCaixa(row.dados);
+        } else {
+          setCaixa((prev) => ({
+            ...prev,
+            status: row.status || prev.status,
+            valor_abertura: Number(row.valor_abertura) || prev.valor_abertura,
+            valor_fechamento: row.valor_fechamento ? Number(row.valor_fechamento) : undefined,
+          }));
         }
-        if (data.categorias) setCategorias(data.categorias);
-        if (data.produtos) setProdutos(data.produtos);
-        if (data.mesas) setMesas(data.mesas);
-        if (data.clientes) setClientes(data.clientes);
-        if (data.estoque) setEstoque(data.estoque);
-        if (data.caixa) setCaixa(data.caixa);
-        if (data.pedidos) setPedidos(data.pedidos);
-        if (data.reservas) setReservas(data.reservas);
-        if (data.bairros) setBairros(data.bairros);
+      }
+      if (reservasRes.status === 'fulfilled' && reservasRes.value.data && reservasRes.value.data.length > 0) {
+        setReservas(reservasRes.value.data as Reserva[]);
+      }
+      if (clientesRes.status === 'fulfilled' && clientesRes.value.data && clientesRes.value.data.length > 0) {
+        setClientes(clientesRes.value.data as Cliente[]);
       }
     } catch (err) {
-      console.warn('Conectando ao backend em nuvem...', err);
+      console.warn('Conectando às tabelas em nuvem do Supabase...', err);
     } finally {
       setIsCloudConfigLoading(false);
     }
-  }, []);
+  }, [fetchCloudConfiguracoes]);
 
   useEffect(() => {
     // Priority: always load cloud settings immediately on device start
     fetchCloudConfiguracoes();
     fetchCloudState();
 
-    let eventSource: EventSource | null = null;
+    let channel: any = null;
     try {
-      eventSource = new EventSource('/api/realtime/stream');
-
-      eventSource.addEventListener('SETTINGS_UPDATED', (e: MessageEvent) => {
-        try {
-          const novasConfig = JSON.parse(e.data);
-          setConfiguracoes(novasConfig);
-          setCloudConfigSyncedAt(new Date());
-        } catch {}
-      });
-
-      eventSource.addEventListener('ORDER_CREATED', (e: MessageEvent) => {
-        try {
-          const novoPedido: Pedido = JSON.parse(e.data);
-          setPedidos((prev) => [novoPedido, ...prev.filter((p) => p.id !== novoPedido.id)]);
-          playAlertChime('order');
-        } catch {}
-      });
-
-      eventSource.addEventListener('ORDER_STATUS_UPDATED', (e: MessageEvent) => {
-        try {
-          const updated: Pedido = JSON.parse(e.data);
-          setPedidos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-        } catch {}
-      });
-
-      eventSource.addEventListener('TABLE_UPDATED', (e: MessageEvent) => {
-        try {
-          const updatedMesa: Mesa = JSON.parse(e.data);
-          setMesas((prev) => prev.map((m) => (m.numero === updatedMesa.numero ? updatedMesa : m)));
-        } catch {}
-      });
-
-      eventSource.addEventListener('PRODUCT_PAUSED', (e: MessageEvent) => {
-        try {
-          const updatedProd: Produto = JSON.parse(e.data);
-          setProdutos((prev) => prev.map((p) => (p.id === updatedProd.id ? updatedProd : p)));
-        } catch {}
-      });
-
-      eventSource.addEventListener('STOCK_UPDATED', (e: MessageEvent) => {
-        try {
-          const updatedItem: ItemEstoque = JSON.parse(e.data);
-          setEstoque((prev) => prev.map((it) => (it.id === updatedItem.id ? updatedItem : it)));
-        } catch {}
-      });
-
-      eventSource.addEventListener('CASH_OPENED', (e: MessageEvent) => {
-        try {
-          setCaixa(JSON.parse(e.data));
-        } catch {}
-      });
-
-      eventSource.addEventListener('CASH_CLOSED', (e: MessageEvent) => {
-        try {
-          setCaixa(JSON.parse(e.data));
-        } catch {}
-      });
-
-      eventSource.addEventListener('CASH_MOVEMENT', (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data);
-          if (payload.caixa) setCaixa(payload.caixa);
-        } catch {}
-      });
+      // Connect to Supabase Realtime channel (works in static hosting like GitHub Pages)
+      channel = supabase
+        .channel('restaurante_kaipira_cloud_sync')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'configuracoes' },
+          (payload: any) => {
+            if (payload.new) {
+              const loaded = payload.new.dados || payload.new;
+              setConfiguracoes((prev) => ({ ...prev, ...loaded }));
+              setCloudConfigSyncedAt(new Date());
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'pedidos' },
+          (payload: any) => {
+            if (payload.new) {
+              const novoPedido: Pedido = payload.new;
+              setPedidos((prev) => [novoPedido, ...prev.filter((p) => p.id !== novoPedido.id)]);
+              playAlertChime('order');
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'pedidos' },
+          (payload: any) => {
+            if (payload.new) {
+              const updated: Pedido = payload.new;
+              setPedidos((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'mesas' },
+          (payload: any) => {
+            if (payload.new) {
+              const updatedMesa: Mesa = payload.new;
+              setMesas((prev) => prev.map((m) => (m.numero === updatedMesa.numero ? { ...m, ...updatedMesa } : m)));
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'estoque' },
+          (payload: any) => {
+            if (payload.new) {
+              const updatedItem: ItemEstoque = payload.new;
+              setEstoque((prev) => prev.map((it) => (it.id === updatedItem.id ? { ...it, ...updatedItem } : it)));
+            }
+          }
+        )
+        .subscribe();
     } catch (err) {
-      console.warn('SSE Realtime não disponível:', err);
+      console.warn('Supabase Realtime não disponível:', err);
     }
 
     return () => {
-      eventSource?.close();
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
-  }, [fetchCloudState]);
+  }, [fetchCloudConfiguracoes, fetchCloudState]);
 
   // Handle Login Success
   const handleLoginSuccess = (perfil: Perfil) => {
@@ -272,160 +291,82 @@ export default function App() {
     else if (role === 'atendente') setActiveTab('pdv');
   };
 
-  // Save Settings to cloud
+  // Save Settings to cloud directly via Supabase
   const handleSaveConfiguracoes = async (novas: ConfiguracoesSistema) => {
-    const res = await fetch('/api/configuracoes', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(novas),
-    });
-    if (!res.ok) throw new Error('Falha ao gravar configurações na nuvem');
-    const saved = await res.json();
+    const saved = await saveConfiguracoesToSupabase(novas);
     setConfiguracoes(saved);
     setCloudConfigSyncedAt(new Date());
   };
 
-  // Order status updates
+  // Order status updates via Supabase
   const handleUpdateOrderStatus = async (id: number, status: StatusPedido, entregador?: string) => {
-    try {
-      const res = await fetch(`/api/pedidos/${id}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, entregador_nome: entregador }),
-      });
-      if (res.ok) {
-        const updated: Pedido = await res.json();
-        setPedidos((prev) => prev.map((p) => (p.id === id ? updated : p)));
-      }
-    } catch {
-      setPedidos((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status, entregador_nome: entregador } : p))
-      );
-    }
+    setPedidos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status, entregador_nome: entregador } : p))
+    );
+    await atualizarStatusPedidoSupabase(id, status, entregador);
   };
 
-  // Table status updates
+  // Table status updates via Supabase
   const handleUpdateMesaStatus = async (
     numero: number,
     status: Mesa['status'],
     cliente_nome?: string,
     pessoas?: number
   ) => {
-    try {
-      const res = await fetch(`/api/mesas/${numero}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, cliente_nome, pessoas }),
-      });
-      if (res.ok) {
-        const updated: Mesa = await res.json();
-        setMesas((prev) => prev.map((m) => (m.numero === numero ? updated : m)));
-      }
-    } catch {
-      setMesas((prev) =>
-        prev.map((m) => (m.numero === numero ? { ...m, status, cliente_nome, pessoas } : m))
-      );
-    }
+    setMesas((prev) =>
+      prev.map((m) => (m.numero === numero ? { ...m, status, cliente_nome, pessoas } : m))
+    );
+    await atualizarMesaSupabase(numero, status, cliente_nome, pessoas);
   };
 
   const handleFecharMesa = async (numero: number) => {
-    try {
-      const res = await fetch(`/api/mesas/${numero}/fechar`, { method: 'POST' });
-      if (res.ok) {
-        setMesas((prev) =>
-          prev.map((m) => (m.numero === numero ? { ...m, status: 'livre', cliente_nome: undefined, pessoas: undefined } : m))
-        );
-        fetchCloudState();
-      }
-    } catch {
-      setMesas((prev) =>
-        prev.map((m) => (m.numero === numero ? { ...m, status: 'livre', cliente_nome: undefined } : m))
-      );
-    }
+    setMesas((prev) =>
+      prev.map((m) => (m.numero === numero ? { ...m, status: 'livre', cliente_nome: undefined, pessoas: undefined } : m))
+    );
+    await fecharMesaSupabase(numero);
   };
 
   // Toggle quick pause for product
   const handleTogglePauseProduto = async (id: number) => {
+    setProdutos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, pausado: !p.pausado } : p))
+    );
     try {
-      const res = await fetch(`/api/produtos/${id}/pausar`, { method: 'PUT' });
-      if (res.ok) {
-        const updated: Produto = await res.json();
-        setProdutos((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      const prod = produtos.find((p) => p.id === id);
+      if (prod) {
+        await supabase.from('produtos').update({ pausado: !prod.pausado }).eq('id', id);
       }
-    } catch {
-      setProdutos((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, pausado: !p.pausado } : p))
-      );
-    }
+    } catch {}
   };
 
-  // Stock
+  // Stock operations via Supabase
   const handleUpdateStockItem = async (id: number, data: Partial<ItemEstoque>) => {
-    try {
-      const res = await fetch(`/api/estoque/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (res.ok) {
-        const updated: ItemEstoque = await res.json();
-        setEstoque((prev) => prev.map((it) => (it.id === id ? updated : it)));
-      }
-    } catch {
-      setEstoque((prev) => prev.map((it) => (it.id === id ? { ...it, ...data } : it)));
-    }
+    setEstoque((prev) => prev.map((it) => (it.id === id ? { ...it, ...data } : it)));
+    await atualizarItemEstoqueSupabase(id, data);
   };
 
   const handleAddStockItem = async (data: Partial<ItemEstoque>) => {
-    try {
-      const res = await fetch('/api/estoque', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (res.ok) {
-        const novo: ItemEstoque = await res.json();
-        setEstoque((prev) => [...prev, novo]);
-      }
-    } catch {
-      const novo: ItemEstoque = {
-        id: Date.now(),
-        item_nome: data.item_nome || '',
-        quantidade_atual: data.quantidade_atual || 0,
-        unidade_medida: data.unidade_medida || 'un',
-        estoque_minimo: data.estoque_minimo || 5,
-        fornecedor_info: data.fornecedor_info,
-        atualizado_em: new Date().toISOString(),
-      };
-      setEstoque((prev) => [...prev, novo]);
-    }
+    const novo = await adicionarItemEstoqueSupabase(data);
+    setEstoque((prev) => [...prev, novo]);
   };
 
-  // Mensalistas
-  const handleAbaterSaldoMensalista = async (clienteId: string, valor: number, forma: 'pix' | 'dinheiro' | 'cartao_debito') => {
-    try {
-      const res = await fetch(`/api/clientes/${clienteId}/abater-saldo`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valor_pago: valor, forma }),
-      });
-      if (res.ok) {
-        const updated: Cliente = await res.json();
-        setClientes((prev) => prev.map((c) => (c.id === clienteId ? updated : c)));
-        fetchCloudState();
-      }
-    } catch {
-      setClientes((prev) =>
-        prev.map((c) =>
-          c.id === clienteId
-            ? { ...c, saldo_devedor: Math.max(0, c.saldo_devedor - valor) }
-            : c
-        )
-      );
-    }
+  // Mensalistas operations via Supabase
+  const handleAbaterSaldoMensalista = async (
+    clienteId: string,
+    valor: number,
+    _forma: 'pix' | 'dinheiro' | 'cartao_debito'
+  ) => {
+    setClientes((prev) =>
+      prev.map((c) =>
+        c.id === clienteId
+          ? { ...c, saldo_devedor: Math.max(0, c.saldo_devedor - valor) }
+          : c
+      )
+    );
+    await abaterSaldoMensalistaSupabase(clienteId, valor);
   };
 
-  const handleCadastrarCliente = (clienteData: Partial<Cliente>) => {
+  const handleCadastrarCliente = async (clienteData: Partial<Cliente>) => {
     const novo: Cliente = {
       id: 'c-' + Date.now(),
       nome: (clienteData.nome || '').toUpperCase(),
@@ -440,46 +381,22 @@ export default function App() {
       criado_em: new Date().toISOString(),
     };
     setClientes((prev) => [novo, ...prev]);
+    try {
+      await supabase.from('clientes').insert(novo);
+    } catch (err) {
+      console.warn('Erro ao salvar cliente no Supabase:', err);
+    }
   };
 
-  // Cash Register functional operations
+  // Cash Register functional operations via Supabase
   const handleAbrirCaixa = async (valor: number, observacoes?: string) => {
-    try {
-      const res = await fetch('/api/caixa/abrir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valor_abertura: valor, observacoes }),
-      });
-      if (res.ok) setCaixa(await res.json());
-    } catch {
-      setCaixa({
-        id: Date.now(),
-        data_caixa: new Date().toISOString().split('T')[0],
-        valor_abertura: valor,
-        status: 'aberto',
-        observacoes,
-        aberto_em: new Date().toISOString(),
-        movimentacoes: [],
-      });
-    }
+    const novo = await abrirCaixaSupabase(valor, observacoes);
+    setCaixa(novo);
   };
 
   const handleFecharCaixa = async (valor: number, observacoes?: string) => {
-    try {
-      const res = await fetch('/api/caixa/fechar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valor_fechamento: valor, observacoes }),
-      });
-      if (res.ok) setCaixa(await res.json());
-    } catch {
-      setCaixa((prev) => ({
-        ...prev,
-        status: 'fechado',
-        valor_fechamento: valor,
-        fechado_em: new Date().toISOString(),
-      }));
-    }
+    const fechado = await fecharCaixaSupabase(caixa, valor, observacoes);
+    setCaixa(fechado);
   };
 
   const handleMovimentacaoCaixa = async (
@@ -488,54 +405,20 @@ export default function App() {
     valor: number,
     descricao: string
   ) => {
-    try {
-      const res = await fetch('/api/caixa/movimentacao', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tipo, forma, valor, descricao }),
-      });
-      if (res.ok) setCaixa(await res.json());
-    } catch {
-      const novaMov = {
-        id: Date.now(),
-        tipo,
-        forma,
-        valor,
-        descricao,
-        hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      };
-      setCaixa((prev) => ({
-        ...prev,
-        movimentacoes: [...prev.movimentacoes, novaMov],
-      }));
-    }
+    const atualizado = await registrarMovimentacaoCaixaSupabase(
+      caixa,
+      tipo,
+      forma,
+      valor,
+      descricao
+    );
+    setCaixa(atualizado);
   };
 
-  // Reservations
+  // Reservations via Supabase
   const handleCreateReserva = async (resData: Partial<Reserva>) => {
-    try {
-      const res = await fetch('/api/reservas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(resData),
-      });
-      if (res.ok) {
-        const nova = await res.json();
-        setReservas((prev) => [...prev, nova]);
-        fetchCloudState();
-      }
-    } catch {
-      const nova: Reserva = {
-        id: Date.now(),
-        cliente_nome: resData.cliente_nome || '',
-        telefone: resData.telefone || '',
-        mesa_id: resData.mesa_id || 1,
-        data_hora: resData.data_hora || new Date().toISOString(),
-        status: 'confirmada',
-        observacoes: resData.observacoes,
-      };
-      setReservas((prev) => [...prev, nova]);
-    }
+    const nova = await criarReservaSupabase(resData);
+    setReservas((prev) => [...prev, nova]);
   };
 
   const pendingKdsCount = pedidos.filter((p) => ['pendente', 'em_preparacao'].includes(p.status)).length;

@@ -4,6 +4,11 @@ import { THEMES } from '../utils/theme';
 import { UpperInput } from './UpperInput';
 import { consultarViaCep, cleanDigits } from '../utils/formatters';
 import {
+  supabase,
+  saveConfiguracoesToSupabase,
+  testarConexaoSupabase,
+} from '../services/supabaseClient';
+import {
   Settings,
   Database,
   Building2,
@@ -83,14 +88,20 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     }
   };
 
-  const handleTestDatabase = () => {
+  const handleTestDatabase = async () => {
     setIsTestingDb(true);
     setDbTestMessage(null);
-    setTimeout(() => {
+    try {
+      const res = await testarConexaoSupabase(formData.supabaseUrl, formData.supabaseAnonKey);
+      setDbTestMessage(res.message);
+      if (res.success) {
+        setFormData((prev) => ({ ...prev, bancoStatus: 'conectado' }));
+      }
+    } catch (err: any) {
+      setDbTestMessage(`FALHA NA CONEXÃO SUPABASE: ${err.message}`);
+    } finally {
       setIsTestingDb(false);
-      setDbTestMessage('CONEXÃO COM SUPABASE NUVEM ATIVA & VALIDADA COM SUCESSO (LATÊNCIA: 18ms)');
-      setFormData((prev) => ({ ...prev, bancoStatus: 'conectado' }));
-    }, 600);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -99,11 +110,15 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     setSavedSuccess(false);
 
     try {
-      await onSaveConfiguracoes(formData);
+      // 1. Save directly to Supabase cloud table 'configuracoes'
+      const saved = await saveConfiguracoesToSupabase(formData);
+      // 2. Propagate to parent state in memory
+      await onSaveConfiguracoes(saved);
+
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err: any) {
-      alert(`FALHA AO SALVAR CONFIGURAÇÕES NA NUVEM: ${err.message}`);
+      alert(`FALHA AO SALVAR CONFIGURAÇÕES NO SUPABASE: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
