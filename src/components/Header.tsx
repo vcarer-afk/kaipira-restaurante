@@ -1,9 +1,10 @@
 import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { UtensilsCrossed, Database, Cloud, Menu, LayoutDashboard, Lock, RefreshCw } from 'lucide-react';
+import { UtensilsCrossed, Database, Cloud, Menu, LayoutDashboard, Lock, RefreshCw, Users } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
+  | 'cadastros'
   | 'configuracoes'
   | 'pdv'
   | 'kds'
@@ -111,18 +112,32 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 2: Navigation Links (Adaptive based on posicaoMenu) */}
         <nav className="hidden lg:flex items-center gap-1 text-xs font-semibold overflow-x-auto max-w-2xl">
-          {currentRole === 'admin' && (
-            <button
-              onClick={() => onSelectTab('dashboard')}
-              className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'dashboard'
-                  ? `bg-neutral-800 ${theme.textPrimary} font-bold border border-neutral-700`
-                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-850'
-              }`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>Dashboard Admin</span>
-            </button>
+          {(currentRole === 'admin' || currentRole === 'master') && (
+            <>
+              <button
+                onClick={() => onSelectTab('dashboard')}
+                className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                  activeTab === 'dashboard'
+                    ? `bg-neutral-800 ${theme.textPrimary} font-bold border border-neutral-700`
+                    : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-850'
+                }`}
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                <span>Dashboard Admin</span>
+              </button>
+
+              <button
+                onClick={() => onSelectTab('cadastros')}
+                className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                  activeTab === 'cadastros'
+                    ? `bg-neutral-800 ${theme.textPrimary} font-bold border border-neutral-700`
+                    : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-850'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Cadastros</span>
+              </button>
+            </>
           )}
 
           <button
@@ -213,7 +228,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Última opção do menu: apenas ícone de cadeado */}
-          {currentRole === 'admin' && (
+          {(currentRole === 'admin' || currentRole === 'master') && (
             <button
               onClick={() => onSelectTab('configuracoes')}
               className={`p-2 rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center justify-center ${

@@ -1,11 +1,25 @@
-export type TipoUsuario = 'admin' | 'atendente' | 'cozinha' | 'garcom' | 'entregador';
+export type TipoUsuario = 'master' | 'admin' | 'atendente' | 'cozinha' | 'garcom' | 'entregador';
 export type TipoPedido = 'salão' | 'retirada' | 'delivery';
 export type StatusPedido = 'pendente' | 'em_preparacao' | 'pronto' | 'a_caminho' | 'entregue' | 'cancelado';
 export type FormaPagamento = 'dinheiro' | 'pix' | 'cartao_credito' | 'cartao_debito' | 'mensalista';
 
+export interface UsuarioSistema {
+  id: string;
+  nome: string; // UPPERCASE
+  email: string; // único, formato livre
+  telefone: string; // com máscara (99) 9-9999-9999
+  cargo: TipoUsuario;
+  status: 'ativo' | 'inativo';
+  senha?: string;
+  criado_em: string;
+  atualizado_em?: string;
+}
+
 export interface Perfil {
   id: string;
   nome: string;
+  email?: string;
+  telefone?: string;
   cargo: TipoUsuario;
   criado_em: string;
 }

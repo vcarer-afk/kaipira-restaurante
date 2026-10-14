@@ -18,6 +18,8 @@ import {
   UserCheck,
   ChevronRight,
   Lock,
+  Users,
+  Crown,
 } from 'lucide-react';
 
 interface SlideMenuRightProps {
@@ -57,7 +59,14 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
       label: 'DASHBOARD ADMIN',
       desc: 'Visão executiva e indicadores',
       icon: LayoutDashboard,
-      roles: ['admin'],
+      roles: ['admin', 'master'],
+    },
+    {
+      id: 'cadastros' as ActiveTab,
+      label: 'CENTRAL DE CADASTROS',
+      desc: 'Usuários, funcionários, clientes e cardápio',
+      icon: Users,
+      roles: ['admin', 'master'],
     },
     {
       id: 'pdv' as ActiveTab,
@@ -209,6 +218,7 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
                 className="bg-neutral-800 border border-neutral-700 font-bold rounded px-2 py-1 uppercase text-[10px] focus:outline-none"
                 style={{ color: theme.dotColor }}
               >
+                <option value="master">MASTER (LIVRE ACESSO TOTAL)</option>
                 <option value="admin">ADMIN (DONA BENEDITA)</option>
                 <option value="atendente">ATENDENTE (JULIANA)</option>
                 <option value="cozinha">COZINHA (CHEF TIÃO)</option>
@@ -224,7 +234,8 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
-            const hasAccess = item.roles.includes(currentRole) || currentRole === 'admin';
+            // Master tem livre acesso irrestrito a todas as telas (bypass)
+            const hasAccess = currentRole === 'master' || currentRole === 'admin' || item.roles.includes(currentRole);
 
             return (
               <button

@@ -12,8 +12,10 @@ import {
   StatusPedido,
   TipoPedido,
   FormaPagamento,
+  UsuarioSistema,
 } from '../types';
-import { INITIAL_CONFIGURACOES } from '../data/seedData';
+import { INITIAL_CONFIGURACOES, INITIAL_USUARIOS } from '../data/seedData';
+import { formatPhone } from '../utils/formatters';
 
 // Re-export singleton Supabase client
 export { supabase };
@@ -456,3 +458,180 @@ export async function abaterSaldoMensalistaSupabase(
     console.warn('Erro ao abater saldo no Supabase:', err);
   }
 }
+
+/**
+ * =========================================================================
+ * MÓDULO DE GESTÃO DE USUÁRIOS E FUNCIONÁRIOS (100% NUVEM SUPABASE)
+ * =========================================================================
+ */
+
+/**
+ * Garante a criação automática do usuário MASTER no Supabase:
+ * Login/Email: master@kaipira.com
+ * Senha: DNDIGQOL
+ * Cargo: master
+ * Acesso Irrestrito
+ */
+export async function garantirMasterSupabase(): Promise<UsuarioSistema | null> {
+  const masterData: UsuarioSistema = {
+    id: 'usr-master-0',
+    nome: 'ADMINISTRADOR MASTER GERAL',
+    email: 'master@kaipira.com',
+    telefone: '(19) 9-9999-9999',
+    cargo: 'master',
+    status: 'ativo',
+    senha: 'DNDIGQOL',
+    criado_em: '2026-01-01T00:00:00Z',
+    atualizado_em: new Date().toISOString(),
+  };
+
+  try {
+    // Tenta upsert na tabela 'usuarios'
+    const { data, error } = await supabase
+      .from('usuarios')
+      .upsert(
+        {
+          nome: masterData.nome,
+          email: masterData.email,
+          telefone: masterData.telefone,
+          cargo: masterData.cargo,
+          status: masterData.status,
+          senha: masterData.senha,
+          atualizado_em: new Date().toISOString(),
+        },
+        { onConflict: 'email' }
+      )
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Aviso ao sincronizar Master no Supabase:', error.message);
+      return masterData;
+    }
+
+    return (data as UsuarioSistema) || masterData;
+  } catch (err) {
+    console.warn('Falha na sincronização do Master:', err);
+    return masterData;
+  }
+}
+
+/**
+ * Lista todos os usuários do sistema diretamente do Supabase
+ */
+export async function fetchUsuariosSupabase(): Promise<UsuarioSistema[]> {
+  try {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .order('nome', { ascending: true });
+
+    if (error) {
+      console.warn('Tabela usuarios no Supabase ainda não inicializada ou inacessível:', error.message);
+      // Retorna seed inicial com o Master garantido
+      return INITIAL_USUARIOS;
+    }
+
+    if (!data || data.length === 0) {
+      // Auto-seeda o usuário master se a tabela estiver vazia
+      await garantirMasterSupabase();
+      return INITIAL_USUARIOS;
+    }
+
+    // Garante que o Master sempre conste na lista
+    const hasMaster = data.some(
+      (u: any) => u.email === 'master@kaipira.com' || u.cargo === 'master'
+    );
+    if (!hasMaster) {
+      const master = await garantirMasterSupabase();
+      if (master) return [master, ...data];
+    }
+
+    return data as UsuarioSistema[];
+  } catch (err) {
+    console.warn('Erro ao carregar usuários do Supabase:', err);
+    return INITIAL_USUARIOS;
+  }
+}
+
+/**
+ * Cadastra ou edita um usuário no Supabase
+ * Regras:
+ * - Nome salvo em UPPERCASE
+ * - Telefone com máscara obrigatória (99) 9-9999-9999
+ * - Email único, formato livre
+ * - Cargo: master, admin, atendente, cozinha, garcom, entregador
+ */
+export async function salvarUsuarioSupabase(
+  usuario: Partial<UsuarioSistema>
+): Promise<{ success: boolean; data?: UsuarioSistema; error?: string }> {
+  if (!usuario.nome || !usuario.nome.trim()) {
+    return { success: false, error: 'O Nome do usuário é obrigatório.' };
+  }
+  if (!usuario.email || !usuario.email.trim()) {
+    return { success: false, error: 'O E-mail é obrigatório.' };
+  }
+  if (!usuario.telefone || !usuario.telefone.trim()) {
+    return { success: false, error: 'O Telefone é obrigatório.' };
+  }
+
+  const payload: Partial<UsuarioSistema> = {
+    nome: usuario.nome.trim().toUpperCase(),
+    email: usuario.email.trim().toLowerCase(),
+    telefone: formatPhone(usuario.telefone.trim()),
+    cargo: usuario.cargo || 'atendente',
+    status: usuario.status || 'ativo',
+    senha: usuario.senha?.trim() || '1234',
+    atualizado_em: new Date().toISOString(),
+  };
+
+  if (usuario.id && !usuario.id.startsWith('temp-') && !usuario.id.startsWith('usr-')) {
+    payload.id = usuario.id;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .upsert(payload, { onConflict: 'email' })
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Erro Supabase ao salvar usuário:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data: data as UsuarioSistema };
+  } catch (err: any) {
+    console.warn('Exceção ao salvar usuário:', err);
+    return { success: false, error: err.message || 'Erro de conexão com o banco na nuvem.' };
+  }
+}
+
+/**
+ * Exclui um usuário do Supabase
+ */
+export async function excluirUsuarioSupabase(
+  id: string,
+  email?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (email === 'master@kaipira.com') {
+    return { success: false, error: 'O usuário MASTER inicial não pode ser excluído do sistema.' };
+  }
+
+  try {
+    const query = supabase.from('usuarios').delete();
+    const { error } = id ? await query.eq('id', id) : await query.eq('email', email!);
+
+    if (error) {
+      console.warn('Erro ao excluir usuário no Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.warn('Exceção ao excluir usuário:', err);
+    return { success: false, error: err.message || 'Erro de conexão com o banco na nuvem.' };
+  }
+}
+

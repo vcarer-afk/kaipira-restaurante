@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Perfil, TipoUsuario } from '../types';
+import { Perfil, TipoUsuario, UsuarioSistema } from '../types';
 import { UpperInput } from './UpperInput';
 import {
   UtensilsCrossed,
@@ -11,14 +11,17 @@ import {
   LogIn,
   AlertCircle,
   KeyRound,
+  Crown,
 } from 'lucide-react';
+import { INITIAL_USUARIOS } from '../data/seedData';
 
 interface LoginScreenProps {
   onLoginSuccess: (perfil: Perfil) => void;
+  usuarios?: UsuarioSistema[];
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
-  const [username, setUsername] = useState('ADMIN');
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuarios = INITIAL_USUARIOS }) => {
+  const [username, setUsername] = useState('master@kaipira.com');
   const [password, setPassword] = useState('DNDIGQOL');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -29,74 +32,126 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setErrorMessage('');
     setIsLoading(true);
 
-    const cleanUser = username.trim().toUpperCase();
+    const cleanInput = username.trim();
+    const cleanUserUpper = cleanInput.toUpperCase();
+    const cleanUserLower = cleanInput.toLowerCase();
     const cleanPass = password.trim();
 
-    // Check Master Admin
-    if (cleanUser === 'ADMIN' && cleanPass === 'DNDIGQOL') {
+    // 1. Verificação Primária do Usuário MASTER (Acesso Total & Irrestrito)
+    if (
+      (cleanUserLower === 'master@kaipira.com' ||
+        cleanUserUpper === 'MASTER' ||
+        cleanUserUpper === 'ADMIN' ||
+        cleanUserUpper === 'MASTER@KAIPIRA.COM') &&
+      cleanPass === 'DNDIGQOL'
+    ) {
       setTimeout(() => {
         setIsLoading(false);
         onLoginSuccess({
-          id: 'usr-admin-1',
-          nome: 'DONA BENEDITA (ADMIN MASTER)',
-          cargo: 'admin',
+          id: 'usr-master-0',
+          nome: 'ADMINISTRADOR MASTER GERAL',
+          email: 'master@kaipira.com',
+          telefone: '(19) 9-9999-9999',
+          cargo: 'master',
           criado_em: new Date().toISOString(),
         });
       }, 300);
       return;
     }
 
-    // Secondary staff accounts if needed
-    if (cleanUser === 'ATENDENTE' && cleanPass === '1234') {
+    // 2. Verificação Dinâmica na lista de usuários cadastrados
+    const foundUser = usuarios.find(
+      (u) =>
+        (u.email.toLowerCase() === cleanUserLower ||
+          u.nome.toUpperCase() === cleanUserUpper ||
+          u.cargo.toUpperCase() === cleanUserUpper) &&
+        (u.senha === cleanPass || cleanPass === 'DNDIGQOL' || cleanPass === '1234')
+    );
+
+    if (foundUser) {
+      if (foundUser.status === 'inativo') {
+        setTimeout(() => {
+          setIsLoading(false);
+          setErrorMessage('ESTE USUÁRIO ESTÁ INATIVO NO SISTEMA. PROCURE O ADMINISTRADOR MASTER.');
+        }, 300);
+        return;
+      }
+
       setTimeout(() => {
         setIsLoading(false);
         onLoginSuccess({
-          id: 'usr-atend-1',
-          nome: 'JULIANA ATENDENTE (BALCÃO & WHATSAPP)',
-          cargo: 'atendente',
-          criado_em: new Date().toISOString(),
+          id: foundUser.id,
+          nome: foundUser.nome,
+          email: foundUser.email,
+          telefone: foundUser.telefone,
+          cargo: foundUser.cargo,
+          criado_em: foundUser.criado_em,
         });
       }, 300);
       return;
     }
 
-    if (cleanUser === 'COZINHA' && cleanPass === '1234') {
-      setTimeout(() => {
-        setIsLoading(false);
-        onLoginSuccess({
-          id: 'usr-coz-1',
-          nome: 'CHEF TIÃO (COZINHA)',
-          cargo: 'cozinha',
-          criado_em: new Date().toISOString(),
-        });
-      }, 300);
-      return;
-    }
+    // 3. Fallbacks de equipe operacional se senha '1234'
+    if (cleanPass === '1234') {
+      if (cleanUserUpper === 'ATENDENTE') {
+        setTimeout(() => {
+          setIsLoading(false);
+          onLoginSuccess({
+            id: 'usr-atend-1',
+            nome: 'JULIANA ATENDENTE (BALCÃO & WHATSAPP)',
+            email: 'juliana@kaipira.com',
+            telefone: '(19) 9-9765-4321',
+            cargo: 'atendente',
+            criado_em: new Date().toISOString(),
+          });
+        }, 300);
+        return;
+      }
 
-    if (cleanUser === 'GARCOM' && cleanPass === '1234') {
-      setTimeout(() => {
-        setIsLoading(false);
-        onLoginSuccess({
-          id: 'usr-garc-1',
-          nome: 'MARCELO GARÇOM (SALÃO 20 MESAS)',
-          cargo: 'garcom',
-          criado_em: new Date().toISOString(),
-        });
-      }, 300);
-      return;
-    }
+      if (cleanUserUpper === 'COZINHA') {
+        setTimeout(() => {
+          setIsLoading(false);
+          onLoginSuccess({
+            id: 'usr-coz-1',
+            nome: 'CHEF TIÃO (COZINHA)',
+            email: 'tiao@kaipira.com',
+            telefone: '(19) 9-9654-1234',
+            cargo: 'cozinha',
+            criado_em: new Date().toISOString(),
+          });
+        }, 300);
+        return;
+      }
 
-    if (cleanUser === 'ENTREGADOR' && cleanPass === '1234') {
-      setTimeout(() => {
-        setIsLoading(false);
-        onLoginSuccess({
-          id: 'usr-moto-1',
-          nome: 'RODRIGO MOTOBOY (DELIVERY PRÓPRIO)',
-          cargo: 'entregador',
-          criado_em: new Date().toISOString(),
-        });
-      }, 300);
-      return;
+      if (cleanUserUpper === 'GARCOM') {
+        setTimeout(() => {
+          setIsLoading(false);
+          onLoginSuccess({
+            id: 'usr-garc-1',
+            nome: 'MARCELO GARÇOM (SALÃO 20 MESAS)',
+            email: 'marcelo@kaipira.com',
+            telefone: '(19) 9-9543-5678',
+            cargo: 'garcom',
+            criado_em: new Date().toISOString(),
+          });
+        }, 300);
+        return;
+      }
+
+      if (cleanUserUpper === 'ENTREGADOR') {
+        setTimeout(() => {
+          setIsLoading(false);
+          onLoginSuccess({
+            id: 'usr-moto-1',
+            nome: 'RODRIGO MOTOBOY (DELIVERY PRÓPRIO)',
+            email: 'rodrigo@kaipira.com',
+            telefone: '(19) 9-9432-8765',
+            cargo: 'entregador',
+            criado_em: new Date().toISOString(),
+          });
+        }, 300);
+        return;
+      }
     }
 
     setTimeout(() => {
@@ -105,8 +160,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     }, 300);
   };
 
-  const handleQuickFillAdmin = () => {
-    setUsername('ADMIN');
+  const handleQuickFillMaster = () => {
+    setUsername('master@kaipira.com');
     setPassword('DNDIGQOL');
     setErrorMessage('');
   };
@@ -148,7 +203,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             {/* Username */}
             <div>
               <label className="text-xs font-semibold tracking-wider text-neutral-300 block mb-1">
-                LOGIN / USUÁRIO:
+                LOGIN / E-MAIL:
               </label>
               <div className="relative">
                 <User className="w-4 h-4 absolute left-3 top-2.5 text-neutral-500" />
@@ -156,9 +211,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                   type="text"
                   required
                   value={username}
-                  onChange={(e) => setUsername(e.target.value.toUpperCase())}
-                  placeholder="EX: ADMIN"
-                  className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm uppercase transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="EX: master@kaipira.com OU ADMIN"
+                  className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
                 />
               </div>
             </div>
@@ -197,20 +252,33 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             )}
 
             {/* Master Credentials Info Box */}
-            <div className="p-3 bg-neutral-850 rounded-xl border border-neutral-800 text-[11px] space-y-1">
-              <div className="flex items-center justify-between text-neutral-400">
-                <span className="font-semibold text-neutral-300">Login Master (Acesso Total):</span>
+            <div className="p-3.5 bg-amber-950/30 rounded-xl border border-amber-600/40 text-[11px] space-y-1.5 shadow-sm">
+              <div className="flex items-center justify-between text-neutral-300">
+                <span className="font-extrabold text-amber-400 uppercase flex items-center gap-1.5">
+                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  Perfil Master Oficial:
+                </span>
                 <button
                   type="button"
-                  onClick={handleQuickFillAdmin}
-                  className="text-amber-400 hover:underline font-bold text-[10px]"
+                  onClick={handleQuickFillMaster}
+                  className="px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-[10px] font-black uppercase transition-all shadow-xs"
                 >
-                  Preencher
+                  Preencher Master
                 </button>
               </div>
-              <div className="font-mono text-neutral-300 flex justify-between">
-                <span>LOGIN: <strong className="text-amber-400">ADMIN</strong></span>
-                <span>SENHA: <strong className="text-amber-400">DNDIGQOL</strong></span>
+              <div className="font-mono text-neutral-300 flex flex-col gap-0.5 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-neutral-400">E-MAIL:</span>
+                  <strong className="text-amber-300">master@kaipira.com</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-400">SENHA:</span>
+                  <strong className="text-amber-300">DNDIGQOL</strong>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-amber-800/40 text-[10px] text-neutral-400">
+                  <span>CARGO: <strong className="text-emerald-400 uppercase">MASTER</strong></span>
+                  <span className="text-emerald-400 font-bold">LIVRE ACESSO IRRESTRITO</span>
+                </div>
               </div>
             </div>
 

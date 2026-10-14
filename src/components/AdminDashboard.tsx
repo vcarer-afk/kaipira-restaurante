@@ -154,6 +154,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 relative z-10">
           <button
+            onClick={() => onNavigate('cadastros')}
+            className="px-4 py-2.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-transform hover:scale-105 active:scale-95 uppercase cursor-pointer"
+          >
+            <Users className="w-4 h-4 text-amber-400" />
+            <span>Central de Cadastros</span>
+          </button>
+
+          <button
             onClick={() => onNavigate('pdv')}
             className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-lg transition-transform hover:scale-105 active:scale-95 uppercase"
           >
@@ -519,8 +527,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
+          {/* Card Especial: Central de Cadastros do App */}
+          <div className="bg-neutral-850 p-5 rounded-2xl border border-amber-500/40 shadow-md relative overflow-hidden">
+            <div className="absolute right-0 top-0 bottom-0 w-32 bg-radial from-amber-600/15 via-transparent to-transparent pointer-events-none" />
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-amber-400" />
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                  Central de Cadastros do App
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-900">
+                100% NUVEM
+              </span>
+            </div>
+
+            <p className="text-xs text-neutral-300 mb-3 leading-relaxed">
+              Aqui devem ficar todos os cadastros do restaurante:
+            </p>
+
+            <div className="grid grid-cols-2 gap-2 text-xs mb-3.5">
+              <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                <span className="text-[10px] text-amber-400 font-bold uppercase block">Usuários / Equipe</span>
+                <span className="text-neutral-300 font-bold block text-[11px] truncate">CRUD & Master DNDIGQOL</span>
+              </div>
+              <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                <span className="text-[10px] text-cyan-400 font-bold uppercase block">Clientes</span>
+                <span className="text-neutral-300 font-bold block text-[11px] truncate">{clientes.length} Cadastrados</span>
+              </div>
+              <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                <span className="text-[10px] text-emerald-400 font-bold uppercase block">Cardápio & Pratos</span>
+                <span className="text-neutral-300 font-bold block text-[11px] truncate">Preços & Opcionais</span>
+              </div>
+              <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                <span className="text-[10px] text-purple-400 font-bold uppercase block">Cargos & Mesas</span>
+                <span className="text-neutral-300 font-bold block text-[11px] truncate">Bypass Master (20 Mesas)</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigate('cadastros')}
+              className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs uppercase rounded-xl flex items-center justify-center gap-2 shadow-md transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+            >
+              <Users className="w-4 h-4" />
+              <span>Acessar Todos os Cadastros</span>
+            </button>
+          </div>
+
           {/* Quick Access Grid */}
           <div className="grid grid-cols-2 gap-2 text-xs font-bold uppercase">
+            <button
+              onClick={() => onNavigate('cadastros')}
+              className="p-3 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 flex items-center justify-center gap-2 transition-colors col-span-2 shadow-xs cursor-pointer"
+            >
+              <Users className="w-4 h-4 text-amber-400" />
+              <span>Central de Cadastros</span>
+            </button>
             <button
               onClick={() => onNavigate('configuracoes')}
               className="p-3 rounded-xl bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 flex items-center justify-center gap-2 transition-colors"

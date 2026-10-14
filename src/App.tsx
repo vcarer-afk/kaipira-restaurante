@@ -6,6 +6,7 @@ import {
   Cliente,
   ItemEstoque,
   Perfil,
+  UsuarioSistema,
   CaixaDiario,
   Pedido,
   Reserva,
@@ -17,6 +18,7 @@ import {
 import { Header, ActiveTab } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
 import { AdminDashboard } from './components/AdminDashboard';
+import { CadastrosHub } from './components/CadastrosHub';
 import { SettingsManager } from './components/SettingsManager';
 import { SlideMenuRight } from './components/SlideMenuRight';
 import { POSNewOrder } from './components/POSNewOrder';
@@ -39,6 +41,7 @@ import {
   INITIAL_CLIENTES,
   INITIAL_ESTOQUE,
   INITIAL_PERFIS,
+  INITIAL_USUARIOS,
   INITIAL_CAIXA,
   INITIAL_PEDIDOS,
   BAIRROS_PIRACICABA,
@@ -58,6 +61,8 @@ import {
   registrarMovimentacaoCaixaSupabase,
   criarReservaSupabase,
   abaterSaldoMensalistaSupabase,
+  fetchUsuariosSupabase,
+  garantirMasterSupabase,
 } from './services/supabaseClient';
 
 export default function App() {
@@ -80,6 +85,7 @@ export default function App() {
   const [produtos, setProdutos] = useState<Produto[]>(INITIAL_PRODUTOS);
   const [mesas, setMesas] = useState<Mesa[]>(INITIAL_MESAS);
   const [clientes, setClientes] = useState<Cliente[]>(INITIAL_CLIENTES);
+  const [usuarios, setUsuarios] = useState<UsuarioSistema[]>(INITIAL_USUARIOS);
   const [estoque, setEstoque] = useState<ItemEstoque[]>(INITIAL_ESTOQUE);
   const [caixa, setCaixa] = useState<CaixaDiario>(INITIAL_CAIXA);
   const [pedidos, setPedidos] = useState<Pedido[]>(INITIAL_PEDIDOS);
@@ -172,6 +178,16 @@ export default function App() {
       if (clientesRes.status === 'fulfilled' && clientesRes.value.data && clientesRes.value.data.length > 0) {
         setClientes(clientesRes.value.data as Cliente[]);
       }
+
+      // Carrega usuários da nuvem Supabase
+      try {
+        const users = await fetchUsuariosSupabase();
+        if (users && users.length > 0) {
+          setUsuarios(users);
+        }
+      } catch (err) {
+        console.warn('Conectando a usuarios do Supabase...', err);
+      }
     } catch (err) {
       console.warn('Conectando às tabelas em nuvem do Supabase...', err);
     } finally {
@@ -197,6 +213,16 @@ export default function App() {
               const loaded = payload.new.dados || payload.new;
               setConfiguracoes((prev) => ({ ...prev, ...loaded }));
               setCloudConfigSyncedAt(new Date());
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'usuarios' },
+          async () => {
+            const updated = await fetchUsuariosSupabase();
+            if (updated && updated.length > 0) {
+              setUsuarios(updated);
             }
           }
         )
@@ -259,7 +285,7 @@ export default function App() {
     setCurrentPerfil(perfil);
     setCurrentRole(perfil.cargo);
 
-    if (perfil.cargo === 'admin') {
+    if (perfil.cargo === 'master' || perfil.cargo === 'admin') {
       setActiveTab('dashboard');
     } else if (perfil.cargo === 'cozinha') {
       setActiveTab('kds');
@@ -284,7 +310,7 @@ export default function App() {
     if (currentPerfil) {
       setCurrentPerfil({ ...currentPerfil, cargo: role });
     }
-    if (role === 'admin') setActiveTab('dashboard');
+    if (role === 'master' || role === 'admin') setActiveTab('dashboard');
     else if (role === 'cozinha') setActiveTab('kds');
     else if (role === 'garcom') setActiveTab('mesas');
     else if (role === 'entregador') setActiveTab('expedicao');
@@ -425,7 +451,7 @@ export default function App() {
 
   // IF NOT AUTHENTICATED -> SHOW LOGIN SCREEN FIRST
   if (!isAuthenticated) {
-    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} usuarios={usuarios} />;
   }
 
   return (
@@ -470,6 +496,29 @@ export default function App() {
             onAbrirCaixa={handleAbrirCaixa}
             onFecharCaixa={handleFecharCaixa}
             onMovimentacao={handleMovimentacaoCaixa}
+          />
+        )}
+
+        {/* Central de Cadastros */}
+        {activeTab === 'cadastros' && (
+          <CadastrosHub
+            usuarios={usuarios}
+            onReloadUsuarios={async () => {
+              const u = await fetchUsuariosSupabase();
+              setUsuarios(u);
+            }}
+            currentPerfil={currentPerfil}
+            clientes={clientes}
+            produtos={produtos}
+            categorias={categorias}
+            mesas={mesas}
+            onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+            onNavigateTab={(tab) => {
+              setActiveTab(tab);
+              if (tab !== 'pdv') setSelectedMesaNumber(undefined);
+            }}
+            onCadastrarCliente={handleCadastrarCliente}
+            onTogglePauseProduto={handleTogglePauseProduto}
           />
         )}
 

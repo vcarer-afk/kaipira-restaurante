@@ -5,6 +5,7 @@ import {
   Mesa,
   Cliente,
   Perfil,
+  UsuarioSistema,
   Pedido,
   CaixaDiario,
   BairroTaxa,
@@ -265,12 +266,76 @@ export const INITIAL_ESTOQUE: ItemEstoque[] = [
   { id: 10, item_nome: 'EMBALAGEM TÉRMICA MARMITEX DELIVERY (CX 100UN)', quantidade_atual: 2, unidade_medida: 'cx', estoque_minimo: 3, fornecedor_info: 'PIRAPACK EMBALAGENS', atualizado_em: new Date().toISOString() }, // ALERTA
 ];
 
+export const INITIAL_USUARIOS: UsuarioSistema[] = [
+  {
+    id: 'usr-master-0',
+    nome: 'ADMINISTRADOR MASTER GERAL',
+    email: 'master@kaipira.com',
+    telefone: '(19) 9-9999-9999',
+    cargo: 'master',
+    status: 'ativo',
+    senha: 'DNDIGQOL',
+    criado_em: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'usr-admin-1',
+    nome: 'DONA BENEDITA (ADMIN / GERENTE)',
+    email: 'benedita@kaipira.com',
+    telefone: '(19) 9-9812-3456',
+    cargo: 'admin',
+    status: 'ativo',
+    senha: 'DNDIGQOL',
+    criado_em: '2026-01-01T08:00:00Z',
+  },
+  {
+    id: 'usr-atend-1',
+    nome: 'JULIANA ATENDENTE (BALCÃO & WHATSAPP)',
+    email: 'juliana@kaipira.com',
+    telefone: '(19) 9-9765-4321',
+    cargo: 'atendente',
+    status: 'ativo',
+    senha: '1234',
+    criado_em: '2026-01-01T08:00:00Z',
+  },
+  {
+    id: 'usr-coz-1',
+    nome: 'CHEF TIÃO (COZINHA)',
+    email: 'tiao@kaipira.com',
+    telefone: '(19) 9-9654-1234',
+    cargo: 'cozinha',
+    status: 'ativo',
+    senha: '1234',
+    criado_em: '2026-01-01T08:00:00Z',
+  },
+  {
+    id: 'usr-garc-1',
+    nome: 'MARCELO GARÇOM (SALÃO 20 MESAS)',
+    email: 'marcelo@kaipira.com',
+    telefone: '(19) 9-9543-5678',
+    cargo: 'garcom',
+    status: 'ativo',
+    senha: '1234',
+    criado_em: '2026-01-01T08:00:00Z',
+  },
+  {
+    id: 'usr-moto-1',
+    nome: 'RODRIGO MOTOBOY (DELIVERY PRÓPRIO)',
+    email: 'rodrigo@kaipira.com',
+    telefone: '(19) 9-9432-8765',
+    cargo: 'entregador',
+    status: 'ativo',
+    senha: '1234',
+    criado_em: '2026-01-01T08:00:00Z',
+  },
+];
+
 export const INITIAL_PERFIS: Perfil[] = [
-  { id: 'usr-admin-1', nome: 'DONA BENEDITA (ADMIN / GERENTE)', cargo: 'admin', criado_em: '2026-01-01T08:00:00Z' },
-  { id: 'usr-atend-1', nome: 'JULIANA ATENDENTE (BALCÃO & WHATSAPP)', cargo: 'atendente', criado_em: '2026-01-01T08:00:00Z' },
-  { id: 'usr-coz-1', nome: 'CHEF TIÃO (COZINHA)', cargo: 'cozinha', criado_em: '2026-01-01T08:00:00Z' },
-  { id: 'usr-garc-1', nome: 'MARCELO GARÇOM (SALÃO 20 MESAS)', cargo: 'garcom', criado_em: '2026-01-01T08:00:00Z' },
-  { id: 'usr-moto-1', nome: 'RODRIGO MOTOBOY (DELIVERY PRÓPRIO)', cargo: 'entregador', criado_em: '2026-01-01T08:00:00Z' },
+  { id: 'usr-master-0', nome: 'ADMINISTRADOR MASTER GERAL', email: 'master@kaipira.com', telefone: '(19) 9-9999-9999', cargo: 'master', criado_em: '2026-01-01T00:00:00Z' },
+  { id: 'usr-admin-1', nome: 'DONA BENEDITA (ADMIN / GERENTE)', email: 'benedita@kaipira.com', telefone: '(19) 9-9812-3456', cargo: 'admin', criado_em: '2026-01-01T08:00:00Z' },
+  { id: 'usr-atend-1', nome: 'JULIANA ATENDENTE (BALCÃO & WHATSAPP)', email: 'juliana@kaipira.com', telefone: '(19) 9-9765-4321', cargo: 'atendente', criado_em: '2026-01-01T08:00:00Z' },
+  { id: 'usr-coz-1', nome: 'CHEF TIÃO (COZINHA)', email: 'tiao@kaipira.com', telefone: '(19) 9-9654-1234', cargo: 'cozinha', criado_em: '2026-01-01T08:00:00Z' },
+  { id: 'usr-garc-1', nome: 'MARCELO GARÇOM (SALÃO 20 MESAS)', email: 'marcelo@kaipira.com', telefone: '(19) 9-9543-5678', cargo: 'garcom', criado_em: '2026-01-01T08:00:00Z' },
+  { id: 'usr-moto-1', nome: 'RODRIGO MOTOBOY (DELIVERY PRÓPRIO)', email: 'rodrigo@kaipira.com', telefone: '(19) 9-9432-8765', cargo: 'entregador', criado_em: '2026-01-01T08:00:00Z' },
 ];
 
 export const INITIAL_CAIXA: CaixaDiario = {

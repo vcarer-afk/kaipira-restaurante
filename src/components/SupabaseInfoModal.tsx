@@ -18,8 +18,11 @@ export const SupabaseInfoModal: React.FC<SupabaseInfoModalProps> = ({ isOpen, on
 
 -- 1. TIPOS ENUM
 DO $$ BEGIN
-    CREATE TYPE tipo_usuario AS ENUM ('admin', 'atendente', 'cozinha', 'garcom', 'entregador');
+    CREATE TYPE tipo_usuario AS ENUM ('master', 'admin', 'atendente', 'cozinha', 'garcom', 'entregador');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- Se o tipo já existir no seu banco sem 'master', adicione:
+ALTER TYPE tipo_usuario ADD VALUE IF NOT EXISTS 'master';
 
 DO $$ BEGIN
     CREATE TYPE tipo_pedido AS ENUM ('salão', 'retirada', 'delivery');
@@ -33,7 +36,39 @@ DO $$ BEGIN
     CREATE TYPE forma_pagamento AS ENUM ('dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'mensalista');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
--- 2. USUÁRIOS & PERFIS
+-- 2. TABELA DE USUÁRIOS & FUNCIONÁRIOS (COM USUÁRIO MASTER INICIAL)
+CREATE TABLE IF NOT EXISTS usuarios (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome VARCHAR(150) NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    telefone VARCHAR(25) NOT NULL,
+    cargo VARCHAR(50) NOT NULL DEFAULT 'atendente',
+    status VARCHAR(20) NOT NULL DEFAULT 'ativo',
+    senha VARCHAR(100) NOT NULL DEFAULT 'DNDIGQOL',
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- SEED DO USUÁRIO MASTER INICIAL (master@kaipira.com / DNDIGQOL / CARGO: master)
+INSERT INTO usuarios (nome, email, telefone, cargo, status, senha)
+VALUES (
+    'ADMINISTRADOR MASTER GERAL',
+    'master@kaipira.com',
+    '(19) 9-9999-9999',
+    'master',
+    'ativo',
+    'DNDIGQOL'
+)
+ON CONFLICT (email) DO UPDATE 
+SET cargo = 'master',
+    senha = 'DNDIGQOL',
+    status = 'ativo',
+    atualizado_em = NOW();
+
+ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acesso publico usuarios" ON usuarios;
+CREATE POLICY "Acesso publico usuarios" ON usuarios FOR ALL USING (true) WITH CHECK (true);
+
 CREATE TABLE IF NOT EXISTS perfis (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     nome VARCHAR(100) NOT NULL,
@@ -186,6 +221,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- 10. ATIVAÇÃO DO SUPABASE REALTIME
 ALTER PUBLICATION supabase_realtime ADD TABLE configuracoes;
+ALTER PUBLICATION supabase_realtime ADD TABLE usuarios;
 ALTER PUBLICATION supabase_realtime ADD TABLE pedidos;
 ALTER PUBLICATION supabase_realtime ADD TABLE mesas;
 ALTER PUBLICATION supabase_realtime ADD TABLE estoque;
