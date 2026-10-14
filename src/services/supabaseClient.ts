@@ -13,6 +13,8 @@ import {
   TipoPedido,
   FormaPagamento,
   UsuarioSistema,
+  CardapioDiarioConfig,
+  ItemCardapioDiario,
 } from '../types';
 import { INITIAL_CONFIGURACOES, INITIAL_USUARIOS } from '../data/seedData';
 import { formatPhone } from '../utils/formatters';
@@ -634,4 +636,117 @@ export async function excluirUsuarioSupabase(
     return { success: false, error: err.message || 'Erro de conexão com o banco na nuvem.' };
   }
 }
+
+/**
+ * =========================================================================
+ * MÓDULO DE MONTAGEM DO CARDÁPIO DIÁRIO DO RESTAURANTE (100% SUPABASE)
+ * =========================================================================
+ */
+
+/**
+ * Salva a seleção do Cardápio Diário no Supabase (na tabela 'cardapio_diario' e em 'configuracoes')
+ */
+export async function salvarCardapioDiarioSupabase(
+  cardapio: CardapioDiarioConfig
+): Promise<{ success: boolean; data?: CardapioDiarioConfig; error?: string }> {
+  try {
+    const payload = {
+      data: cardapio.data,
+      status: cardapio.status,
+      confirmado_em: cardapio.confirmado_em || new Date().toISOString(),
+      confirmado_por: cardapio.confirmado_por || 'GERENTE / ATENDIMENTO',
+      itens: cardapio.itens,
+      atualizado_em: new Date().toISOString(),
+    };
+
+    // 1. Tenta salvar na tabela 'cardapio_diario'
+    const { data, error } = await supabase
+      .from('cardapio_diario')
+      .upsert(payload, { onConflict: 'data' })
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Aviso ao gravar em cardapio_diario no Supabase:', error.message);
+    }
+
+    // 2. Redundância em 'configuracoes' (para garantir sincronização total)
+    try {
+      const { data: confRow } = await supabase
+        .from('configuracoes')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+      const existingDados = confRow?.dados || {};
+      await supabase
+        .from('configuracoes')
+        .upsert({
+          id: 1,
+          dados: {
+            ...existingDados,
+            cardapio_diario_atual: payload,
+          },
+        }, { onConflict: 'id' });
+    } catch (confErr) {
+      console.warn('Aviso redundância cardápio configuracoes:', confErr);
+    }
+
+    return {
+      success: true,
+      data: (data as CardapioDiarioConfig) || cardapio,
+    };
+  } catch (err: any) {
+    console.warn('Exceção ao salvar cardapio diario no Supabase:', err);
+    return { success: false, error: err.message || 'Erro de conexão com o banco na nuvem.' };
+  }
+}
+
+/**
+ * Busca a configuração do Cardápio Diário para a data especificada (padrão hoje)
+ */
+export async function fetchCardapioDiarioSupabase(
+  dataStr?: string
+): Promise<CardapioDiarioConfig | null> {
+  const hoje = dataStr || new Date().toISOString().split('T')[0];
+
+  try {
+    // 1. Tenta buscar em 'cardapio_diario'
+    const { data, error } = await supabase
+      .from('cardapio_diario')
+      .select('*')
+      .eq('data', hoje)
+      .maybeSingle();
+
+    if (!error && data) {
+      return {
+        data: data.data,
+        status: data.status || 'aguardando',
+        confirmado_em: data.confirmado_em,
+        confirmado_por: data.confirmado_por,
+        itens: Array.isArray(data.itens) ? data.itens : [],
+      };
+    }
+
+    // 2. Fallback: verifica se há salvo em configuracoes.dados.cardapio_diario_atual
+    const { data: confData } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (confData?.dados?.cardapio_diario_atual) {
+      const saved = confData.dados.cardapio_diario_atual;
+      if (saved.data === hoje) {
+        return saved as CardapioDiarioConfig;
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('Erro ao carregar cardapio diario do Supabase:', err);
+    return null;
+  }
+}
+
 

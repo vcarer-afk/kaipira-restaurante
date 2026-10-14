@@ -43,6 +43,7 @@ import {
   UserCog,
   Briefcase,
   Store,
+  Sparkles,
 } from 'lucide-react';
 
 interface CadastrosHubProps {
@@ -868,12 +869,22 @@ CREATE POLICY "Acesso publico usuarios" ON usuarios FOR ALL USING (true) WITH CH
               </p>
             </div>
 
-            <button
-              onClick={() => onNavigateTab('pdv')}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold uppercase transition-all shadow-sm"
-            >
-              Ir para Atendimento / PDV
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => onNavigateTab('cardapio-dia')}
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-white" />
+                <span>Montar Cardápio de Hoje</span>
+              </button>
+
+              <button
+                onClick={() => onNavigateTab('pdv')}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-xl text-xs font-bold uppercase transition-all shadow-sm"
+              >
+                Ir para Atendimento / PDV
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-3">

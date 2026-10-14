@@ -14,11 +14,13 @@ import {
   TipoUsuario,
   StatusPedido,
   ConfiguracoesSistema,
+  CardapioDiarioConfig,
 } from './types';
 import { Header, ActiveTab } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CadastrosHub } from './components/CadastrosHub';
+import { DailyMenuBuilder } from './components/DailyMenuBuilder';
 import { SettingsManager } from './components/SettingsManager';
 import { SlideMenuRight } from './components/SlideMenuRight';
 import { POSNewOrder } from './components/POSNewOrder';
@@ -63,6 +65,8 @@ import {
   abaterSaldoMensalistaSupabase,
   fetchUsuariosSupabase,
   garantirMasterSupabase,
+  salvarCardapioDiarioSupabase,
+  fetchCardapioDiarioSupabase,
 } from './services/supabaseClient';
 
 export default function App() {
@@ -91,6 +95,11 @@ export default function App() {
   const [pedidos, setPedidos] = useState<Pedido[]>(INITIAL_PEDIDOS);
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [bairros, setBairros] = useState<BairroTaxa[]>(BAIRROS_PIRACICABA);
+  const [cardapioDiario, setCardapioDiario] = useState<CardapioDiarioConfig>({
+    data: new Date().toISOString().split('T')[0],
+    status: 'aguardando',
+    itens: [],
+  });
 
   // Modals
   const [printReceiptPedido, setPrintReceiptPedido] = useState<Pedido | null>(null);
@@ -188,6 +197,16 @@ export default function App() {
       } catch (err) {
         console.warn('Conectando a usuarios do Supabase...', err);
       }
+
+      // Carrega cardápio diário da nuvem Supabase
+      try {
+        const cd = await fetchCardapioDiarioSupabase();
+        if (cd) {
+          setCardapioDiario(cd);
+        }
+      } catch (err) {
+        console.warn('Conectando ao cardápio diário no Supabase...', err);
+      }
     } catch (err) {
       console.warn('Conectando às tabelas em nuvem do Supabase...', err);
     } finally {
@@ -214,6 +233,14 @@ export default function App() {
               setConfiguracoes((prev) => ({ ...prev, ...loaded }));
               setCloudConfigSyncedAt(new Date());
             }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'cardapio_diario' },
+          async () => {
+            const cd = await fetchCardapioDiarioSupabase();
+            if (cd) setCardapioDiario(cd);
           }
         )
         .on(
@@ -447,6 +474,12 @@ export default function App() {
     setReservas((prev) => [...prev, nova]);
   };
 
+  // Cardápio Diário operations via Supabase
+  const handleSaveCardapioDiario = async (novo: CardapioDiarioConfig) => {
+    setCardapioDiario(novo);
+    await salvarCardapioDiarioSupabase(novo);
+  };
+
   const pendingKdsCount = pedidos.filter((p) => ['pendente', 'em_preparacao'].includes(p.status)).length;
 
   // IF NOT AUTHENTICATED -> SHOW LOGIN SCREEN FIRST
@@ -522,6 +555,22 @@ export default function App() {
           />
         )}
 
+        {/* Montagem do Cardápio Diário do Restaurante */}
+        {activeTab === 'cardapio-dia' && (
+          <DailyMenuBuilder
+            produtos={produtos}
+            categorias={categorias}
+            cardapioDiario={cardapioDiario}
+            onSaveCardapio={handleSaveCardapioDiario}
+            currentPerfil={currentPerfil}
+            onClose={() => setActiveTab('dashboard')}
+            onNavigateTab={(tab) => {
+              setActiveTab(tab);
+              if (tab !== 'pdv') setSelectedMesaNumber(undefined);
+            }}
+          />
+        )}
+
         {/* Configurações do Sistema */}
         {activeTab === 'configuracoes' && (
           <SettingsManager
@@ -547,6 +596,8 @@ export default function App() {
             }}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}
             onTogglePauseProduto={handleTogglePauseProduto}
+            cardapioDiario={cardapioDiario}
+            onOpenCardapioBuilder={() => setActiveTab('cardapio-dia')}
           />
         )}
 

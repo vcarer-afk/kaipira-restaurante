@@ -219,9 +219,25 @@ INSERT INTO configuracoes (id, nome_restaurante, email, telefone, cep, endereco,
 VALUES (1, 'RESTAURANTE KAIPIRA', 'contato@restaurantekaipira.com.br', '(19) 3-4221-1980', '13400-010', 'RUA DO ROSÁRIO', '1240', 'CENTRO', 'PIRACICABA', 'SP', 'SEGUNDA A SÁBADO, DAS 11H ÀS 14H', 'direita', 'ambar')
 ON CONFLICT (id) DO NOTHING;
 
--- 10. ATIVAÇÃO DO SUPABASE REALTIME
+-- 10. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (MONTAGEM DO DIA)
+CREATE TABLE IF NOT EXISTS cardapio_diario (
+    id SERIAL PRIMARY KEY,
+    data DATE UNIQUE NOT NULL DEFAULT CURRENT_DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'aguardando',
+    confirmado_em TIMESTAMP WITH TIME ZONE,
+    confirmado_por VARCHAR(150),
+    itens JSONB DEFAULT '[]'::jsonb,
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE cardapio_diario ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acesso publico cardapio_diario" ON cardapio_diario;
+CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING (true) WITH CHECK (true);
+
+-- 11. ATIVAÇÃO DO SUPABASE REALTIME
 ALTER PUBLICATION supabase_realtime ADD TABLE configuracoes;
 ALTER PUBLICATION supabase_realtime ADD TABLE usuarios;
+ALTER PUBLICATION supabase_realtime ADD TABLE cardapio_diario;
 ALTER PUBLICATION supabase_realtime ADD TABLE pedidos;
 ALTER PUBLICATION supabase_realtime ADD TABLE mesas;
 ALTER PUBLICATION supabase_realtime ADD TABLE estoque;

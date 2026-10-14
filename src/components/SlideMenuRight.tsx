@@ -20,6 +20,7 @@ import {
   Lock,
   Users,
   Crown,
+  Sparkles,
 } from 'lucide-react';
 
 interface SlideMenuRightProps {
@@ -67,6 +68,13 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
       desc: 'Usuários, funcionários, clientes e cardápio',
       icon: Users,
       roles: ['admin', 'master'],
+    },
+    {
+      id: 'cardapio-dia' as ActiveTab,
+      label: 'MONTAGEM CARDÁPIO DE HOJE',
+      desc: 'Defina pratos e marmitex do dia (11h-14h)',
+      icon: Sparkles,
+      roles: ['admin', 'master', 'atendente'],
     },
     {
       id: 'pdv' as ActiveTab,

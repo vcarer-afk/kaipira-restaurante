@@ -7,6 +7,7 @@ import {
   FormaPagamento,
   BairroTaxa,
   Pedido,
+  CardapioDiarioConfig,
 } from '../types';
 import { UpperInput, UpperTextarea } from './UpperInput';
 import { formatBRL, consultarViaCep, cleanDigits, playAlertChime } from '../utils/formatters';
@@ -24,6 +25,7 @@ import {
   CheckCircle2,
   Ban,
   Calendar,
+  Sparkles,
 } from 'lucide-react';
 
 interface CartItem {
@@ -48,6 +50,8 @@ interface POSNewOrderProps {
   onOrderCreated: (pedido: Pedido) => void;
   onPrintReceipt: (pedido: Pedido) => void;
   onTogglePauseProduto: (id: number) => void;
+  cardapioDiario?: CardapioDiarioConfig;
+  onOpenCardapioBuilder?: () => void;
 }
 
 export const POSNewOrder: React.FC<POSNewOrderProps> = ({
@@ -59,6 +63,8 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   onOrderCreated,
   onPrintReceipt,
   onTogglePauseProduto,
+  cardapioDiario,
+  onOpenCardapioBuilder,
 }) => {
   // Order Mode
   const [tipoPedido, setTipoPedido] = useState<TipoPedido>(
@@ -331,15 +337,35 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     }
   };
 
-  // Filter products strictly by current day of the week
+  // Filter products: Bebidas (Cat 4) e Sobremesas (Cat 5) são SEMPRE FIXOS E DISPONÍVEIS
   const filteredProdutos = produtos.filter((prod) => {
-    // If manager override is off, strictly show dishes for today
-    if (!modoGerencialTodosDias) {
-      if (!prod.dia_semana.includes(todayDay)) {
+    const isBebidaOuSobremesa = prod.categoria_id === 4 || prod.categoria_id === 5;
+
+    // Se houver Cardápio Diário ativo e não for modo gerencial de liberação total:
+    if (
+      !modoGerencialTodosDias &&
+      !isBebidaOuSobremesa &&
+      cardapioDiario &&
+      cardapioDiario.status === 'aberto' &&
+      cardapioDiario.itens.length > 0
+    ) {
+      const itemConfig = cardapioDiario.itens.find((it) => it.produto_id === prod.id);
+      if (!itemConfig) return false;
+
+      if (tipoPedido === 'delivery' || tipoPedido === 'retirada') {
+        if (!itemConfig.disponivel_delivery) return false;
+      } else if (tipoPedido === 'salão') {
+        if (!itemConfig.disponivel_salao) return false;
+      }
+    } else {
+      // Se não houver cardápio ativo configurado ou for override, filtra por dia da semana (exceto bebidas/doces)
+      if (!modoGerencialTodosDias && !isBebidaOuSobremesa) {
+        if (!prod.dia_semana.includes(todayDay)) {
+          return false;
+        }
+      } else if (modoGerencialTodosDias && selectedDayFilter !== 0 && !prod.dia_semana.includes(selectedDayFilter)) {
         return false;
       }
-    } else if (selectedDayFilter !== 0 && !prod.dia_semana.includes(selectedDayFilter)) {
-      return false;
     }
 
     // Category filter
@@ -408,30 +434,52 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                 <Calendar className="w-4 h-4" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-black uppercase text-amber-400">
                     CARDÁPIO DO DIA: {todayName}
                   </span>
-                  <span className="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800 font-bold uppercase">
-                    ALMOÇO 11H ÀS 14H
-                  </span>
+                  {cardapioDiario?.status === 'aberto' ? (
+                    <span className="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800 font-bold uppercase flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      MONTAGEM DO DIA ATIVA ({cardapioDiario.itens.length} ITENS)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-amber-950 text-amber-300 px-2 py-0.5 rounded border border-amber-800 font-bold uppercase">
+                      FILTRO PADRÃO ({todayName})
+                    </span>
+                  )}
                 </div>
                 <p className="text-[11px] text-neutral-400 mt-0.5">
-                  Exibindo somente os pratos e porções programados para hoje.
+                  {cardapioDiario?.status === 'aberto'
+                    ? `Canal ${tipoPedido === 'salão' ? 'Salão (Pratos)' : 'Delivery/Balcão (Marmitex)'} sincronizado. Bebidas e sobremesas sempre ativas.`
+                    : 'Exibindo pratos programados para hoje. Bebidas e sobremesas sempre ativas.'}
                 </p>
               </div>
             </div>
 
-            {/* Toggle for admin/manager override */}
-            <label className="flex items-center gap-2 text-xs text-neutral-400 hover:text-neutral-200 cursor-pointer shrink-0">
-              <input
-                type="checkbox"
-                checked={modoGerencialTodosDias}
-                onChange={(e) => setModoGerencialTodosDias(e.target.checked)}
-                className="accent-amber-500 rounded"
-              />
-              <span className="text-[11px] font-semibold">Liberar Outros Dias (Gerencial)</span>
-            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              {onOpenCardapioBuilder && (
+                <button
+                  type="button"
+                  onClick={onOpenCardapioBuilder}
+                  className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/50 text-amber-300 rounded-lg text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Montar Cardápio de Hoje</span>
+                </button>
+              )}
+
+              {/* Toggle for admin/manager override */}
+              <label className="flex items-center gap-2 text-xs text-neutral-400 hover:text-neutral-200 cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={modoGerencialTodosDias}
+                  onChange={(e) => setModoGerencialTodosDias(e.target.checked)}
+                  className="accent-amber-500 rounded"
+                />
+                <span className="text-[11px] font-semibold">Liberar Todos (Gerencial)</span>
+              </label>
+            </div>
           </div>
 
           {/* If Manager Mode enabled: show days selector */}

@@ -65,6 +65,20 @@ export interface Produto {
   opcionais?: Opcional[];
 }
 
+export interface ItemCardapioDiario {
+  produto_id: number;
+  disponivel_delivery: boolean; // 📦 ENTREGA & BALCÃO (Marmitex / Delivery)
+  disponivel_salao: boolean;    // 🍽️ CONSUMO NO SALÃO (Pratos / Mesas)
+}
+
+export interface CardapioDiarioConfig {
+  data: string; // YYYY-MM-DD
+  status: 'aguardando' | 'aberto';
+  confirmado_em?: string;
+  confirmado_por?: string;
+  itens: ItemCardapioDiario[];
+}
+
 export interface ItemEstoque {
   id: number;
   item_nome: string;

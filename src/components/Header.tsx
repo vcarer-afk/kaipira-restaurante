@@ -1,9 +1,10 @@
 import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { UtensilsCrossed, Database, Cloud, Menu, LayoutDashboard, Lock, RefreshCw, Users } from 'lucide-react';
+import { UtensilsCrossed, Database, Cloud, Menu, LayoutDashboard, Lock, RefreshCw, Users, Sparkles } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
+  | 'cardapio-dia'
   | 'cadastros'
   | 'configuracoes'
   | 'pdv'
@@ -139,6 +140,19 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </>
           )}
+
+          <button
+            onClick={() => onSelectTab('cardapio-dia')}
+            className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              activeTab === 'cardapio-dia'
+                ? `bg-neutral-800 ${theme.textPrimary} font-bold border border-neutral-700`
+                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-850'
+            }`}
+            title="Montagem do Cardápio Diário do Restaurante"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Cardápio de Hoje</span>
+          </button>
 
           <button
             onClick={() => onSelectTab('pdv')}

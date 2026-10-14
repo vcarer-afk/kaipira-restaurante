@@ -34,6 +34,7 @@ import {
   Banknote,
   Plus,
   Cloud,
+  Sparkles,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -154,8 +155,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 relative z-10">
           <button
+            onClick={() => onNavigate('cardapio-dia')}
+            className="px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-md transition-transform hover:scale-105 active:scale-95 uppercase cursor-pointer"
+            title="Definir pratos e marmitex disponíveis para venda hoje"
+          >
+            <Sparkles className="w-4 h-4 text-white" />
+            <span>Montar Cardápio de Hoje</span>
+          </button>
+
+          <button
             onClick={() => onNavigate('cadastros')}
-            className="px-4 py-2.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-transform hover:scale-105 active:scale-95 uppercase cursor-pointer"
+            className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-750 text-amber-300 border border-neutral-700 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-transform hover:scale-105 active:scale-95 uppercase cursor-pointer"
           >
             <Users className="w-4 h-4 text-amber-400" />
             <span>Central de Cadastros</span>
