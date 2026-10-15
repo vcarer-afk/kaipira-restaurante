@@ -19,7 +19,7 @@ import {
   Produto,
 } from '../types';
 import { INITIAL_CONFIGURACOES, INITIAL_USUARIOS } from '../data/seedData';
-import { formatPhone } from '../utils/formatters';
+import { formatPhone, formatBRL } from '../utils/formatters';
 
 // Re-export singleton Supabase client
 export { supabase };
@@ -257,33 +257,72 @@ export async function atualizarStatusPedidoSupabase(
 
 /**
  * Mesas operations via Supabase
+ * Trata variações de esquema: suporta 'id' e 'numero', status 'livre'|'ocupada'|'reservada'|'conta'
  */
+let mesasColumnsChecked = false;
+let mesasHasNumero = true;
+
+async function checkMesasSchema() {
+  if (mesasColumnsChecked) return;
+  try {
+    const { data, error } = await supabase.from('mesas').select('*').limit(1);
+    if (!error && data && data.length > 0) {
+      mesasHasNumero = 'numero' in data[0];
+      mesasColumnsChecked = true;
+    }
+  } catch {
+    // fallback seguro
+  }
+}
+
 export async function atualizarMesaSupabase(
   numero: number,
   status: Mesa['status'],
-  cliente_nome?: string,
-  pessoas?: number
+  _cliente_nome?: string,
+  _pessoas?: number
 ): Promise<void> {
   try {
-    // 1. Constrói payload apenas com campos fornecidos
-    const payload: Record<string, any> = { status };
-    if (cliente_nome && cliente_nome.trim()) {
-      payload.cliente_nome = cliente_nome.toUpperCase().trim();
-    }
-    if (pessoas && Number(pessoas) > 0) {
-      payload.pessoas = Number(pessoas);
-    }
+    await checkMesasSchema();
+    const num = Number(numero);
 
-    // Tenta atualizar primeiro com payload completo pelo 'numero'
-    const { error } = await supabase.from('mesas').update(payload).eq('numero', numero);
+    // As colunas estritas da tabela 'mesas' no Supabase são: id, numero, status
+    // Envia EXCLUSIVAMENTE 'status' para evitar erro 400 (Bad Request)
+    const filterCol = mesasHasNumero ? 'numero' : 'id';
+    let { error } = await supabase
+      .from('mesas')
+      .update({ status })
+      .eq(filterCol, num);
 
     if (error) {
-      console.warn('Tentativa com payload completo na mesa falhou, tentando apenas status:', error.message);
-      // Fallback: envia APENAS status (garante que não quebre caso cliente_nome ou pessoas não existam)
-      const resStatus = await supabase.from('mesas').update({ status }).eq('numero', numero);
-      if (resStatus.error) {
-        // Tenta filtrar por 'id' caso 'numero' não seja a coluna esperada
-        await supabase.from('mesas').update({ status }).eq('id', numero);
+      console.warn(`Update mesa ${filterCol}=${num} falhou:`, error.message);
+
+      // Se falhou por causa da coluna 'numero' não existir no schema cache do PostgREST
+      if (mesasHasNumero && (error.message?.includes('numero') || (error as any).code === 'PGRST204')) {
+        mesasHasNumero = false;
+        const resId = await supabase.from('mesas').update({ status }).eq('id', num);
+        error = resId.error;
+      }
+
+      // Se falhou por restrição CHECK no status (ex: status 'conta' não permitido no CHECK constraint da tabela)
+      if (error && status === 'conta') {
+        const fallbackCol = mesasHasNumero ? 'numero' : 'id';
+        const resOcupada = await supabase.from('mesas').update({ status: 'ocupada' }).eq(fallbackCol, num);
+        if (!resOcupada.error) return;
+      }
+
+      // Se a mesa ainda não existe na tabela remota (0 linhas afetadas), cria com upsert seguro
+      if (error) {
+        const payload: Record<string, any> = { id: num, status };
+        if (mesasHasNumero) payload.numero = num;
+
+        const upsertRes = await supabase
+          .from('mesas')
+          .upsert(payload, { onConflict: 'id' });
+
+        if (upsertRes.error && mesasHasNumero && upsertRes.error.message?.includes('numero')) {
+          mesasHasNumero = false;
+          await supabase.from('mesas').upsert({ id: num, status }, { onConflict: 'id' });
+        }
       }
     }
   } catch (err) {
@@ -293,23 +332,30 @@ export async function atualizarMesaSupabase(
 
 export async function fecharMesaSupabase(numero: number): Promise<void> {
   try {
-    // Ao dar baixa/fechar a mesa, atualiza apenas o campo válido e obrigatório: status = 'livre'
-    const { error } = await supabase
+    await checkMesasSchema();
+    const num = Number(numero);
+
+    // Ao dar baixa/fechar a mesa, atualiza EXCLUSIVAMENTE 'status' = 'livre'
+    const filterCol = mesasHasNumero ? 'numero' : 'id';
+    let { error } = await supabase
       .from('mesas')
       .update({ status: 'livre' })
-      .eq('numero', numero);
+      .eq(filterCol, num);
 
     if (error) {
-      console.warn('Erro ao fechar mesa por numero, tentando por id:', error.message);
-      await supabase.from('mesas').update({ status: 'livre' }).eq('id', numero);
-    } else {
-      // Se colunas extras existirem, tenta limpá-las de forma segura sem emitir erro impeditivo
-      try {
-        await supabase
-          .from('mesas')
-          .update({ cliente_nome: null, pessoas: null })
-          .eq('numero', numero);
-      } catch {}
+      console.warn(`Fechar mesa ${filterCol}=${num} falhou:`, error.message);
+
+      if (mesasHasNumero && (error.message?.includes('numero') || (error as any).code === 'PGRST204')) {
+        mesasHasNumero = false;
+        const resId = await supabase.from('mesas').update({ status: 'livre' }).eq('id', num);
+        error = resId.error;
+      }
+
+      if (error) {
+        const payload: Record<string, any> = { id: num, status: 'livre' };
+        if (mesasHasNumero) payload.numero = num;
+        await supabase.from('mesas').upsert(payload, { onConflict: 'id' });
+      }
     }
   } catch (err) {
     console.warn('Erro ao fechar mesa no Supabase:', err);
@@ -356,33 +402,109 @@ export async function adicionarItemEstoqueSupabase(
 
 /**
  * Caixa operations via Supabase
+ * Colunas validadas: id, data_caixa, valor_abertura (ou valor_apertura), valor_fechamento, status, observacoes
  */
+let caixaColsChecked = false;
+let caixaAberturaCol: 'valor_abertura' | 'valor_apertura' = 'valor_abertura';
+
+async function checkCaixaSchema() {
+  if (caixaColsChecked) return;
+  try {
+    const { data, error } = await supabase.from('caixa_diario').select('*').limit(1);
+    if (!error && data && data.length > 0) {
+      if ('valor_apertura' in data[0]) {
+        caixaAberturaCol = 'valor_apertura';
+      } else if ('valor_abertura' in data[0]) {
+        caixaAberturaCol = 'valor_abertura';
+      }
+      caixaColsChecked = true;
+    }
+  } catch {
+    // fallback seguro
+  }
+}
+
 export async function abrirCaixaSupabase(
   valor_abertura: number,
   observacoes?: string
 ): Promise<CaixaDiario> {
+  await checkCaixaSchema();
   const dataHoje = new Date().toISOString().split('T')[0];
+  const now = new Date().toISOString();
   const novoCaixa: CaixaDiario = {
-    id: Date.now(),
+    id: 1,
     data_caixa: dataHoje,
-    valor_abertura,
+    valor_abertura: Number(valor_abertura) || 0,
     status: 'aberto',
-    observacoes,
-    aberto_em: new Date().toISOString(),
+    observacoes: observacoes ? observacoes.toUpperCase().trim() : undefined,
+    aberto_em: now,
     movimentacoes: [],
   };
 
   try {
-    await supabase.from('caixa_diario').upsert({
-      id: 1,
+    // 1. Tenta obter o registro existente mais recente do banco real
+    const { data: rows } = await supabase
+      .from('caixa_diario')
+      .select('*')
+      .order('id', { ascending: false })
+      .limit(1);
+
+    const existingRow = rows && rows.length > 0 ? rows[0] : null;
+
+    // Payload contendo estritamente as colunas reais da tabela
+    const payload: Record<string, any> = {
       data_caixa: dataHoje,
-      valor_abertura,
+      [caixaAberturaCol]: Number(valor_abertura) || 0,
+      valor_fechamento: null,
       status: 'aberto',
-      observacoes: observacoes || null,
-      aberto_em: novoCaixa.aberto_em,
-      fechado_em: null,
-      dados: novoCaixa,
-    }, { onConflict: 'id' });
+      observacoes: observacoes ? observacoes.toUpperCase().trim() : null,
+    };
+
+    if (existingRow && existingRow.id) {
+      payload.id = existingRow.id;
+    }
+
+    // Usa upsert seguro para criar ou atualizar sem erro 400
+    let { data: upsertData, error: upsertError } = await supabase
+      .from('caixa_diario')
+      .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
+      .select()
+      .maybeSingle();
+
+    if (upsertError) {
+      // Se falhou por nome de coluna (valor_abertura vs valor_apertura)
+      if (upsertError.message?.includes('valor_') || (upsertError as any).code === 'PGRST204') {
+        caixaAberturaCol = caixaAberturaCol === 'valor_abertura' ? 'valor_apertura' : 'valor_abertura';
+        delete payload['valor_abertura'];
+        delete payload['valor_apertura'];
+        payload[caixaAberturaCol] = Number(valor_abertura) || 0;
+
+        const retry = await supabase
+          .from('caixa_diario')
+          .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
+          .select()
+          .maybeSingle();
+
+        upsertData = retry.data;
+        upsertError = retry.error;
+      }
+    }
+
+    if (upsertError) {
+      console.warn('Upsert de abertura com id falhou, tentando insert direto:', upsertError.message);
+      delete payload.id;
+      const { data: insData } = await supabase
+        .from('caixa_diario')
+        .insert(payload)
+        .select()
+        .maybeSingle();
+
+      if (insData && insData.id) {
+        novoCaixa.id = insData.id;
+      }
+    } else if (upsertData && upsertData.id) {
+      novoCaixa.id = upsertData.id;
+    }
   } catch (err) {
     console.warn('Erro ao abrir caixa no Supabase:', err);
   }
@@ -395,22 +517,68 @@ export async function fecharCaixaSupabase(
   valor_fechamento: number,
   observacoes?: string
 ): Promise<CaixaDiario> {
+  await checkCaixaSchema();
+  const dataHoje = caixaAtual.data_caixa || new Date().toISOString().split('T')[0];
+  const now = new Date().toISOString();
   const fechado: CaixaDiario = {
     ...caixaAtual,
     status: 'fechado',
-    valor_fechamento,
-    observacoes: observacoes || caixaAtual.observacoes,
-    fechado_em: new Date().toISOString(),
+    valor_fechamento: Number(valor_fechamento) || 0,
+    observacoes: observacoes ? observacoes.toUpperCase().trim() : (caixaAtual.observacoes || undefined),
+    fechado_em: now,
   };
 
   try {
-    await supabase.from('caixa_diario').update({
+    // 1. Tenta obter o ID real do caixa ativo do banco de dados para evitar PATCH em ID fixo inexistente
+    const { data: rows } = await supabase
+      .from('caixa_diario')
+      .select('id, data_caixa')
+      .order('id', { ascending: false })
+      .limit(1);
+
+    const existingRow = rows && rows.length > 0 ? rows[0] : null;
+
+    // Colunas 100% reais: data_caixa, valor_fechamento, status, observacoes
+    const payload: Record<string, any> = {
+      data_caixa: existingRow?.data_caixa || dataHoje,
+      valor_fechamento: Number(valor_fechamento) || 0,
       status: 'fechado',
-      valor_fechamento,
-      observacoes: fechado.observacoes || null,
-      fechado_em: fechado.fechado_em,
-      dados: fechado,
-    }).eq('id', 1);
+      observacoes: observacoes ? observacoes.toUpperCase().trim() : (caixaAtual.observacoes || null),
+    };
+
+    if (existingRow && existingRow.id) {
+      payload.id = existingRow.id;
+    } else if (caixaAtual.id && caixaAtual.id < 1000000) {
+      payload.id = caixaAtual.id;
+    }
+
+    // Usa exclusivamente .upsert() seguro para criar ou atualizar de forma garantida
+    let { data: upsertData, error: upsertError } = await supabase
+      .from('caixa_diario')
+      .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
+      .select()
+      .maybeSingle();
+
+    if (upsertError) {
+      console.warn('Upsert de fechamento com id falhou, tentando upsert por data_caixa ou insert:', upsertError.message);
+      delete payload.id;
+      const retryDate = await supabase
+        .from('caixa_diario')
+        .upsert(payload, { onConflict: 'data_caixa' })
+        .select()
+        .maybeSingle();
+
+      if (!retryDate.error && retryDate.data) {
+        fechado.id = retryDate.data.id;
+      } else {
+        const insRes = await supabase.from('caixa_diario').insert(payload).select().maybeSingle();
+        if (insRes.data && insRes.data.id) {
+          fechado.id = insRes.data.id;
+        }
+      }
+    } else if (upsertData && upsertData.id) {
+      fechado.id = upsertData.id;
+    }
   } catch (err) {
     console.warn('Erro ao fechar caixa no Supabase:', err);
   }
@@ -440,11 +608,39 @@ export async function registrarMovimentacaoCaixaSupabase(
   };
 
   try {
-    await supabase.from('caixa_diario').update({
-      dados: caixaAtualizado,
-    }).eq('id', 1);
+    const { data: rows } = await supabase
+      .from('caixa_diario')
+      .select('id, observacoes, data_caixa')
+      .order('id', { ascending: false })
+      .limit(1);
+
+    const existingRow = rows && rows.length > 0 ? rows[0] : null;
+    const baseObs = existingRow?.observacoes || caixaAtual.observacoes || '';
+    const obsAtualizada = `${baseObs ? baseObs + ' | ' : ''}${tipo.toUpperCase()}: ${formatBRL(valor)} (${forma.toUpperCase()})`;
+
+    const payload: Record<string, any> = {
+      data_caixa: existingRow?.data_caixa || caixaAtual.data_caixa || new Date().toISOString().split('T')[0],
+      status: caixaAtual.status || 'aberto',
+      observacoes: obsAtualizada.slice(0, 500),
+    };
+
+    if (existingRow && existingRow.id) {
+      payload.id = existingRow.id;
+    } else if (caixaAtual.id && caixaAtual.id < 1000000) {
+      payload.id = caixaAtual.id;
+    }
+
+    // Usa upsert seguro
+    const { error } = await supabase
+      .from('caixa_diario')
+      .upsert(payload, payload.id ? { onConflict: 'id' } : undefined);
+
+    if (error) {
+      delete payload.id;
+      await supabase.from('caixa_diario').upsert(payload, { onConflict: 'data_caixa' });
+    }
   } catch (err) {
-    console.warn('Erro ao registrar movimentação de caixa no Supabase:', err);
+    console.warn('Erro ao sincronizar movimentação de caixa no Supabase:', err);
   }
 
   return caixaAtualizado;
@@ -1055,40 +1251,39 @@ export async function salvarMesaSupabase(
   mesa: Partial<Mesa>
 ): Promise<{ success: boolean; data?: Mesa; error?: string }> {
   try {
-    const payload: any = {
-      numero: Number(mesa.numero),
+    await checkMesasSchema();
+    const num = Number(mesa.numero);
+    const mesaId = mesa.id || num;
+
+    const payload: Record<string, any> = {
+      id: mesaId,
       status: mesa.status || 'livre',
-      cliente_nome: (mesa.cliente_nome || '').toUpperCase().trim() || null,
-      pessoas: Number(mesa.pessoas) || 2,
     };
 
-    if (mesa.id && mesa.id > 0) {
-      payload.id = mesa.id;
+    if (mesasHasNumero) {
+      payload.numero = num;
     }
 
     const { data, error } = await supabase
       .from('mesas')
-      .upsert(payload, { onConflict: 'numero' })
+      .upsert(payload, { onConflict: 'id' })
       .select()
       .maybeSingle();
 
     if (error) {
-      console.warn('Aviso salvar mesa com payload completo, tentando payload essencial (numero, status):', error.message);
-      const minimalPayload: any = {
-        numero: Number(mesa.numero),
-        status: mesa.status || 'livre',
-      };
-      const resMinimal = await supabase
-        .from('mesas')
-        .upsert(minimalPayload, { onConflict: 'numero' })
-        .select()
-        .maybeSingle();
+      console.warn('Aviso salvar mesa Supabase:', error.message);
+      if (mesasHasNumero && error.message?.includes('numero')) {
+        mesasHasNumero = false;
+        delete payload.numero;
+        const retry = await supabase
+          .from('mesas')
+          .upsert(payload, { onConflict: 'id' })
+          .select()
+          .maybeSingle();
 
-      if (!resMinimal.error && resMinimal.data) {
-        return {
-          success: true,
-          data: (resMinimal.data as Mesa) || (mesa as Mesa),
-        };
+        if (!retry.error && retry.data) {
+          return { success: true, data: (retry.data as Mesa) || (mesa as Mesa) };
+        }
       }
       return { success: false, error: error.message };
     }
@@ -1107,7 +1302,17 @@ export async function excluirMesaSupabase(
   numero: number
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase.from('mesas').delete().eq('numero', numero);
+    await checkMesasSchema();
+    const num = Number(numero);
+    const filterCol = mesasHasNumero ? 'numero' : 'id';
+    let { error } = await supabase.from('mesas').delete().eq(filterCol, num);
+
+    if (error && mesasHasNumero) {
+      mesasHasNumero = false;
+      const resId = await supabase.from('mesas').delete().eq('id', num);
+      error = resId.error;
+    }
+
     if (error) {
       console.warn('Aviso excluir mesa Supabase:', error.message);
       return { success: false, error: error.message };

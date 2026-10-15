@@ -160,7 +160,7 @@ export default function App() {
       // Query Supabase tables directly (100% cloud, no static /api 405 error)
       const [pedidosRes, mesasRes, estoqueRes, caixaRes, reservasRes, clientesRes] = await Promise.allSettled([
         supabase.from('pedidos').select('*').order('criado_em', { ascending: false }),
-        supabase.from('mesas').select('*').order('numero', { ascending: true }),
+        supabase.from('mesas').select('*'),
         supabase.from('estoque').select('*').order('id', { ascending: true }),
         supabase.from('caixa_diario').select('*').order('id', { ascending: false }).limit(1),
         supabase.from('reservas').select('*').order('id', { ascending: false }),
@@ -171,7 +171,15 @@ export default function App() {
         setPedidos(pedidosRes.value.data as Pedido[]);
       }
       if (mesasRes.status === 'fulfilled' && mesasRes.value.data && mesasRes.value.data.length > 0) {
-        setMesas(mesasRes.value.data as Mesa[]);
+        const mappedMesas: Mesa[] = (mesasRes.value.data as any[]).map((m) => ({
+          id: Number(m.id || m.numero),
+          numero: Number(m.numero || m.id),
+          status: m.status || 'livre',
+          cliente_nome: m.cliente_nome,
+          pessoas: m.pessoas ? Number(m.pessoas) : undefined,
+        }));
+        mappedMesas.sort((a, b) => a.numero - b.numero);
+        setMesas(mappedMesas);
       }
       if (estoqueRes.status === 'fulfilled' && estoqueRes.value.data && estoqueRes.value.data.length > 0) {
         setEstoque(estoqueRes.value.data as ItemEstoque[]);
@@ -181,11 +189,18 @@ export default function App() {
         if (row.dados) {
           setCaixa(row.dados);
         } else {
+          const valAbertura = row.valor_abertura !== undefined && row.valor_abertura !== null
+            ? Number(row.valor_abertura)
+            : (row.valor_apertura !== undefined && row.valor_apertura !== null ? Number(row.valor_apertura) : 250);
+
           setCaixa((prev) => ({
             ...prev,
+            id: row.id || prev.id,
+            data_caixa: row.data_caixa || prev.data_caixa,
             status: row.status || prev.status,
-            valor_abertura: Number(row.valor_abertura) || prev.valor_abertura,
-            valor_fechamento: row.valor_fechamento ? Number(row.valor_fechamento) : undefined,
+            valor_abertura: valAbertura,
+            valor_fechamento: row.valor_fechamento !== null && row.valor_fechamento !== undefined ? Number(row.valor_fechamento) : undefined,
+            observacoes: row.observacoes || prev.observacoes,
           }));
         }
       }
