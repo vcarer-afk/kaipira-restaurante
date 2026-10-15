@@ -15,6 +15,8 @@ import {
   StatusPedido,
   ConfiguracoesSistema,
   CardapioDiarioConfig,
+  FormaPagamento,
+  Pagamento,
 } from './types';
 import { Header, ActiveTab } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
@@ -378,11 +380,82 @@ export default function App() {
     await atualizarMesaSupabase(numero, status, cliente_nome, pessoas);
   };
 
-  const handleFecharMesa = async (numero: number) => {
+  const handleFecharMesa = async (
+    numero: number,
+    pagamentos?: { forma: FormaPagamento; valor: number }[],
+    clienteMensalistaId?: string,
+    pedidosIds?: number[],
+    troco?: number
+  ) => {
+    // 1. Zera e libera a mesa localmente e na nuvem Supabase
     setMesas((prev) =>
-      prev.map((m) => (m.numero === numero ? { ...m, status: 'livre', cliente_nome: undefined, pessoas: undefined } : m))
+      prev.map((m) =>
+        m.numero === numero
+          ? { ...m, status: 'livre', cliente_nome: undefined, pessoas: undefined }
+          : m
+      )
     );
     await fecharMesaSupabase(numero);
+
+    // 2. Conclui os pedidos vinculados à mesa
+    if (pedidosIds && pedidosIds.length > 0) {
+      setPedidos((prev) =>
+        prev.map((p) => {
+          if (!pedidosIds.includes(p.id)) return p;
+          const formattedPagamentos: Pagamento[] = pagamentos
+            ? pagamentos.map((pg, idx) => ({
+                id: Date.now() + idx,
+                pedido_id: p.id,
+                forma: pg.forma,
+                valor: pg.valor,
+                criado_em: new Date().toISOString(),
+              }))
+            : p.pagamentos;
+          return { ...p, status: 'entregue' as StatusPedido, pagamentos: formattedPagamentos };
+        })
+      );
+      for (const pId of pedidosIds) {
+        await atualizarStatusPedidoSupabase(pId, 'entregue');
+      }
+    }
+
+    // 3. Se houver débito em conta de mensalista, atualiza saldo devedor
+    if (clienteMensalistaId && pagamentos) {
+      const valorMensalista = pagamentos
+        .filter((pg) => pg.forma === 'mensalista')
+        .reduce((acc, pg) => acc + pg.valor, 0);
+
+      if (valorMensalista > 0) {
+        setClientes((prev) =>
+          prev.map((c) =>
+            c.id === clienteMensalistaId
+              ? { ...c, saldo_devedor: (c.saldo_devedor || 0) + valorMensalista }
+              : c
+          )
+        );
+        const cli = clientes.find((c) => c.id === clienteMensalistaId);
+        if (cli) {
+          await salvarClienteSupabase({
+            id: cli.id,
+            saldo_devedor: (cli.saldo_devedor || 0) + valorMensalista,
+          });
+        }
+      }
+    }
+
+    // 4. Registra movimentação no caixa se caixa estiver aberto
+    if (caixa && caixa.status === 'aberto' && pagamentos) {
+      for (const pg of pagamentos) {
+        if (pg.valor > 0 && pg.forma !== 'mensalista') {
+          await handleMovimentacaoCaixa(
+            'suprimento',
+            pg.forma,
+            pg.valor,
+            `RECEBIMENTO CONTA MESA #${numero}`
+          );
+        }
+      }
+    }
   };
 
   // Toggle quick pause for product
@@ -742,6 +815,8 @@ export default function App() {
             mesas={mesas}
             pedidos={pedidos}
             reservas={reservas}
+            clientes={clientes}
+            configuracoes={configuracoes}
             onOpenOrderForMesa={(num) => {
               setSelectedMesaNumber(num);
               setActiveTab('pdv');
