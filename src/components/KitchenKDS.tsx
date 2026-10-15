@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pedido, StatusPedido } from '../types';
 import { formatTime, playAlertChime } from '../utils/formatters';
-import { Clock, ChefHat, Check, Printer, AlertTriangle } from 'lucide-react';
+import { Clock, ChefHat, Check, Printer, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 interface KitchenKDSProps {
   pedidos: Pedido[];
@@ -14,9 +14,14 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
   onUpdateStatus,
   onPrintReceipt,
 }) => {
-  // Filter only active kitchen orders
-  const activeOrders = pedidos.filter((p) =>
-    ['pendente', 'em_preparacao', 'pronto'].includes(p.status)
+  // IDs de pedidos confirmados como retirados para remoção imediata da lista do KDS
+  const [retiradosLocais, setRetiradosLocais] = useState<number[]>([]);
+
+  // Filter only active kitchen orders excluding those already marked as withdrawn
+  const activeOrders = pedidos.filter(
+    (p) =>
+      ['pendente', 'em_preparacao', 'pronto'].includes(p.status) &&
+      !retiradosLocais.includes(p.id)
   );
 
   const pendentes = activeOrders.filter((p) => p.status === 'pendente');
@@ -35,6 +40,14 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
       onUpdateStatus(pedido.id, 'pronto');
       playAlertChime('ready');
     }
+  };
+
+  const handleConfirmarRetirada = (pedido: Pedido) => {
+    // Remove imediatamente da lista do KDS
+    setRetiradosLocais((prev) => [...prev, pedido.id]);
+    playAlertChime('ready');
+    const novoStatus: StatusPedido = pedido.tipo === 'delivery' ? 'a_caminho' : 'entregue';
+    onUpdateStatus(pedido.id, novoStatus);
   };
 
   const renderOrderCard = (p: Pedido) => {
@@ -158,9 +171,15 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
           )}
 
           {p.status === 'pronto' && (
-            <div className="flex-1 text-center py-1.5 text-xs font-bold text-emerald-400 uppercase bg-emerald-950/40 rounded-lg border border-emerald-800/40">
-              Aguardando Saída
-            </div>
+            <button
+              type="button"
+              onClick={() => handleConfirmarRetirada(p)}
+              title="Confirmar retirada pelo cliente ou garçom (remove imediatamente desta lista do KDS)"
+              className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black flex items-center justify-center gap-1.5 transition-all uppercase shadow-md hover:scale-105 active:scale-95 cursor-pointer"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Confirmar Retirada</span>
+            </button>
           )}
         </div>
       </div>
@@ -240,7 +259,19 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
         {/* Col 3: Prontos */}
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between px-2 text-xs font-bold text-emerald-400 uppercase">
-            <span>3. Prontos para Retirada / Salão ({prontos.length})</span>
+            <span>3. Prontos para Retirada ({prontos.length})</span>
+            {prontos.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  prontos.forEach(handleConfirmarRetirada);
+                }}
+                className="text-[11px] text-emerald-300 hover:text-white underline font-bold cursor-pointer normal-case"
+                title="Confirmar retirada de todos os pedidos prontos de uma vez"
+              >
+                Confirmar todas as retiradas
+              </button>
+            )}
           </div>
           <div className="space-y-3">
             {prontos.length === 0 ? (

@@ -61,6 +61,7 @@ import {
   MapPin,
   Sliders,
   DollarSign,
+  ArrowUpDown,
 } from 'lucide-react';
 
 interface CadastrosHubProps {
@@ -129,6 +130,14 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const [mesasViewMode, setMesasViewMode] = useState<'bloco' | 'lista'>('bloco');
   const [categoriasViewMode, setCategoriasViewMode] = useState<'bloco' | 'lista'>('bloco');
   const [bairrosViewMode, setBairrosViewMode] = useState<'bloco' | 'lista'>('bloco');
+
+  // Sort Mode state (Inicialmente organizadas por Nome/Descrição A-Z, com opção por Ordem de Cadastro)
+  const [usuariosSortMode, setUsuariosSortMode] = useState<'nome' | 'cadastro'>('nome');
+  const [clientesSortMode, setClientesSortMode] = useState<'nome' | 'cadastro'>('nome');
+  const [produtosSortMode, setProdutosSortMode] = useState<'nome' | 'cadastro'>('nome');
+  const [mesasSortMode, setMesasSortMode] = useState<'nome' | 'cadastro'>('nome');
+  const [categoriasSortMode, setCategoriasSortMode] = useState<'nome' | 'cadastro'>('nome');
+  const [bairrosSortMode, setBairrosSortMode] = useState<'nome' | 'cadastro'>('nome');
 
   // Global Feedback Notification
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -236,6 +245,74 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
       if (!matchNome && !matchEmail && !matchTel) return false;
     }
     return true;
+  });
+
+  // Todas as listas organizadas inicialmente por Nome / Descrição (A-Z) ou por Ordem de Cadastro
+  const sortedUsuarios = [...filteredUsuarios].sort((a, b) => {
+    if (usuariosSortMode === 'nome') {
+      return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+    }
+    return new Date(a.criado_em || 0).getTime() - new Date(b.criado_em || 0).getTime();
+  });
+
+  const filteredClientes = clientes.filter((c) => {
+    if (!clientSearch) return true;
+    const q = clientSearch.toLowerCase();
+    return (c.nome || '').toLowerCase().includes(q) || (c.telefone || '').includes(q);
+  });
+  const sortedClientes = [...filteredClientes].sort((a, b) => {
+    if (clientesSortMode === 'nome') {
+      return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+    }
+    return new Date(a.criado_em || 0).getTime() - new Date(b.criado_em || 0).getTime();
+  });
+
+  const filteredProdutos = produtos.filter((p) => {
+    if (selectedCategoriaId !== 'todas' && p.categoria_id !== selectedCategoriaId)
+      return false;
+    if (prodSearch) {
+      const q = prodSearch.toLowerCase();
+      return (
+        (p.nome || '').toLowerCase().includes(q) ||
+        (p.descricao || '').toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+  const sortedProdutos = [...filteredProdutos].sort((a, b) => {
+    if (produtosSortMode === 'nome') {
+      return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+    }
+    return a.id - b.id;
+  });
+
+  const sortedMesas = [...mesas].sort((a, b) => {
+    if (mesasSortMode === 'nome') {
+      return a.numero - b.numero;
+    }
+    return (a.id || a.numero) - (b.id || b.numero);
+  });
+
+  const filteredCategorias = categorias.filter((cat) => {
+    if (!categoriaSearch) return true;
+    return (cat.nome || '').toLowerCase().includes(categoriaSearch.toLowerCase());
+  });
+  const sortedCategorias = [...filteredCategorias].sort((a, b) => {
+    if (categoriasSortMode === 'nome') {
+      return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+    }
+    return (a.ordem || a.id) - (b.ordem || b.id);
+  });
+
+  const filteredBairros = bairros.filter((b) => {
+    if (!bairroSearch) return true;
+    return (b.bairro || '').toLowerCase().includes(bairroSearch.toLowerCase());
+  });
+  const sortedBairros = [...filteredBairros].sort((a, b) => {
+    if (bairrosSortMode === 'nome') {
+      return (a.bairro || '').localeCompare(b.bairro || '', 'pt-BR');
+    }
+    return 0;
   });
 
   const openNewUserModal = () => {
@@ -1169,12 +1246,26 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
               <option value="garcom">GARÇOM</option>
               <option value="entregador">ENTREGADOR</option>
             </select>
+
+            {/* Seletor de Ordenação */}
+            <div className="flex items-center gap-1.5 bg-neutral-850 border border-neutral-700 rounded-xl px-3 py-2 text-xs">
+              <ArrowUpDown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="text-neutral-400 font-bold uppercase text-[11px] hidden sm:inline">Ordem:</span>
+              <select
+                value={usuariosSortMode}
+                onChange={(e) => setUsuariosSortMode(e.target.value as 'nome' | 'cadastro')}
+                className="bg-transparent text-white font-extrabold text-xs focus:outline-none cursor-pointer uppercase"
+              >
+                <option value="nome" className="bg-neutral-850 text-white">Nome (A-Z)</option>
+                <option value="cadastro" className="bg-neutral-850 text-white">Ordem de Cadastro</option>
+              </select>
+            </div>
           </div>
 
           {/* CONTENT: BLOCOS OU LISTA */}
           {usuariosViewMode === 'bloco' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {filteredUsuarios.map((u) => {
+              {sortedUsuarios.map((u) => {
                 const isMaster = u.cargo === 'master' || u.email === 'master@kaipira.com';
                 return (
                   <div
@@ -1254,7 +1345,7 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
-                  {filteredUsuarios.map((u) => {
+                  {sortedUsuarios.map((u) => {
                     const isMaster = u.cargo === 'master' || u.email === 'master@kaipira.com';
                     return (
                       <tr key={u.id} className="hover:bg-neutral-850/50">
@@ -1364,27 +1455,37 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
             </div>
           </div>
 
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
-            <input
-              type="text"
-              value={clientSearch}
-              onChange={(e) => setClientSearch(e.target.value)}
-              placeholder="BUSCAR CLIENTE POR NOME OU TELEFONE..."
-              className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="flex-1 relative w-full">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
+              <input
+                type="text"
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+                placeholder="BUSCAR CLIENTE POR NOME OU TELEFONE..."
+                className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+              />
+            </div>
+
+            {/* Seletor de Ordenação */}
+            <div className="flex items-center gap-1.5 bg-neutral-850 border border-neutral-700 rounded-xl px-3 py-2 text-xs shrink-0">
+              <ArrowUpDown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="text-neutral-400 font-bold uppercase text-[11px] hidden sm:inline">Ordem:</span>
+              <select
+                value={clientesSortMode}
+                onChange={(e) => setClientesSortMode(e.target.value as 'nome' | 'cadastro')}
+                className="bg-transparent text-white font-extrabold text-xs focus:outline-none cursor-pointer uppercase"
+              >
+                <option value="nome" className="bg-neutral-850 text-white">Nome (A-Z)</option>
+                <option value="cadastro" className="bg-neutral-850 text-white">Ordem de Cadastro</option>
+              </select>
+            </div>
           </div>
 
           {/* CONTENT: BLOCOS OU LISTA */}
           {clientesViewMode === 'bloco' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {clientes
-                .filter((c) => {
-                  if (!clientSearch) return true;
-                  const q = clientSearch.toLowerCase();
-                  return (c.nome || '').toLowerCase().includes(q) || (c.telefone || '').includes(q);
-                })
-                .map((c) => (
+              {sortedClientes.map((c) => (
                   <div
                     key={c.id}
                     className="p-4 rounded-2xl bg-neutral-850 border border-neutral-800 hover:border-neutral-700 flex flex-col justify-between gap-3 text-xs"
@@ -1456,13 +1557,7 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
-                  {clientes
-                    .filter((c) => {
-                      if (!clientSearch) return true;
-                      const q = clientSearch.toLowerCase();
-                      return (c.nome || '').toLowerCase().includes(q) || (c.telefone || '').includes(q);
-                    })
-                    .map((c) => (
+                  {sortedClientes.map((c) => (
                       <tr key={c.id} className="hover:bg-neutral-850/50">
                         <td className="px-4 py-3 font-bold text-neutral-200 uppercase">{c.nome}</td>
                         <td className="px-4 py-3 font-mono text-neutral-300">{formatPhone(c.telefone)}</td>
@@ -1604,25 +1699,26 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
                 </option>
               ))}
             </select>
+
+            {/* Seletor de Ordenação */}
+            <div className="flex items-center gap-1.5 bg-neutral-850 border border-neutral-700 rounded-xl px-3 py-2 text-xs shrink-0">
+              <ArrowUpDown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="text-neutral-400 font-bold uppercase text-[11px] hidden sm:inline">Ordem:</span>
+              <select
+                value={produtosSortMode}
+                onChange={(e) => setProdutosSortMode(e.target.value as 'nome' | 'cadastro')}
+                className="bg-transparent text-white font-extrabold text-xs focus:outline-none cursor-pointer uppercase"
+              >
+                <option value="nome" className="bg-neutral-850 text-white">Nome / Descrição (A-Z)</option>
+                <option value="cadastro" className="bg-neutral-850 text-white">Ordem de Cadastro</option>
+              </select>
+            </div>
           </div>
 
           {/* CONTENT: BLOCOS OU LISTA */}
           {produtosViewMode === 'bloco' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {produtos
-                .filter((p) => {
-                  if (selectedCategoriaId !== 'todas' && p.categoria_id !== selectedCategoriaId)
-                    return false;
-                  if (prodSearch) {
-                    const q = prodSearch.toLowerCase();
-                    return (
-                      (p.nome || '').toLowerCase().includes(q) ||
-                      (p.descricao || '').toLowerCase().includes(q)
-                    );
-                  }
-                  return true;
-                })
-                .map((p) => {
+              {sortedProdutos.map((p) => {
                   const cat = categorias.find((c) => c.id === p.categoria_id);
                   return (
                     <div
@@ -1724,20 +1820,7 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
-                  {produtos
-                    .filter((p) => {
-                      if (selectedCategoriaId !== 'todas' && p.categoria_id !== selectedCategoriaId)
-                        return false;
-                      if (prodSearch) {
-                        const q = prodSearch.toLowerCase();
-                        return (
-                          (p.nome || '').toLowerCase().includes(q) ||
-                          (p.descricao || '').toLowerCase().includes(q)
-                        );
-                      }
-                      return true;
-                    })
-                    .map((p) => {
+                  {sortedProdutos.map((p) => {
                       const cat = categorias.find((c) => c.id === p.categoria_id);
                       return (
                         <tr key={p.id} className="hover:bg-neutral-850/50">
@@ -1837,6 +1920,20 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
                 </button>
               </div>
 
+              {/* Seletor de Ordenação */}
+              <div className="flex items-center gap-1.5 bg-neutral-850 border border-neutral-700 rounded-xl px-3 py-1.5 text-xs">
+                <ArrowUpDown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span className="text-neutral-400 font-bold uppercase text-[11px] hidden sm:inline">Ordem:</span>
+                <select
+                  value={mesasSortMode}
+                  onChange={(e) => setMesasSortMode(e.target.value as 'nome' | 'cadastro')}
+                  className="bg-transparent text-white font-extrabold text-xs focus:outline-none cursor-pointer uppercase"
+                >
+                  <option value="nome" className="bg-neutral-850 text-white">Número (1, 2, 3...)</option>
+                  <option value="cadastro" className="bg-neutral-850 text-white">Ordem de Cadastro</option>
+                </select>
+              </div>
+
               {/* Botão Nova Mesa */}
               <button
                 type="button"
@@ -1860,7 +1957,7 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
           {/* CONTENT: BLOCOS OU LISTA */}
           {mesasViewMode === 'bloco' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-              {mesas.map((m) => {
+              {sortedMesas.map((m) => {
                 const statusColor =
                   m.status === 'ocupada'
                     ? 'border-amber-600/70 bg-amber-950/20'
@@ -1941,7 +2038,7 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
-                  {mesas.map((m) => (
+                  {sortedMesas.map((m) => (
                     <tr key={m.numero} className="hover:bg-neutral-850/50">
                       <td className="px-4 py-3 font-black text-neutral-100 uppercase">
                         Mesa {m.numero}
@@ -2053,26 +2150,37 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
             </div>
           </div>
 
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
-            <input
-              type="text"
-              value={categoriaSearch}
-              onChange={(e) => setCategoriaSearch(e.target.value)}
-              placeholder="BUSCAR CATEGORIA..."
-              className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="flex-1 relative w-full">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
+              <input
+                type="text"
+                value={categoriaSearch}
+                onChange={(e) => setCategoriaSearch(e.target.value)}
+                placeholder="BUSCAR CATEGORIA..."
+                className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+              />
+            </div>
+
+            {/* Seletor de Ordenação */}
+            <div className="flex items-center gap-1.5 bg-neutral-850 border border-neutral-700 rounded-xl px-3 py-2 text-xs shrink-0">
+              <ArrowUpDown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="text-neutral-400 font-bold uppercase text-[11px] hidden sm:inline">Ordem:</span>
+              <select
+                value={categoriasSortMode}
+                onChange={(e) => setCategoriasSortMode(e.target.value as 'nome' | 'cadastro')}
+                className="bg-transparent text-white font-extrabold text-xs focus:outline-none cursor-pointer uppercase"
+              >
+                <option value="nome" className="bg-neutral-850 text-white">Nome (A-Z)</option>
+                <option value="cadastro" className="bg-neutral-850 text-white">Ordem no Cardápio</option>
+              </select>
+            </div>
           </div>
 
           {/* CONTENT: BLOCOS OU LISTA */}
           {categoriasViewMode === 'bloco' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {categorias
-                .filter((cat) => {
-                  if (!categoriaSearch) return true;
-                  return (cat.nome || '').toLowerCase().includes(categoriaSearch.toLowerCase());
-                })
-                .map((cat) => {
+              {sortedCategorias.map((cat) => {
                   const qtdProdutos = produtos.filter((p) => p.categoria_id === cat.id).length;
                   return (
                     <div
@@ -2131,12 +2239,7 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
-                  {categorias
-                    .filter((cat) => {
-                      if (!categoriaSearch) return true;
-                      return (cat.nome || '').toLowerCase().includes(categoriaSearch.toLowerCase());
-                    })
-                    .map((cat) => {
+                  {sortedCategorias.map((cat) => {
                       const qtdProdutos = produtos.filter((p) => p.categoria_id === cat.id).length;
                       return (
                         <tr key={cat.id} className="hover:bg-neutral-850/50">
@@ -2233,26 +2336,37 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
             </div>
           </div>
 
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
-            <input
-              type="text"
-              value={bairroSearch}
-              onChange={(e) => setBairroSearch(e.target.value)}
-              placeholder="BUSCAR BAIRRO DE PIRACICABA..."
-              className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="flex-1 relative w-full">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
+              <input
+                type="text"
+                value={bairroSearch}
+                onChange={(e) => setBairroSearch(e.target.value)}
+                placeholder="BUSCAR BAIRRO DE PIRACICABA..."
+                className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+              />
+            </div>
+
+            {/* Seletor de Ordenação */}
+            <div className="flex items-center gap-1.5 bg-neutral-850 border border-neutral-700 rounded-xl px-3 py-2 text-xs shrink-0">
+              <ArrowUpDown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="text-neutral-400 font-bold uppercase text-[11px] hidden sm:inline">Ordem:</span>
+              <select
+                value={bairrosSortMode}
+                onChange={(e) => setBairrosSortMode(e.target.value as 'nome' | 'cadastro')}
+                className="bg-transparent text-white font-extrabold text-xs focus:outline-none cursor-pointer uppercase"
+              >
+                <option value="nome" className="bg-neutral-850 text-white">Nome do Bairro (A-Z)</option>
+                <option value="cadastro" className="bg-neutral-850 text-white">Ordem de Cadastro</option>
+              </select>
+            </div>
           </div>
 
           {/* CONTENT: BLOCOS OU LISTA */}
           {bairrosViewMode === 'bloco' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-              {bairros
-                .filter((b) => {
-                  if (!bairroSearch) return true;
-                  return (b.bairro || '').toLowerCase().includes(bairroSearch.toLowerCase());
-                })
-                .map((b) => (
+              {sortedBairros.map((b) => (
                   <div
                     key={b.bairro}
                     className="p-4 rounded-2xl bg-neutral-850 border border-neutral-800 hover:border-neutral-700 flex flex-col justify-between gap-3 text-xs transition-all"
@@ -2307,12 +2421,7 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
-                  {bairros
-                    .filter((b) => {
-                      if (!bairroSearch) return true;
-                      return (b.bairro || '').toLowerCase().includes(bairroSearch.toLowerCase());
-                    })
-                    .map((b) => (
+                  {sortedBairros.map((b) => (
                       <tr key={b.bairro} className="hover:bg-neutral-850/50">
                         <td className="px-4 py-3 font-black text-neutral-100 uppercase">{b.bairro}</td>
                         <td className="px-4 py-3 text-neutral-400 uppercase font-mono">PIRACICABA - SP</td>

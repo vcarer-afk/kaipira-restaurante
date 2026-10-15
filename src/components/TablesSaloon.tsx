@@ -109,12 +109,13 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   const [novaFormaMultiplo, setNovaFormaMultiplo] = useState<FormaPagamento>('pix');
   const [novoValorMultiplo, setNovoValorMultiplo] = useState('');
 
-  // Filter orders for the selected table - se mesa estiver livre, NÃO carrega pedidos antigos
+  // Filter orders for the selected table - se mesa estiver livre ou pedidos já pagos, NÃO carrega
   const currentMesaOrders = selectedMesa && selectedMesa.status !== 'livre'
     ? pedidos.filter(
         (p) =>
           p.mesa_id === selectedMesa.numero &&
-          !['cancelado', 'entregue'].includes(p.status)
+          p.status !== 'cancelado' &&
+          (!p.pagamentos || p.pagamentos.length === 0)
       )
     : [];
 
@@ -384,7 +385,10 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                 const mesaOrders = m.status === 'livre'
                   ? []
                   : pedidos.filter(
-                      (p) => p.mesa_id === m.numero && !['cancelado', 'entregue'].includes(p.status)
+                      (p) =>
+                        p.mesa_id === m.numero &&
+                        p.status !== 'cancelado' &&
+                        (!p.pagamentos || p.pagamentos.length === 0)
                     );
                 const mesaTotal = mesaOrders.reduce((sum, p) => sum + p.valor_total, 0);
 

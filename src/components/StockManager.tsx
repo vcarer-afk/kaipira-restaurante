@@ -10,6 +10,9 @@ import {
   Check,
   Search,
   CheckCircle,
+  Sliders,
+  Trash2,
+  X,
 } from 'lucide-react';
 
 interface StockManagerProps {
@@ -37,6 +40,10 @@ export const StockManager: React.FC<StockManagerProps> = ({
   const [novoMinimo, setNovoMinimo] = useState('5');
   const [novoFornecedor, setNovoFornecedor] = useState('');
 
+  const [adjustingItem, setAdjustingItem] = useState<ItemEstoque | null>(null);
+  const [adjustQty, setAdjustQty] = useState('');
+  const [adjustMin, setAdjustMin] = useState('');
+
   const alertItemsCount = estoque.filter((it) => it.quantidade_atual <= it.estoque_minimo).length;
 
   const filteredEstoque = estoque.filter((it) => {
@@ -44,6 +51,28 @@ export const StockManager: React.FC<StockManagerProps> = ({
     if (search && !it.item_nome.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
+
+  const handleOpenAdjust = (it: ItemEstoque) => {
+    setAdjustingItem(it);
+    setAdjustQty(String(it.quantidade_atual));
+    setAdjustMin(String(it.estoque_minimo));
+  };
+
+  const handleConfirmAdjust = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustingItem) return;
+    const qty = parseFloat(adjustQty.replace(',', '.'));
+    const min = parseFloat(adjustMin.replace(',', '.'));
+    onUpdateItem(adjustingItem.id, {
+      quantidade_atual: !isNaN(qty) ? qty : adjustingItem.quantidade_atual,
+      estoque_minimo: !isNaN(min) ? min : adjustingItem.estoque_minimo,
+    });
+    setAdjustingItem(null);
+  };
+
+  const handleExcluirAlerta = (it: ItemEstoque) => {
+    onUpdateItem(it.id, { estoque_minimo: 0 });
+  };
 
   const handleStartEdit = (it: ItemEstoque) => {
     setEditingId(it.id);
@@ -112,6 +141,63 @@ export const StockManager: React.FC<StockManagerProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Alerta de Estoque de Insumos com Botões de Ajuste e Excluir Alerta */}
+      {alertItemsCount > 0 && (
+        <div className="bg-neutral-850 p-4 rounded-xl border border-red-800/80 shadow-md space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+              <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                Alerta de Estoque de Insumos ({alertItemsCount} {alertItemsCount === 1 ? 'item crítico' : 'itens críticos'})
+              </h3>
+            </div>
+            <span className="text-[11px] text-red-400 font-bold uppercase">
+              Abaixo ou no nível mínimo
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {estoque
+              .filter((it) => it.quantidade_atual <= it.estoque_minimo)
+              .map((it) => (
+                <div
+                  key={it.id}
+                  className="p-3 bg-red-950/30 border border-red-800/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+                >
+                  <div className="min-w-0">
+                    <span className="font-bold text-white uppercase block truncate">
+                      {it.item_nome}
+                    </span>
+                    <span className="text-[11px] text-red-300 font-mono">
+                      Atual: <strong>{it.quantidade_atual} {it.unidade_medida}</strong> (Mín: {it.estoque_minimo})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAdjust(it)}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Ajustar quantidade em estoque deste insumo"
+                    >
+                      <Sliders className="w-3 h-3" />
+                      <span>Ajuste de Estoque</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExcluirAlerta(it)}
+                      className="px-2.5 py-1 bg-neutral-800 hover:bg-red-900/60 text-neutral-300 hover:text-red-200 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Excluir alerta deste insumo (define estoque mínimo como zero)"
+                    >
+                      <Trash2 className="w-3 h-3 text-red-400" />
+                      <span>Excluir Alerta</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Filter and Search */}
       <div className="bg-neutral-850 p-3 rounded-xl border border-neutral-800 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -353,6 +439,109 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold uppercase"
               >
                 Cadastrar Item
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal de Ajuste Rápido de Estoque */}
+      {adjustingItem && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <form
+            onSubmit={handleConfirmAdjust}
+            className="bg-neutral-850 rounded-2xl border border-neutral-700 max-w-md w-full p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-amber-500" />
+                <h3 className="text-sm font-black text-white uppercase">
+                  Ajuste de Estoque de Insumo
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdjustingItem(null)}
+                className="text-neutral-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800 space-y-1">
+              <span className="text-xs font-bold text-white uppercase block">
+                {adjustingItem.item_nome}
+              </span>
+              <span className="text-[11px] text-neutral-400 block font-mono">
+                Unidade: {adjustingItem.unidade_medida.toUpperCase()} · Mínimo Cadastrado: {adjustingItem.estoque_minimo} {adjustingItem.unidade_medida}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  NOVA QUANTIDADE ({adjustingItem.unidade_medida}): *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={adjustQty}
+                  onChange={(e) => setAdjustQty(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white font-mono rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  ESTOQUE MÍNIMO ALERTA: *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={adjustMin}
+                  onChange={(e) => setAdjustMin(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white font-mono rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+            </div>
+
+            {/* Quick addition buttons */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase">
+                Adicionar rapidamente ao saldo:
+              </span>
+              <div className="flex gap-2">
+                {[5, 10, 20, 50].map((delta) => (
+                  <button
+                    key={delta}
+                    type="button"
+                    onClick={() => {
+                      const cur = parseFloat(adjustQty.replace(',', '.')) || adjustingItem.quantidade_atual;
+                      setAdjustQty(String(cur + delta));
+                    }}
+                    className="flex-1 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 rounded-lg text-xs font-bold font-mono transition-colors border border-neutral-700 cursor-pointer"
+                  >
+                    +{delta}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setAdjustingItem(null)}
+                className="px-4 py-2 text-xs font-semibold text-neutral-400 hover:text-white cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold uppercase transition-colors cursor-pointer"
+              >
+                Salvar Ajuste
               </button>
             </div>
           </form>

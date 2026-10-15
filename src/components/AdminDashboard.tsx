@@ -25,16 +25,17 @@ import {
   ArrowRight,
   Clock,
   CheckCircle,
-  Users,
   ShieldCheck,
   Zap,
-  Settings,
   Lock,
   Unlock,
   Banknote,
   Plus,
   Cloud,
   Sparkles,
+  Sliders,
+  Trash2,
+  X,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -48,6 +49,7 @@ interface AdminDashboardProps {
   onAbrirCaixa: (valor: number, observacoes?: string) => void;
   onFecharCaixa: (valor: number, observacoes?: string) => void;
   onMovimentacao: (tipo: 'suprimento' | 'sangria', forma: FormaPagamento, valor: number, descricao: string) => void;
+  onUpdateStockItem?: (id: number, data: Partial<ItemEstoque>) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -61,6 +63,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAbrirCaixa,
   onFecharCaixa,
   onMovimentacao,
+  onUpdateStockItem,
 }) => {
   // Cash Register quick modals
   const [showAbrirModal, setShowAbrirModal] = useState(false);
@@ -70,6 +73,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showFecharModal, setShowFecharModal] = useState(false);
   const [valorFechamento, setValorFechamento] = useState('');
   const [obsFechamento, setObsFechamento] = useState('');
+
+  // Stock alert adjustment & dismiss state
+  const [dismissedStockAlerts, setDismissedStockAlerts] = useState<number[]>([]);
+  const [adjustingStockItem, setAdjustingStockItem] = useState<ItemEstoque | null>(null);
+  const [newStockQty, setNewStockQty] = useState('');
+  const [newStockMin, setNewStockMin] = useState('');
 
   // Financial metrics
   const activeAndCompletedOrders = pedidos.filter((p) => p.status !== 'cancelado');
@@ -99,8 +108,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const emPreparoKds = pedidos.filter((p) => p.status === 'em_preparacao').length;
   const prontosKds = pedidos.filter((p) => p.status === 'pronto').length;
 
-  // Stock alerts
-  const criticalStockItems = estoque.filter((it) => it.quantidade_atual <= it.estoque_minimo);
+  // Stock alerts (ignora alertas excluídos pelo usuário)
+  const criticalStockItems = estoque.filter(
+    (it) => it.quantidade_atual <= it.estoque_minimo && !dismissedStockAlerts.includes(it.id)
+  );
+
+  const handleOpenAdjustStock = (item: ItemEstoque) => {
+    setAdjustingStockItem(item);
+    setNewStockQty(String(item.quantidade_atual));
+    setNewStockMin(String(item.estoque_minimo));
+  };
+
+  const handleConfirmAdjustStock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustingStockItem) return;
+    const qty = parseFloat(newStockQty.replace(',', '.'));
+    const min = parseFloat(newStockMin.replace(',', '.'));
+    if (!isNaN(qty) && onUpdateStockItem) {
+      onUpdateStockItem(adjustingStockItem.id, {
+        quantidade_atual: qty,
+        estoque_minimo: !isNaN(min) ? min : adjustingStockItem.estoque_minimo,
+      });
+    }
+    setAdjustingStockItem(null);
+  };
+
+  const handleExcluirAlerta = (item: ItemEstoque) => {
+    setDismissedStockAlerts((prev) => [...prev, item.id]);
+    if (onUpdateStockItem) {
+      onUpdateStockItem(item.id, { estoque_minimo: 0 });
+    }
+  };
 
   // Mensalistas
   const mensalistas = clientes.filter((c) => c.eh_mensalista || c.saldo_devedor > 0);
@@ -161,14 +199,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <Sparkles className="w-4 h-4 text-white" />
             <span>Montar Cardápio de Hoje</span>
-          </button>
-
-          <button
-            onClick={() => onNavigate('cadastros')}
-            className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-750 text-amber-300 border border-neutral-700 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-transform hover:scale-105 active:scale-95 uppercase cursor-pointer"
-          >
-            <Users className="w-4 h-4 text-amber-400" />
-            <span>Central de Cadastros</span>
           </button>
 
           <button
@@ -473,20 +503,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                {criticalStockItems.slice(0, 4).map((it) => (
+                {criticalStockItems.slice(0, 6).map((it) => (
                   <div
                     key={it.id}
-                    className="p-2.5 bg-red-950/30 border border-red-800/80 rounded-xl flex items-center justify-between text-xs"
+                    className="p-3 bg-red-950/30 border border-red-800/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
                   >
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                      <span className="font-bold text-white uppercase truncate max-w-[180px]">
-                        {it.item_nome}
-                      </span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                      <div className="truncate">
+                        <span className="font-bold text-white uppercase block truncate">
+                          {it.item_nome}
+                        </span>
+                        <span className="text-[11px] text-red-300 font-mono">
+                          Atual: <strong>{it.quantidade_atual} {it.unidade_medida}</strong> (Mín: {it.estoque_minimo})
+                        </span>
+                      </div>
                     </div>
-                    <span className="font-black text-red-400 tabular-nums">
-                      {it.quantidade_atual} {it.unidade_medida} (Mín: {it.estoque_minimo})
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAdjustStock(it)}
+                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Ajustar quantidade em estoque deste insumo"
+                      >
+                        <Sliders className="w-3 h-3" />
+                        <span>Ajuste de Estoque</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExcluirAlerta(it)}
+                        className="px-2.5 py-1 bg-neutral-800 hover:bg-red-900/60 text-neutral-300 hover:text-red-200 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Excluir alerta de estoque deste insumo"
+                      >
+                        <Trash2 className="w-3 h-3 text-red-400" />
+                        <span>Excluir Alerta</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -535,92 +587,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 ))}
             </div>
-          </div>
-
-          {/* Card Especial: Central de Cadastros do App */}
-          <div className="bg-neutral-850 p-5 rounded-2xl border border-amber-500/40 shadow-md relative overflow-hidden">
-            <div className="absolute right-0 top-0 bottom-0 w-32 bg-radial from-amber-600/15 via-transparent to-transparent pointer-events-none" />
-            <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-3">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-amber-400" />
-                <h3 className="text-xs font-black text-white uppercase tracking-wider">
-                  Central de Cadastros do App
-                </h3>
-              </div>
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-900">
-                100% NUVEM
-              </span>
-            </div>
-
-            <p className="text-xs text-neutral-300 mb-3 leading-relaxed">
-              Aqui devem ficar todos os cadastros do restaurante:
-            </p>
-
-            <div className="grid grid-cols-2 gap-2 text-xs mb-3.5">
-              <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
-                <span className="text-[10px] text-amber-400 font-bold uppercase block">Usuários / Equipe</span>
-                <span className="text-neutral-300 font-bold block text-[11px] truncate">CRUD & Master DNDIGQOL</span>
-              </div>
-              <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
-                <span className="text-[10px] text-cyan-400 font-bold uppercase block">Clientes</span>
-                <span className="text-neutral-300 font-bold block text-[11px] truncate">{clientes.length} Cadastrados</span>
-              </div>
-              <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
-                <span className="text-[10px] text-emerald-400 font-bold uppercase block">Cardápio & Pratos</span>
-                <span className="text-neutral-300 font-bold block text-[11px] truncate">Preços & Opcionais</span>
-              </div>
-              <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
-                <span className="text-[10px] text-purple-400 font-bold uppercase block">Cargos & Mesas</span>
-                <span className="text-neutral-300 font-bold block text-[11px] truncate">Bypass Master (20 Mesas)</span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => onNavigate('cadastros')}
-              className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs uppercase rounded-xl flex items-center justify-center gap-2 shadow-md transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-            >
-              <Users className="w-4 h-4" />
-              <span>Acessar Todos os Cadastros</span>
-            </button>
-          </div>
-
-          {/* Quick Access Grid */}
-          <div className="grid grid-cols-2 gap-2 text-xs font-bold uppercase">
-            <button
-              onClick={() => onNavigate('cadastros')}
-              className="p-3 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 flex items-center justify-center gap-2 transition-colors col-span-2 shadow-xs cursor-pointer"
-            >
-              <Users className="w-4 h-4 text-amber-400" />
-              <span>Central de Cadastros</span>
-            </button>
-            <button
-              onClick={() => onNavigate('configuracoes')}
-              className="p-3 rounded-xl bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 flex items-center justify-center gap-2 transition-colors"
-            >
-              <Settings className="w-4 h-4 text-amber-400" />
-              <span>Configurações</span>
-            </button>
-            <button
-              onClick={() => onNavigate('mesas')}
-              className="p-3 rounded-xl bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 flex items-center justify-center gap-2 transition-colors"
-            >
-              <Utensils className="w-4 h-4 text-cyan-400" />
-              <span>Mapa de Mesas</span>
-            </button>
-            <button
-              onClick={() => onNavigate('expedicao')}
-              className="p-3 rounded-xl bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 flex items-center justify-center gap-2 transition-colors"
-            >
-              <Bike className="w-4 h-4 text-cyan-400" />
-              <span>Expedição</span>
-            </button>
-            <button
-              onClick={() => onNavigate('caixa')}
-              className="p-3 rounded-xl bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 flex items-center justify-center gap-2 transition-colors"
-            >
-              <DollarSign className="w-4 h-4 text-purple-400" />
-              <span>Caixa Diário</span>
-            </button>
           </div>
         </div>
       </div>
@@ -756,6 +722,109 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold uppercase"
               >
                 Confirmar Fechamento
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal de Ajuste Rápido de Estoque */}
+      {adjustingStockItem && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <form
+            onSubmit={handleConfirmAdjustStock}
+            className="bg-neutral-850 rounded-2xl border border-neutral-700 max-w-md w-full p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-amber-500" />
+                <h3 className="text-sm font-black text-white uppercase">
+                  Ajuste de Estoque de Insumo
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdjustingStockItem(null)}
+                className="text-neutral-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800 space-y-1">
+              <span className="text-xs font-bold text-white uppercase block">
+                {adjustingStockItem.item_nome}
+              </span>
+              <span className="text-[11px] text-neutral-400 block font-mono">
+                Unidade: {adjustingStockItem.unidade_medida.toUpperCase()} · Mínimo Cadastrado: {adjustingStockItem.estoque_minimo} {adjustingStockItem.unidade_medida}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  NOVA QUANTIDADE ({adjustingStockItem.unidade_medida}): *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={newStockQty}
+                  onChange={(e) => setNewStockQty(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white font-mono rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  ESTOQUE MÍNIMO ALERTA: *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={newStockMin}
+                  onChange={(e) => setNewStockMin(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white font-mono rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+            </div>
+
+            {/* Quick addition buttons */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase">
+                Adicionar rapidamente ao saldo:
+              </span>
+              <div className="flex gap-2">
+                {[5, 10, 20, 50].map((delta) => (
+                  <button
+                    key={delta}
+                    type="button"
+                    onClick={() => {
+                      const cur = parseFloat(newStockQty.replace(',', '.')) || adjustingStockItem.quantidade_atual;
+                      setNewStockQty(String(cur + delta));
+                    }}
+                    className="flex-1 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 rounded-lg text-xs font-bold font-mono transition-colors border border-neutral-700 cursor-pointer"
+                  >
+                    +{delta}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setAdjustingStockItem(null)}
+                className="px-4 py-2 text-xs font-semibold text-neutral-400 hover:text-white cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold uppercase transition-colors cursor-pointer"
+              >
+                Salvar Ajuste
               </button>
             </div>
           </form>

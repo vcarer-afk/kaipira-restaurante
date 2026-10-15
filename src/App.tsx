@@ -832,6 +832,7 @@ export default function App() {
             onAbrirCaixa={handleAbrirCaixa}
             onFecharCaixa={handleFecharCaixa}
             onMovimentacao={handleMovimentacaoCaixa}
+            onUpdateStockItem={handleUpdateStockItem}
           />
         )}
 
