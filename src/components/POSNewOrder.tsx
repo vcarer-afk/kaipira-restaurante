@@ -26,6 +26,11 @@ import {
   Ban,
   Calendar,
   Sparkles,
+  LayoutGrid,
+  List,
+  Layers,
+  CreditCard,
+  QrCode,
 } from 'lucide-react';
 
 interface CartItem {
@@ -90,6 +95,9 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const [selectedCategoria, setSelectedCategoria] = useState<number | 'todas'>('todas');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // View Mode: 'bloco' vs 'lista'
+  const [viewMode, setViewMode] = useState<'bloco' | 'lista'>('bloco');
+
   // Selected Mesa
   const [mesaId, setMesaId] = useState<number>(selectedMesaNumber || 1);
 
@@ -111,6 +119,13 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const [trocoPara, setTrocoPara] = useState('');
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>('pix');
   const [motoboyTipo, setMotoboyTipo] = useState<'proprio' | 'app'>('proprio');
+
+  // Multi-Payment state (Combinação de Pagamentos)
+  const [pagamentosMultiplos, setPagamentosMultiplos] = useState<
+    { id: string; forma: FormaPagamento; valor: number }[]
+  >([]);
+  const [novaFormaMultiplo, setNovaFormaMultiplo] = useState<FormaPagamento>('pix');
+  const [novoValorMultiplo, setNovoValorMultiplo] = useState('');
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -234,6 +249,28 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const trocoCalculado =
     precisaTroco && Number(trocoPara) > total ? Number(trocoPara) - total : 0;
 
+  // Multi-Payment calculations
+  const totalPagoMultiplo = pagamentosMultiplos.reduce((acc, p) => acc + p.valor, 0);
+  const restanteMultiplo = Math.max(0, total - totalPagoMultiplo);
+
+  const handleAddPagamentoMultiplo = () => {
+    const val = parseFloat(novoValorMultiplo.replace(',', '.'));
+    if (isNaN(val) || val <= 0) return;
+    setPagamentosMultiplos((prev) => [
+      ...prev,
+      {
+        id: 'pg-pos-' + Date.now(),
+        forma: novaFormaMultiplo,
+        valor: val,
+      },
+    ]);
+    setNovoValorMultiplo('');
+  };
+
+  const handleRemovePagamentoMultiplo = (id: string) => {
+    setPagamentosMultiplos((prev) => prev.filter((p) => p.id !== id));
+  };
+
   // Submit Order
   const handleSubmitOrder = async () => {
     if (cart.length === 0) {
@@ -252,6 +289,17 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       }
       if (!clienteEndereco || !clienteNumero) {
         alert('POR FAVOR, INFORME O ENDEREÇO COMPLETO E NÚMERO');
+        return;
+      }
+    }
+
+    if (formaPagamento === 'multiplo') {
+      if (totalPagoMultiplo < total - 0.05) {
+        alert(
+          `O VALOR PAGO (${formatBRL(totalPagoMultiplo)}) É INFERIOR AO TOTAL DO PEDIDO (${formatBRL(
+            total
+          )}). ADICIONE OS PAGAMENTOS RESTANTES.`
+        );
         return;
       }
     }
@@ -285,7 +333,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
         troco_para: precisaTroco && trocoPara ? Number(trocoPara) : undefined,
         motoboy_tipo: tipoPedido === 'delivery' ? motoboyTipo : undefined,
         pagamento_imediato:
-          tipoPedido !== 'salão' || formaPagamento === 'mensalista'
+          tipoPedido !== 'salão' || formaPagamento === 'mensalista' || formaPagamento === 'multiplo'
             ? {
                 forma: formaPagamento,
                 valor: total,
@@ -294,7 +342,15 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       };
 
       const pagamentosArray =
-        tipoPedido !== 'salão' || formaPagamento === 'mensalista'
+        formaPagamento === 'multiplo'
+          ? pagamentosMultiplos.map((p, idx) => ({
+              id: Date.now() + idx,
+              pedido_id: 0,
+              forma: p.forma,
+              valor: p.valor,
+              criado_em: new Date().toISOString(),
+            }))
+          : tipoPedido !== 'salão' || formaPagamento === 'mensalista'
           ? [
               {
                 id: Date.now(),
@@ -321,6 +377,8 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
       // Reset cart and form
       setCart([]);
+      setPagamentosMultiplos([]);
+      setNovoValorMultiplo('');
       if (tipoPedido !== 'salão') {
         setClienteNome('');
         setClienteTelefone('');
@@ -516,7 +574,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
             </div>
           )}
 
-          {/* Search bar & Category tabs */}
+          {/* Search bar, Category tabs & View Mode Switcher */}
           <div className="flex flex-col sm:flex-row gap-3 pt-2 border-t border-neutral-800">
             <div className="relative flex-1">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-neutral-500" />
@@ -528,141 +586,251 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                 className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs uppercase text-white placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
               />
             </div>
-            <select
-              value={selectedCategoria}
-              onChange={(e) =>
-                setSelectedCategoria(
-                  e.target.value === 'todas' ? 'todas' : Number(e.target.value)
-                )
-              }
-              className="bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-neutral-200 uppercase focus:outline-none"
-            >
-              <option value="todas">TODAS AS CATEGORIAS</option>
-              {categorias.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nome}
-                </option>
-              ))}
-            </select>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedCategoria}
+                onChange={(e) =>
+                  setSelectedCategoria(
+                    e.target.value === 'todas' ? 'todas' : Number(e.target.value)
+                  )
+                }
+                className="bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-neutral-200 uppercase focus:outline-none"
+              >
+                <option value="todas">TODAS AS CATEGORIAS</option>
+                {categorias.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+
+              {/* View Mode Toggle: Blocos vs Lista */}
+              <div className="flex items-center bg-neutral-800 border border-neutral-700 rounded-lg p-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('bloco')}
+                  className={`px-2.5 py-1 rounded text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    viewMode === 'bloco'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Blocos"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Blocos</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('lista')}
+                  className={`px-2.5 py-1 rounded text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    viewMode === 'lista'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Lista"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>Lista</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Product Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[560px] overflow-y-auto pr-1">
-          {filteredProdutos.map((prod) => {
-            const preco =
-              tipoPedido === 'delivery' ? prod.preco_delivery : prod.preco_salao;
+        {/* Product Catalog: Blocos (Cards Grid) vs Lista (Table) */}
+        {viewMode === 'bloco' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[560px] overflow-y-auto pr-1">
+            {filteredProdutos.map((prod) => {
+              const preco =
+                tipoPedido === 'delivery' ? prod.preco_delivery : prod.preco_salao;
 
-            return (
-              <div
-                key={prod.id}
-                className={`bg-neutral-850 border rounded-xl p-3 flex flex-col justify-between transition-all ${
-                  prod.pausado
-                    ? 'border-red-900/50 opacity-60'
-                    : 'border-neutral-800 hover:border-amber-600/50 hover:bg-neutral-800/80'
-                }`}
-              >
-                <div>
-                  <div className="w-full h-16 rounded-lg overflow-hidden mb-2 bg-neutral-900 border border-neutral-800 flex items-center justify-center relative">
-                    {prod.url_imagem && prod.url_imagem.startsWith('http') ? (
-                      <img
-                        src={prod.url_imagem}
-                        alt={prod.nome}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center">
-                        {prod.categoria_id === 2 ? (
-                          <div className="p-2 rounded-lg bg-cyan-950/80 text-cyan-400 border border-cyan-800">
-                            <Bike className="w-5 h-5" />
-                          </div>
-                        ) : prod.categoria_id === 4 ? (
-                          <div className="p-2 rounded-lg bg-blue-950/80 text-blue-400 border border-blue-800">
-                            <Utensils className="w-5 h-5" />
-                          </div>
-                        ) : prod.categoria_id === 5 ? (
-                          <div className="p-2 rounded-lg bg-pink-950/80 text-pink-400 border border-pink-800">
-                            <Sparkles className="w-5 h-5" />
-                          </div>
-                        ) : (
-                          <div className="p-2 rounded-lg bg-amber-950/80 text-amber-400 border border-amber-800">
-                            <Utensils className="w-5 h-5" />
+              return (
+                <div
+                  key={prod.id}
+                  className={`bg-neutral-850 border rounded-xl p-3 flex flex-col justify-between transition-all ${
+                    prod.pausado
+                      ? 'border-red-900/50 opacity-60'
+                      : 'border-neutral-800 hover:border-amber-600/50 hover:bg-neutral-800/80'
+                  }`}
+                >
+                  <div>
+                    <div className="w-full h-16 rounded-lg overflow-hidden mb-2 bg-neutral-900 border border-neutral-800 flex items-center justify-center relative">
+                      {prod.url_imagem && prod.url_imagem.startsWith('http') ? (
+                        <img
+                          src={prod.url_imagem}
+                          alt={prod.nome}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center">
+                          {prod.categoria_id === 2 ? (
+                            <div className="p-2 rounded-lg bg-cyan-950/80 text-cyan-400 border border-cyan-800">
+                              <Bike className="w-5 h-5" />
+                            </div>
+                          ) : prod.categoria_id === 4 ? (
+                            <div className="p-2 rounded-lg bg-blue-950/80 text-blue-400 border border-blue-800">
+                              <Utensils className="w-5 h-5" />
+                            </div>
+                          ) : prod.categoria_id === 5 ? (
+                            <div className="p-2 rounded-lg bg-pink-950/80 text-pink-400 border border-pink-800">
+                              <Sparkles className="w-5 h-5" />
+                            </div>
+                          ) : (
+                            <div className="p-2 rounded-lg bg-amber-950/80 text-amber-400 border border-amber-800">
+                              <Utensils className="w-5 h-5" />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {prod.pausado && (
+                        <div className="absolute inset-0 bg-black/75 flex items-center justify-center text-red-400 font-extrabold text-xs tracking-wider uppercase">
+                          <Ban className="w-4 h-4 mr-1" />
+                          Esgotado no Dia
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-xs font-bold text-white uppercase leading-snug">
+                        {prod.nome}
+                      </h4>
+                      <span className="text-xs font-black text-amber-400 tabular-nums whitespace-nowrap">
+                        {formatBRL(preco)}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-neutral-400 line-clamp-2 mt-1 uppercase">
+                      {prod.descricao}
+                    </p>
+
+                    <div className="flex items-center gap-2 mt-2 text-[10px] text-neutral-500">
+                      <span>
+                        {tipoPedido === 'delivery' ? 'Preço Delivery' : 'Preço Salão'}
+                      </span>
+                      {prod.opcionais && prod.opcionais.length > 0 && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="text-neutral-400 font-medium">
+                            +{prod.opcionais.length} opcionais
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 mt-3 pt-2 border-t border-neutral-800">
+                    {/* Quick pause toggle for inventory protection */}
+                    <button
+                      onClick={() => onTogglePauseProduto(prod.id)}
+                      title={prod.pausado ? 'Despausar item' : 'Pausar item se esgotou'}
+                      className={`text-[10px] px-2 py-1 rounded font-bold uppercase transition-colors ${
+                        prod.pausado
+                          ? 'bg-red-950 text-red-300 hover:bg-red-900 border border-red-800'
+                          : 'bg-neutral-800 text-neutral-400 hover:text-neutral-200'
+                      }`}
+                    >
+                      {prod.pausado ? 'Pausado (Ativar)' : 'Pausar (Esgotou)'}
+                    </button>
+
+                    <button
+                      onClick={() => handleOpenCustomize(prod)}
+                      disabled={prod.pausado}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors ${
+                        prod.pausado
+                          ? 'bg-neutral-800 text-neutral-600 cursor-not-allowed'
+                          : 'bg-amber-600 hover:bg-amber-500 text-white'
+                      }`}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Adicionar
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-neutral-800 bg-neutral-900 max-h-[560px] overflow-y-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-neutral-850 text-neutral-400 uppercase text-[11px] font-bold border-b border-neutral-800 sticky top-0 z-10">
+                <tr>
+                  <th className="px-3 py-2.5">Prato / Descrição</th>
+                  <th className="px-3 py-2.5">Categoria</th>
+                  <th className="px-3 py-2.5 text-right">Preço</th>
+                  <th className="px-3 py-2.5 text-center">Status</th>
+                  <th className="px-3 py-2.5 text-right">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-800/60">
+                {filteredProdutos.map((prod) => {
+                  const preco = tipoPedido === 'delivery' ? prod.preco_delivery : prod.preco_salao;
+                  const catNome = categorias.find((c) => c.id === prod.categoria_id)?.nome || 'GERAL';
+                  return (
+                    <tr
+                      key={prod.id}
+                      className={`hover:bg-neutral-850/60 transition-colors ${
+                        prod.pausado ? 'opacity-60 bg-red-950/10' : ''
+                      }`}
+                    >
+                      <td className="px-3 py-2.5">
+                        <div className="font-bold text-white uppercase text-xs">
+                          {prod.nome}
+                        </div>
+                        {prod.descricao && (
+                          <div className="text-[10px] text-neutral-400 line-clamp-1 uppercase">
+                            {prod.descricao}
                           </div>
                         )}
-                      </div>
-                    )}
-
-                    {prod.pausado && (
-                      <div className="absolute inset-0 bg-black/75 flex items-center justify-center text-red-400 font-extrabold text-xs tracking-wider uppercase">
-                        <Ban className="w-4 h-4 mr-1" />
-                        Esgotado no Dia
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-start justify-between gap-2">
-                    <h4 className="text-xs font-bold text-white uppercase leading-snug">
-                      {prod.nome}
-                    </h4>
-                    <span className="text-xs font-black text-amber-400 tabular-nums whitespace-nowrap">
-                      {formatBRL(preco)}
-                    </span>
-                  </div>
-
-                  <p className="text-[11px] text-neutral-400 line-clamp-2 mt-1 uppercase">
-                    {prod.descricao}
-                  </p>
-
-                  <div className="flex items-center gap-2 mt-2 text-[10px] text-neutral-500">
-                    <span>
-                      {tipoPedido === 'delivery' ? 'Preço Delivery' : 'Preço Salão'}
-                    </span>
-                    {prod.opcionais && prod.opcionais.length > 0 && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="text-neutral-400 font-medium">
-                          +{prod.opcionais.length} opcionais
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-neutral-800 text-neutral-300 border border-neutral-700">
+                          {catNome}
                         </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2 mt-3 pt-2 border-t border-neutral-800">
-                  {/* Quick pause toggle for inventory protection */}
-                  <button
-                    onClick={() => onTogglePauseProduto(prod.id)}
-                    title={prod.pausado ? 'Despausar item' : 'Pausar item se esgotou'}
-                    className={`text-[10px] px-2 py-1 rounded font-bold uppercase transition-colors ${
-                      prod.pausado
-                        ? 'bg-red-950 text-red-300 hover:bg-red-900 border border-red-800'
-                        : 'bg-neutral-800 text-neutral-400 hover:text-neutral-200'
-                    }`}
-                  >
-                    {prod.pausado ? 'Pausado (Ativar)' : 'Pausar (Esgotou)'}
-                  </button>
-
-                  <button
-                    onClick={() => handleOpenCustomize(prod)}
-                    disabled={prod.pausado}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors ${
-                      prod.pausado
-                        ? 'bg-neutral-800 text-neutral-600 cursor-not-allowed'
-                        : 'bg-amber-600 hover:bg-amber-500 text-white'
-                    }`}
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Adicionar
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-black text-amber-400 font-mono tabular-nums whitespace-nowrap">
+                        {formatBRL(preco)}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => onTogglePauseProduto(prod.id)}
+                          className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase transition-colors cursor-pointer ${
+                            prod.pausado
+                              ? 'bg-red-950 text-red-300 border border-red-800'
+                              : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                          }`}
+                        >
+                          {prod.pausado ? 'Esgotado' : 'Disponível'}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCustomize(prod)}
+                          disabled={prod.pausado}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1 transition-colors ml-auto cursor-pointer ${
+                            prod.pausado
+                              ? 'bg-neutral-800 text-neutral-600 cursor-not-allowed'
+                              : 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm'
+                          }`}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Adicionar</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* RIGHT: Order Config, Address (ViaCEP) & Cart (5 cols) */}
@@ -978,13 +1146,14 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                     { id: 'dinheiro', label: 'DINHEIRO' },
                     { id: 'cartao_debito', label: 'DÉBITO' },
                     { id: 'cartao_credito', label: 'CRÉDITO' },
+                    { id: 'multiplo', label: 'MÚLTIPLOS' },
                     { id: 'mensalista', label: 'MENSALISTA' },
                   ].map((p) => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => setFormaPagamento(p.id as FormaPagamento)}
-                      className={`py-1.5 px-1 rounded text-center font-bold transition-colors ${
+                      className={`py-1.5 px-1 rounded text-center font-bold transition-colors cursor-pointer ${
                         formaPagamento === p.id
                           ? 'bg-amber-600 text-white'
                           : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-750'
@@ -995,6 +1164,92 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Múltiplos Pagamentos (Combinação de Pagamentos) */}
+              {formaPagamento === 'multiplo' && (
+                <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 space-y-2.5 animate-in fade-in">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-black uppercase text-purple-300 flex items-center gap-1.5">
+                      <Layers className="w-4 h-4" />
+                      Combinação de Pagamentos
+                    </span>
+                    <span
+                      className={`text-[10px] font-black font-mono px-2 py-0.5 rounded ${
+                        restanteMultiplo <= 0
+                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                          : 'bg-amber-950 text-amber-300 border border-amber-800'
+                      }`}
+                    >
+                      {restanteMultiplo <= 0 ? '✓ 100% QUITADO' : `FALTA: ${formatBRL(restanteMultiplo)}`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={novaFormaMultiplo}
+                      onChange={(e) => setNovaFormaMultiplo(e.target.value as FormaPagamento)}
+                      className="px-2 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-lg text-xs font-bold"
+                    >
+                      <option value="pix">PIX</option>
+                      <option value="cartao_debito">Débito</option>
+                      <option value="cartao_credito">Crédito</option>
+                      <option value="dinheiro">Dinheiro</option>
+                    </select>
+
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1.5 text-neutral-500 text-xs font-bold">R$</span>
+                      <input
+                        type="text"
+                        value={novoValorMultiplo}
+                        onChange={(e) => setNovoValorMultiplo(e.target.value)}
+                        placeholder={restanteMultiplo > 0 ? restanteMultiplo.toFixed(2) : '0.00'}
+                        className="w-full pl-8 pr-2 py-1.5 bg-neutral-800 border border-neutral-700 text-white font-mono font-bold rounded-lg text-xs"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddPagamentoMultiplo}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-black uppercase flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Adicionar</span>
+                    </button>
+                  </div>
+
+                  {/* List of partial payments */}
+                  <div className="space-y-1 pt-1 max-h-28 overflow-y-auto">
+                    {pagamentosMultiplos.length === 0 ? (
+                      <div className="text-[10px] text-neutral-500 italic p-1.5 bg-neutral-950 rounded text-center">
+                        Nenhum pagamento parcial adicionado ainda.
+                      </div>
+                    ) : (
+                      pagamentosMultiplos.map((pg) => (
+                        <div
+                          key={pg.id}
+                          className="flex items-center justify-between p-1.5 bg-neutral-950 rounded border border-neutral-800 text-[11px]"
+                        >
+                          <span className="font-bold uppercase text-neutral-300">
+                            {pg.forma.replace('_', ' ')}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-amber-400">
+                              {formatBRL(pg.valor)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePagamentoMultiplo(pg.id)}
+                              className="text-neutral-500 hover:text-red-400 p-0.5 cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Change (Troco) if Dinheiro */}
               {formaPagamento === 'dinheiro' && (

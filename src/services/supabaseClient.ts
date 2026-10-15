@@ -265,11 +265,27 @@ export async function atualizarMesaSupabase(
   pessoas?: number
 ): Promise<void> {
   try {
-    await supabase.from('mesas').update({
-      status,
-      cliente_nome: cliente_nome || null,
-      pessoas: pessoas || null,
-    }).eq('numero', numero);
+    // 1. Constrói payload apenas com campos fornecidos
+    const payload: Record<string, any> = { status };
+    if (cliente_nome && cliente_nome.trim()) {
+      payload.cliente_nome = cliente_nome.toUpperCase().trim();
+    }
+    if (pessoas && Number(pessoas) > 0) {
+      payload.pessoas = Number(pessoas);
+    }
+
+    // Tenta atualizar primeiro com payload completo pelo 'numero'
+    const { error } = await supabase.from('mesas').update(payload).eq('numero', numero);
+
+    if (error) {
+      console.warn('Tentativa com payload completo na mesa falhou, tentando apenas status:', error.message);
+      // Fallback: envia APENAS status (garante que não quebre caso cliente_nome ou pessoas não existam)
+      const resStatus = await supabase.from('mesas').update({ status }).eq('numero', numero);
+      if (resStatus.error) {
+        // Tenta filtrar por 'id' caso 'numero' não seja a coluna esperada
+        await supabase.from('mesas').update({ status }).eq('id', numero);
+      }
+    }
   } catch (err) {
     console.warn('Erro ao atualizar mesa no Supabase:', err);
   }
@@ -277,11 +293,24 @@ export async function atualizarMesaSupabase(
 
 export async function fecharMesaSupabase(numero: number): Promise<void> {
   try {
-    await supabase.from('mesas').update({
-      status: 'livre',
-      cliente_nome: null,
-      pessoas: null,
-    }).eq('numero', numero);
+    // Ao dar baixa/fechar a mesa, atualiza apenas o campo válido e obrigatório: status = 'livre'
+    const { error } = await supabase
+      .from('mesas')
+      .update({ status: 'livre' })
+      .eq('numero', numero);
+
+    if (error) {
+      console.warn('Erro ao fechar mesa por numero, tentando por id:', error.message);
+      await supabase.from('mesas').update({ status: 'livre' }).eq('id', numero);
+    } else {
+      // Se colunas extras existirem, tenta limpá-las de forma segura sem emitir erro impeditivo
+      try {
+        await supabase
+          .from('mesas')
+          .update({ cliente_nome: null, pessoas: null })
+          .eq('numero', numero);
+      } catch {}
+    }
   } catch (err) {
     console.warn('Erro ao fechar mesa no Supabase:', err);
   }
@@ -859,41 +888,83 @@ export async function fetchCardapioDiarioSupabase(
  * CRUD COMPLETO: CLIENTES & MENSALISTAS NO SUPABASE
  * =========================================================================
  */
+const isUUID = (str?: string) =>
+  !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
 export async function salvarClienteSupabase(
   cliente: Partial<Cliente>
 ): Promise<{ success: boolean; data?: Cliente; error?: string }> {
   try {
-    const isNew = !cliente.id || cliente.id.startsWith('c-') || cliente.id.length < 10;
-    const payload: any = {
-      nome: (cliente.nome || '').toUpperCase().trim(),
-      telefone: cliente.telefone || '',
-      cep: cliente.cep || '13400-010',
-      endereco: (cliente.endereco || '').toUpperCase().trim(),
-      numero: (cliente.numero || '').toUpperCase().trim(),
-      bairro: (cliente.bairro || '').toUpperCase().trim(),
-      complemento: (cliente.complemento || '').toUpperCase().trim(),
-      eh_mensalista: !!cliente.eh_mensalista,
-      saldo_devedor: Number(cliente.saldo_devedor) || 0,
+    // 1. Sanitização e preenchimento garantido de todos os campos obrigatórios em UPPERCASE
+    const nomeLimpo = (cliente.nome || 'CLIENTE').toUpperCase().trim();
+    const telefoneLimpo = (cliente.telefone || '(19) 99999-9999').trim();
+    const cepLimpo = (cliente.cep || '13400-010').trim();
+    const enderecoLimpo = (cliente.endereco || 'RUA PRINCIPAL').toUpperCase().trim();
+    const numeroLimpo = (cliente.numero || 'S/N').toUpperCase().trim();
+    const bairroLimpo = (cliente.bairro || 'CENTRO').toUpperCase().trim();
+    const complementoLimpo = cliente.complemento ? cliente.complemento.toUpperCase().trim() : null;
+
+    const payload: Record<string, any> = {
+      nome: nomeLimpo,
+      telefone: telefoneLimpo,
+      cep: cepLimpo,
+      endereco: enderecoLimpo,
+      numero: numeroLimpo,
+      bairro: bairroLimpo,
+      complemento: complementoLimpo,
+      eh_mensalista: Boolean(cliente.eh_mensalista),
+      saldo_devedor: Number(cliente.saldo_devedor) || 0.0,
     };
 
-    if (!isNew && cliente.id) {
+    // 2. Se cliente.id for um UUID válido real do PostgreSQL, inclui para atualização
+    const hasValidUuid = isUUID(cliente.id);
+    if (hasValidUuid) {
       payload.id = cliente.id;
     }
 
-    const { data, error } = await supabase
+    // 3. Caso tenha UUID válido, realiza upsert ou update por ID
+    if (hasValidUuid) {
+      const { data, error } = await supabase
+        .from('clientes')
+        .upsert(payload, { onConflict: 'id' })
+        .select()
+        .maybeSingle();
+
+      if (!error && data) {
+        return { success: true, data: data as Cliente };
+      }
+      console.warn('Upsert por UUID falhou, tentando insert/update por telefone:', error?.message);
+    }
+
+    // 4. Para novos clientes (sem UUID pré-existente ou ID temporário local):
+    // Utiliza .insert() para permitir que o PostgreSQL gere o UUID automaticamente via gen_random_uuid()
+    const { data: insertData, error: insertError } = await supabase
       .from('clientes')
-      .upsert(payload)
+      .insert(payload)
       .select()
       .maybeSingle();
 
-    if (error) {
-      console.warn('Aviso salvar cliente Supabase:', error.message);
-      return { success: false, error: error.message };
+    if (!insertError && insertData) {
+      return { success: true, data: insertData as Cliente };
+    }
+
+    // 5. Caso o telefone já exista (conflito de chave única), atualiza os dados do cliente por telefone
+    console.warn('Insert de cliente retornou erro (tentando update por telefone):', insertError?.message);
+    const { data: updateData, error: updateError } = await supabase
+      .from('clientes')
+      .update(payload)
+      .eq('telefone', telefoneLimpo)
+      .select()
+      .maybeSingle();
+
+    if (updateError) {
+      console.warn('Erro definitivo ao salvar cliente no Supabase:', updateError.message);
+      return { success: false, error: updateError.message };
     }
 
     return {
       success: true,
-      data: (data as Cliente) || (cliente as Cliente),
+      data: (updateData as Cliente) || (payload as Cliente),
     };
   } catch (err: any) {
     console.warn('Erro ao salvar cliente no Supabase:', err);
@@ -1002,7 +1073,23 @@ export async function salvarMesaSupabase(
       .maybeSingle();
 
     if (error) {
-      console.warn('Aviso salvar mesa Supabase:', error.message);
+      console.warn('Aviso salvar mesa com payload completo, tentando payload essencial (numero, status):', error.message);
+      const minimalPayload: any = {
+        numero: Number(mesa.numero),
+        status: mesa.status || 'livre',
+      };
+      const resMinimal = await supabase
+        .from('mesas')
+        .upsert(minimalPayload, { onConflict: 'numero' })
+        .select()
+        .maybeSingle();
+
+      if (!resMinimal.error && resMinimal.data) {
+        return {
+          success: true,
+          data: (resMinimal.data as Mesa) || (mesa as Mesa),
+        };
+      }
       return { success: false, error: error.message };
     }
 

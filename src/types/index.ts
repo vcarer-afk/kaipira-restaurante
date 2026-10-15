@@ -1,7 +1,7 @@
 export type TipoUsuario = 'master' | 'admin' | 'atendente' | 'cozinha' | 'garcom' | 'entregador';
 export type TipoPedido = 'salão' | 'retirada' | 'delivery';
 export type StatusPedido = 'pendente' | 'em_preparacao' | 'pronto' | 'a_caminho' | 'entregue' | 'cancelado';
-export type FormaPagamento = 'dinheiro' | 'pix' | 'cartao_credito' | 'cartao_debito' | 'mensalista';
+export type FormaPagamento = 'dinheiro' | 'pix' | 'cartao_credito' | 'cartao_debito' | 'mensalista' | 'multiplo';
 
 export interface UsuarioSistema {
   id: string;
