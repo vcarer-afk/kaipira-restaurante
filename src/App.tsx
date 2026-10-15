@@ -36,6 +36,7 @@ import { CashRegister } from './components/CashRegister';
 import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
 import { playAlertChime } from './utils/formatters';
+import { THEMES } from './utils/theme';
 
 // Seed data fallbacks if server offline
 import {
@@ -60,6 +61,7 @@ import {
   fecharMesaSupabase,
   atualizarItemEstoqueSupabase,
   adicionarItemEstoqueSupabase,
+  excluirItemEstoqueSupabase,
   abrirCaixaSupabase,
   fecharCaixaSupabase,
   registrarMovimentacaoCaixaSupabase,
@@ -447,11 +449,16 @@ export default function App() {
     else if (role === 'atendente') setActiveTab('pdv');
   };
 
-  // Save Settings to cloud directly via Supabase
+  // Save Settings to cloud directly via Supabase with immediate visual response
   const handleSaveConfiguracoes = async (novas: ConfiguracoesSistema) => {
-    const saved = await saveConfiguracoesToSupabase(novas);
-    setConfiguracoes(saved);
-    setCloudConfigSyncedAt(new Date());
+    setConfiguracoes(novas);
+    try {
+      const saved = await saveConfiguracoesToSupabase(novas);
+      setConfiguracoes(saved);
+      setCloudConfigSyncedAt(new Date());
+    } catch (err) {
+      console.error('Erro ao persistir configurações na nuvem:', err);
+    }
   };
 
   // Order status updates via Supabase
@@ -575,6 +582,11 @@ export default function App() {
   const handleAddStockItem = async (data: Partial<ItemEstoque>) => {
     const novo = await adicionarItemEstoqueSupabase(data);
     setEstoque((prev) => [...prev, novo]);
+  };
+
+  const handleDeleteStockItem = async (id: number) => {
+    setEstoque((prev) => prev.filter((it) => it.id !== id));
+    await excluirItemEstoqueSupabase(id);
   };
 
   // Mensalistas operations via Supabase
@@ -790,8 +802,10 @@ export default function App() {
     return <LoginScreen onLoginSuccess={handleLoginSuccess} usuarios={usuarios} />;
   }
 
+  const currentTheme = THEMES[configuracoes.padraoCor] || THEMES.ambar;
+
   return (
-    <div className="min-h-screen bg-neutral-900 text-neutral-100 flex flex-col">
+    <div className={`min-h-screen ${currentTheme.bgTone || 'bg-neutral-900'} ${currentTheme.fontStyle || 'font-sans'} text-neutral-100 flex flex-col transition-colors duration-200`}>
       {/* Top Bar Header with Configurable Menu Position and Theme */}
       <Header
         activeTab={activeTab}
@@ -850,6 +864,10 @@ export default function App() {
             categorias={categorias}
             mesas={mesas}
             bairros={bairros}
+            estoque={estoque}
+            onUpdateStockItem={handleUpdateStockItem}
+            onAddItemStock={handleAddStockItem}
+            onDeleteItemStock={handleDeleteStockItem}
             onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
             onNavigateTab={(tab) => {
               setActiveTab(tab);
@@ -972,6 +990,7 @@ export default function App() {
             estoque={estoque}
             onUpdateItem={handleUpdateStockItem}
             onAddItem={handleAddStockItem}
+            onDeleteItem={handleDeleteStockItem}
           />
         )}
 

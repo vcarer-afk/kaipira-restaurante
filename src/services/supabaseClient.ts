@@ -371,41 +371,130 @@ export async function fecharMesaSupabase(numero: number): Promise<void> {
 }
 
 /**
- * Estoque operations via Supabase
+ * Estoque operations via Supabase (100% Nuvem)
  */
 export async function atualizarItemEstoqueSupabase(
   id: number,
   data: Partial<ItemEstoque>
-): Promise<void> {
+): Promise<{ success: boolean; error?: string }> {
   try {
-    await supabase.from('estoque').update({
-      ...data,
+    const updatePayload: any = {
       atualizado_em: new Date().toISOString(),
-    }).eq('id', id);
-  } catch (err) {
+    };
+    if (data.item_nome !== undefined) updatePayload.item_nome = data.item_nome.toUpperCase().trim();
+    if (data.quantidade_atual !== undefined) updatePayload.quantidade_atual = Number(data.quantidade_atual);
+    if (data.unidade_medida !== undefined) updatePayload.unidade_medida = data.unidade_medida.toLowerCase().trim();
+    if (data.estoque_minimo !== undefined) updatePayload.estoque_minimo = Number(data.estoque_minimo);
+    if (data.fornecedor_info !== undefined) updatePayload.fornecedor_info = data.fornecedor_info ? data.fornecedor_info.toUpperCase().trim() : null;
+
+    // Dual Cloud Persistence: Sync with Express persistent cloud backend
+    try {
+      fetch(`/api/estoque/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatePayload),
+      }).catch(() => {});
+    } catch {}
+
+    const { error } = await supabase.from('estoque').update(updatePayload).eq('id', id);
+    if (error) {
+      console.warn('Aviso atualizar estoque Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
     console.warn('Erro ao atualizar estoque no Supabase:', err);
+    return { success: false, error: err.message };
   }
 }
 
 export async function adicionarItemEstoqueSupabase(
   data: Partial<ItemEstoque>
 ): Promise<ItemEstoque> {
-  const novo: ItemEstoque = {
-    id: Date.now(),
-    item_nome: (data.item_nome || '').toUpperCase(),
+  const payload: any = {
+    item_nome: (data.item_nome || '').toUpperCase().trim(),
     quantidade_atual: Number(data.quantidade_atual) || 0,
-    unidade_medida: data.unidade_medida || 'un',
+    unidade_medida: (data.unidade_medida || 'un').toLowerCase().trim(),
     estoque_minimo: Number(data.estoque_minimo) || 5,
-    fornecedor_info: data.fornecedor_info,
+    fornecedor_info: data.fornecedor_info ? data.fornecedor_info.toUpperCase().trim() : null,
     atualizado_em: new Date().toISOString(),
   };
 
   try {
-    await supabase.from('estoque').insert(novo);
+    const { data: inserted, error } = await supabase
+      .from('estoque')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (!error && inserted) {
+      const resultItem: ItemEstoque = {
+        id: Number(inserted.id),
+        item_nome: inserted.item_nome,
+        quantidade_atual: Number(inserted.quantidade_atual) || 0,
+        unidade_medida: inserted.unidade_medida || 'un',
+        estoque_minimo: Number(inserted.estoque_minimo) || 5,
+        fornecedor_info: inserted.fornecedor_info || undefined,
+        atualizado_em: inserted.atualizado_em,
+      };
+
+      // Dual Cloud Persistence: Sync with Express persistent cloud backend
+      try {
+        fetch('/api/estoque', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(resultItem),
+        }).catch(() => {});
+      } catch {}
+
+      return resultItem;
+    }
+    if (error) {
+      console.warn('Aviso insert estoque Supabase:', error.message);
+    }
   } catch (err) {
     console.warn('Erro ao inserir item de estoque no Supabase:', err);
   }
-  return novo;
+
+  const fallbackItem: ItemEstoque = {
+    id: Date.now(),
+    ...payload,
+    fornecedor_info: payload.fornecedor_info || undefined,
+  };
+
+  // Dual Cloud Persistence: Sync with Express persistent cloud backend
+  try {
+    fetch('/api/estoque', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fallbackItem),
+    }).catch(() => {});
+  } catch {}
+
+  return fallbackItem;
+}
+
+export async function excluirItemEstoqueSupabase(
+  id: number
+): Promise<{ success: boolean; error?: string }> {
+  // Dual Cloud Persistence: Sync with Express persistent cloud backend
+  try {
+    fetch(`/api/estoque/${id}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+  } catch {}
+
+  try {
+    const { error } = await supabase.from('estoque').delete().eq('id', id);
+    if (error) {
+      console.warn('Aviso excluir estoque Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.warn('Erro ao excluir item de estoque no Supabase:', err);
+    return { success: false, error: err.message };
+  }
 }
 
 /**

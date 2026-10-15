@@ -8,7 +8,9 @@ import {
   Mesa,
   Perfil,
   BairroTaxa,
+  ItemEstoque,
 } from '../types';
+import { StockManager } from './StockManager';
 import { formatPhone, formatBRL } from '../utils/formatters';
 import { UpperInput, UpperTextarea } from './UpperInput';
 import {
@@ -62,6 +64,7 @@ import {
   Sliders,
   DollarSign,
   ArrowUpDown,
+  Boxes,
 } from 'lucide-react';
 
 interface CadastrosHubProps {
@@ -73,6 +76,10 @@ interface CadastrosHubProps {
   categorias: Categoria[];
   mesas: Mesa[];
   bairros?: BairroTaxa[];
+  estoque?: ItemEstoque[];
+  onUpdateStockItem?: (id: number, data: Partial<ItemEstoque>) => void;
+  onAddItemStock?: (item: Partial<ItemEstoque>) => void;
+  onDeleteItemStock?: (id: number) => void;
   onOpenSupabaseModal: () => void;
   onNavigateTab: (tab: any) => void;
   onSaveCliente?: (c: Partial<Cliente>) => Promise<void>;
@@ -96,6 +103,7 @@ export type CadastrosSubTab =
   | 'mesas'
   | 'categorias'
   | 'bairros'
+  | 'insumos'
   | 'sql';
 
 export const CadastrosHub: React.FC<CadastrosHubProps> = ({
@@ -107,6 +115,10 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   categorias,
   mesas,
   bairros = [],
+  estoque = [],
+  onUpdateStockItem,
+  onAddItemStock,
+  onDeleteItemStock,
   onOpenSupabaseModal,
   onNavigateTab,
   onSaveCliente,
@@ -1045,6 +1057,16 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
             <span className="text-lg font-black text-white">{bairros.length}</span>
             <span className="text-[10px] text-blue-400 block mt-0.5">rotas delivery</span>
           </div>
+
+          <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800/80">
+            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Insumos & Estoque</span>
+            <span className="text-lg font-black text-white">{estoque.length}</span>
+            <span className="text-[10px] text-emerald-400 block mt-0.5">
+              {estoque.filter((it) => it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo).length > 0
+                ? `${estoque.filter((it) => it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo).length} em alerta crítico`
+                : '100% monitorado'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1149,6 +1171,18 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
         </button>
 
         <button
+          onClick={() => setActiveSubTab('insumos')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'insumos'
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'bg-neutral-850 text-neutral-400 hover:text-white hover:bg-neutral-800'
+          }`}
+        >
+          <Boxes className="w-4 h-4" />
+          <span>7. Insumos & Estoque ({estoque.length})</span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab('sql')}
           className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
             activeSubTab === 'sql'
@@ -1157,7 +1191,7 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
           }`}
         >
           <FileCode className="w-4 h-4" />
-          <span>7. Esquema SQL Supabase</span>
+          <span>8. Esquema SQL Supabase</span>
         </button>
       </div>
 
@@ -2458,7 +2492,21 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
       )}
 
       {/* =========================================================================
-          ABA 7: SCRIPT SQL SUPABASE
+          ABA 7: INSUMOS & ESTOQUE (100% NUVEM)
+          ========================================================================= */}
+      {activeSubTab === 'insumos' && (
+        <div className="space-y-4">
+          <StockManager
+            estoque={estoque}
+            onUpdateItem={onUpdateStockItem || (() => {})}
+            onAddItem={onAddItemStock || (() => {})}
+            onDeleteItem={onDeleteItemStock || (() => {})}
+          />
+        </div>
+      )}
+
+      {/* =========================================================================
+          ABA 8: SCRIPT SQL SUPABASE
           ========================================================================= */}
       {activeSubTab === 'sql' && (
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">

@@ -528,10 +528,10 @@ async function startServer() {
     res.json(prod);
   });
 
-  // Ajuste de Estoque
+  // Insumos: Alteração / Ajuste de Estoque
   app.put('/api/estoque/:id', (req, res) => {
     const id = Number(req.params.id);
-    const { quantidade_atual, estoque_minimo, item_nome, fornecedor_info } = req.body;
+    const { quantidade_atual, estoque_minimo, item_nome, fornecedor_info, unidade_medida } = req.body;
 
     const item = state.estoque.find((e) => e.id === id);
     if (!item) {
@@ -540,29 +540,56 @@ async function startServer() {
 
     if (quantidade_atual !== undefined) item.quantidade_atual = Number(quantidade_atual);
     if (estoque_minimo !== undefined) item.estoque_minimo = Number(estoque_minimo);
-    if (item_nome) item.item_nome = item_nome.toUpperCase();
-    if (fornecedor_info) item.fornecedor_info = fornecedor_info.toUpperCase();
+    if (item_nome) item.item_nome = item_nome.toUpperCase().trim();
+    if (unidade_medida) item.unidade_medida = unidade_medida.toLowerCase().trim();
+    if (fornecedor_info !== undefined) item.fornecedor_info = fornecedor_info ? fornecedor_info.toUpperCase().trim() : '';
     item.atualizado_em = new Date().toISOString();
 
     broadcast('STOCK_UPDATED', item);
     res.json(item);
   });
 
-  // Adicionar novo item de estoque
+  // Insumos: Adicionar novo item de estoque
   app.post('/api/estoque', (req, res) => {
-    const { item_nome, quantidade_atual = 0, unidade_medida = 'un', estoque_minimo = 5, fornecedor_info } = req.body;
+    const { id, item_nome, quantidade_atual = 0, unidade_medida = 'un', estoque_minimo = 5, fornecedor_info } = req.body;
+    const existingIdx = id ? state.estoque.findIndex((e) => e.id === Number(id)) : -1;
+    if (existingIdx !== -1) {
+      // Atualiza se já existir
+      const item = state.estoque[existingIdx];
+      item.item_nome = (item_nome || item.item_nome).toUpperCase().trim();
+      item.quantidade_atual = Number(quantidade_atual);
+      item.unidade_medida = (unidade_medida || item.unidade_medida).toLowerCase().trim();
+      item.estoque_minimo = Number(estoque_minimo);
+      item.fornecedor_info = fornecedor_info ? fornecedor_info.toUpperCase().trim() : '';
+      item.atualizado_em = new Date().toISOString();
+      broadcast('STOCK_UPDATED', item);
+      return res.json(item);
+    }
+
     const novoItem: ItemEstoque = {
-      id: Date.now(),
-      item_nome: (item_nome || '').toUpperCase(),
+      id: id ? Number(id) : Date.now(),
+      item_nome: (item_nome || '').toUpperCase().trim(),
       quantidade_atual: Number(quantidade_atual),
-      unidade_medida: unidade_medida.toLowerCase(),
+      unidade_medida: (unidade_medida || 'un').toLowerCase().trim(),
       estoque_minimo: Number(estoque_minimo),
-      fornecedor_info: fornecedor_info ? fornecedor_info.toUpperCase() : '',
+      fornecedor_info: fornecedor_info ? fornecedor_info.toUpperCase().trim() : '',
       atualizado_em: new Date().toISOString(),
     };
     state.estoque.push(novoItem);
     broadcast('STOCK_ITEM_ADDED', novoItem);
     res.status(201).json(novoItem);
+  });
+
+  // Insumos: Exclusão de item de estoque na nuvem
+  app.delete('/api/estoque/:id', (req, res) => {
+    const id = Number(req.params.id);
+    const idx = state.estoque.findIndex((e) => e.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ erro: true, mensagem: 'Item de estoque não encontrado' });
+    }
+    const removido = state.estoque.splice(idx, 1)[0];
+    broadcast('STOCK_ITEM_DELETED', removido);
+    res.json({ success: true, item: removido });
   });
 
   // Mensalistas: Quitar ou abater saldo

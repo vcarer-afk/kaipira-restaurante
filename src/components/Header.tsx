@@ -73,9 +73,9 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* Zone 1: Brand Wordmark */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <div
-            className="w-9 h-9 rounded-lg border flex items-center justify-center shadow-xs"
+            className="w-9 h-9 rounded-xl border flex items-center justify-center shadow-xs shrink-0"
             style={{
               backgroundColor: `${theme.dotColor}20`,
               borderColor: `${theme.dotColor}50`,
@@ -84,18 +84,18 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <UtensilsCrossed className="w-5 h-5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-base font-extrabold tracking-tight text-white whitespace-nowrap">
+              <span className="text-sm sm:text-base font-extrabold tracking-tight text-white truncate max-w-[160px] xs:max-w-[220px] sm:max-w-none">
                 {configuracoes?.nomeRestaurante || 'RESTAURANTE KAIPIRA'}
               </span>
-              <span className="hidden sm:inline-block text-xs text-neutral-400 font-medium">
+              <span className="hidden md:inline-block text-xs text-neutral-400 font-medium">
                 · {configuracoes?.cidade || 'Piracicaba'} - {configuracoes?.uf || 'SP'}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-neutral-400">
               <span className={isLunchTime ? 'text-emerald-400 font-semibold' : 'text-neutral-400'}>
-                {isLunchTime ? 'Almoço Aberto (11h-14h)' : 'Fora do Almoço'}
+                {isLunchTime ? 'Almoço (11h-14h)' : 'Fora do Almoço'}
               </span>
               <span aria-hidden="true">·</span>
               <button
@@ -105,7 +105,8 @@ export const Header: React.FC<HeaderProps> = ({
                 title={cloudConfigSyncedAt ? `Configurações da Nuvem Carregadas (${cloudConfigSyncedAt.toLocaleTimeString('pt-BR')}) - Clique para recarregar` : 'Sincronizar com a nuvem'}
               >
                 <Cloud className={`w-3 h-3 ${isCloudConfigLoading ? 'text-amber-400 animate-pulse' : 'text-cyan-400'}`} />
-                <span>{isCloudConfigLoading ? 'Carregando Nuvem...' : 'Nuvem Ativa'}</span>
+                <span className="hidden xs:inline">{isCloudConfigLoading ? 'Carregando...' : 'Nuvem Ativa'}</span>
+                <span className="xs:hidden">{isCloudConfigLoading ? '...' : 'Nuvem'}</span>
               </button>
             </div>
           </div>

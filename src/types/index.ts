@@ -182,7 +182,17 @@ export interface BairroTaxa {
 }
 
 export type PosicaoMenu = 'direita' | 'esquerda' | 'topo';
-export type PadraoCor = 'ambar' | 'terracota' | 'verde' | 'carvao' | 'cafe';
+export type PadraoCor =
+  | 'ambar'
+  | 'terracota'
+  | 'verde'
+  | 'carvao'
+  | 'cafe'
+  | 'vinho'
+  | 'milho'
+  | 'ceu'
+  | 'cobre'
+  | 'oliva';
 
 export interface ConfiguracoesSistema {
   // Banco de Dados

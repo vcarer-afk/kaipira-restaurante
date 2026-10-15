@@ -501,25 +501,25 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
             </div>
           </div>
 
-          {/* PADRÕES DE CORES CONFIGURÁVEIS (5 PALETAS) */}
+          {/* PADRÕES DE CORES CONFIGURÁVEIS (10 PALETAS) */}
           <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-xs flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2">
                 <Palette className="w-4 h-4 text-purple-400" />
                 <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
-                  Padrões de Cores do Restaurante (5 Paletas)
+                  Padrões de Cores do Restaurante (10 Paletas)
                 </h3>
               </div>
-              <span className="text-[10px] font-mono text-purple-400">
-                5 TEMAS
+              <span className="text-[10px] font-mono text-purple-400 font-bold px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800">
+                10 TEMAS COMPLETOS
               </span>
             </div>
 
             <p className="text-xs text-neutral-400">
-              Selecione o tema cromático que personaliza botões, destaques e cabeçalho:
+              Clique em qualquer paleta para <strong>aplicar instantaneamente</strong> a combinação de cores, contraste de fundo e tipografia em todo o sistema e <strong>salvar a alteração na nuvem</strong>:
             </p>
 
-            <div className="space-y-2.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {(Object.keys(THEMES) as PadraoCor[]).map((themeKey) => {
                 const theme = THEMES[themeKey];
                 const isSelected = formData.padraoCor === themeKey;
@@ -528,39 +528,77 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                   <button
                     key={themeKey}
                     type="button"
-                    onClick={() => setFormData({ ...formData, padraoCor: themeKey })}
-                    className={`w-full p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
+                    onClick={() => {
+                      const updated = { ...formData, padraoCor: themeKey };
+                      setFormData(updated);
+                      onSaveConfiguracoes(updated);
+                      setSavedSuccess(true);
+                      setTimeout(() => setSavedSuccess(false), 3000);
+                    }}
+                    className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-3 cursor-pointer ${
                       isSelected
-                        ? 'border-neutral-400 bg-neutral-900 ring-2 ring-neutral-400 shadow-md'
-                        : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-700'
+                        ? 'border-amber-500 bg-neutral-900 ring-2 ring-amber-500/80 shadow-lg scale-[1.01]'
+                        : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-700 hover:bg-neutral-850/80'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      {/* Color Dot Swatch */}
-                      <span
-                        className="w-5 h-5 rounded-full shadow-xs shrink-0 border border-white/20"
-                        style={{ backgroundColor: theme.dotColor }}
-                      />
-                      <div>
-                        <span className="text-xs font-black text-white uppercase block leading-tight">
-                          {theme.name}
-                        </span>
-                        <span className="text-[10px] text-neutral-400 block mt-0.5">
-                          {theme.desc}
-                        </span>
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        {/* Color Swatch Dots */}
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="w-5 h-5 rounded-full shadow-md shrink-0 border border-white/20"
+                            style={{ backgroundColor: theme.dotColor }}
+                            title={`Cor Primária: ${theme.dotColor}`}
+                          />
+                          <span
+                            className="w-3.5 h-3.5 rounded-full shadow-xs shrink-0 border border-white/10"
+                            style={{ backgroundColor: theme.accentColor }}
+                            title={`Cor de Destaque: ${theme.accentColor}`}
+                          />
+                          <span className="text-[10px] font-mono font-bold uppercase text-neutral-400 ml-1">
+                            {theme.id === 'ambar' ? '★ KAIPIRA PADRÃO' : themeKey.toUpperCase()}
+                          </span>
+                        </div>
+
+                        {isSelected ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            Ativo
+                          </span>
+                        ) : (
+                          <span
+                            className="px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase shadow-xs"
+                            style={{ backgroundColor: theme.dotColor }}
+                          >
+                            Clique p/ Aplicar
+                          </span>
+                        )}
                       </div>
+
+                      <span className="text-xs font-black text-white uppercase block leading-tight">
+                        {theme.name}
+                      </span>
+                      <span className="text-[11px] text-neutral-400 block mt-1">
+                        {theme.desc}
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    {/* Preview Strip of background and typography */}
+                    <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[10px] text-neutral-400">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 font-mono">
+                          {theme.fontLabel}
+                        </span>
+                        <span className={`text-[11px] font-bold ${theme.fontStyle} text-neutral-200`}>
+                          AaBb 123
+                        </span>
+                      </div>
                       <span
-                        className="px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase"
-                        style={{ backgroundColor: theme.dotColor }}
+                        className="font-bold uppercase tracking-wider"
+                        style={{ color: theme.dotColor }}
                       >
-                        Amostra
+                        ● Tom {themeKey}
                       </span>
-                      {isSelected && (
-                        <Check className="w-4 h-4 text-white shrink-0" />
-                      )}
                     </div>
                   </button>
                 );
