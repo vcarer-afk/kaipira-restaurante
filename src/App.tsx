@@ -75,6 +75,13 @@ import {
   excluirProdutoSupabase,
   salvarMesaSupabase,
   excluirMesaSupabase,
+  fetchCategoriasSupabase,
+  salvarCategoriaSupabase,
+  excluirCategoriaSupabase,
+  fetchProdutosSupabase,
+  fetchBairrosSupabase,
+  salvarBairrosSupabase,
+  resetarMesasVaziasSupabase,
 } from './services/supabaseClient';
 
 export default function App() {
@@ -88,7 +95,7 @@ export default function App() {
   const [isSlideMenuOpen, setIsSlideMenuOpen] = useState<boolean>(false);
   const [selectedMesaNumber, setSelectedMesaNumber] = useState<number | undefined>(undefined);
 
-  // Cloud Application State
+  // Cloud Application State (100% Nuvem Supabase)
   const [configuracoes, setConfiguracoes] = useState<ConfiguracoesSistema>(INITIAL_CONFIGURACOES);
   const [isCloudConfigLoading, setIsCloudConfigLoading] = useState<boolean>(true);
   const [cloudConfigSyncedAt, setCloudConfigSyncedAt] = useState<Date | null>(null);
@@ -100,7 +107,7 @@ export default function App() {
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>(INITIAL_USUARIOS);
   const [estoque, setEstoque] = useState<ItemEstoque[]>(INITIAL_ESTOQUE);
   const [caixa, setCaixa] = useState<CaixaDiario>(INITIAL_CAIXA);
-  const [pedidos, setPedidos] = useState<Pedido[]>(INITIAL_PEDIDOS);
+  const [pedidos, setPedidos] = useState<Pedido[]>([]); // 100% da nuvem - sem pedidos mock locais em mesas
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [bairros, setBairros] = useState<BairroTaxa[]>(BAIRROS_PIRACICABA);
   const [cardapioDiario, setCardapioDiario] = useState<CardapioDiarioConfig>({
@@ -167,17 +174,60 @@ export default function App() {
         supabase.from('clientes').select('*').order('nome', { ascending: true }),
       ]);
 
-      if (pedidosRes.status === 'fulfilled' && pedidosRes.value.data && pedidosRes.value.data.length > 0) {
-        setPedidos(pedidosRes.value.data as Pedido[]);
+      if (pedidosRes.status === 'fulfilled') {
+        const cloudPeds = (pedidosRes.value.data as Pedido[]) || [];
+        setPedidos(cloudPeds);
       }
+
       if (mesasRes.status === 'fulfilled' && mesasRes.value.data && mesasRes.value.data.length > 0) {
-        const mappedMesas: Mesa[] = (mesasRes.value.data as any[]).map((m) => ({
-          id: Number(m.id || m.numero),
-          numero: Number(m.numero || m.id),
-          status: m.status || 'livre',
-          cliente_nome: m.cliente_nome,
-          pessoas: m.pessoas ? Number(m.pessoas) : undefined,
-        }));
+        const rawMesas = mesasRes.value.data as any[];
+        const cloudPedidos = (pedidosRes.status === 'fulfilled' && pedidosRes.value.data) ? (pedidosRes.value.data as Pedido[]) : [];
+        const cloudReservas = (reservasRes.status === 'fulfilled' && reservasRes.value.data) ? (reservasRes.value.data as Reserva[]) : [];
+        const hojeStr = new Date().toISOString().split('T')[0];
+
+        const mappedMesas: Mesa[] = rawMesas.map((m) => {
+          const num = Number(m.numero || m.id);
+          const activeOrder = cloudPedidos.find(
+            (p) => p.mesa_id === num && !['cancelado', 'entregue'].includes(p.status)
+          );
+          const activeReserva = cloudReservas.find(
+            (r) =>
+              Number(r.mesa_id) === num &&
+              r.status !== 'cancelada' &&
+              r.status !== 'concluida' &&
+              (!r.data_hora || r.data_hora.startsWith(hojeStr))
+          );
+
+          let status: Mesa['status'] = 'livre';
+          let cliente_nome: string | undefined = undefined;
+          let pessoas: number | undefined = undefined;
+
+          // Se tiver pedido em andamento no salão hoje na nuvem
+          if (activeOrder) {
+            status = m.status === 'conta' ? 'conta' : 'ocupada';
+            cliente_nome = m.cliente_nome || activeOrder.cliente?.nome;
+            pessoas = m.pessoas ? Number(m.pessoas) : 2;
+          } else if (activeReserva || m.status === 'reservada') {
+            // Se tiver reserva confirmada ou pendente
+            status = 'reservada';
+            cliente_nome = activeReserva ? `RESERVA: ${activeReserva.cliente_nome.toUpperCase()}` : m.cliente_nome;
+            pessoas = activeReserva?.pessoas || m.pessoas || 4;
+          } else {
+            // Padrão do Restaurante Kaipira: por padrão ao abrir o restaurante as mesas estarão sempre vazias
+            status = 'livre';
+            cliente_nome = undefined;
+            pessoas = undefined;
+          }
+
+          return {
+            id: Number(m.id || num),
+            numero: num,
+            status,
+            cliente_nome,
+            pessoas,
+          };
+        });
+
         mappedMesas.sort((a, b) => a.numero - b.numero);
         setMesas(mappedMesas);
       }
@@ -209,6 +259,36 @@ export default function App() {
       }
       if (clientesRes.status === 'fulfilled' && clientesRes.value.data && clientesRes.value.data.length > 0) {
         setClientes(clientesRes.value.data as Cliente[]);
+      }
+
+      // Carrega categorias da nuvem Supabase (100% cloud)
+      try {
+        const cloudCats = await fetchCategoriasSupabase();
+        if (cloudCats && cloudCats.length > 0) {
+          setCategorias(cloudCats);
+        }
+      } catch (err) {
+        console.warn('Conectando a categorias do Supabase...', err);
+      }
+
+      // Carrega produtos da nuvem Supabase (100% cloud)
+      try {
+        const cloudProds = await fetchProdutosSupabase();
+        if (cloudProds && cloudProds.length > 0) {
+          setProdutos(cloudProds);
+        }
+      } catch (err) {
+        console.warn('Conectando a produtos do Supabase...', err);
+      }
+
+      // Carrega bairros da nuvem Supabase (100% cloud)
+      try {
+        const cloudBairros = await fetchBairrosSupabase();
+        if (cloudBairros && cloudBairros.length > 0) {
+          setBairros(cloudBairros);
+        }
+      } catch (err) {
+        console.warn('Conectando a bairros do Supabase...', err);
       }
 
       // Carrega usuários da nuvem Supabase
@@ -599,52 +679,75 @@ export default function App() {
     setMesas((prev) => prev.filter((m) => m.numero !== numero));
   };
 
-  // Categories CRUD
+  // Categories CRUD (100% Nuvem Supabase)
   const handleSaveCategoria = async (catData: Partial<Categoria>) => {
+    const res = await salvarCategoriaSupabase(catData);
+    const saved = res.data || {
+      id: catData.id || Date.now(),
+      nome: (catData.nome || '').toUpperCase().trim(),
+      ordem: catData.ordem || 0,
+    };
     setCategorias((prev) => {
-      if (catData.id) {
-        return prev.map((c) => (c.id === catData.id ? ({ ...c, ...catData } as Categoria) : c));
+      const exists = prev.some((c) => c.id === saved.id);
+      if (exists) {
+        return prev.map((c) => (c.id === saved.id ? saved : c));
       }
-      const nextId = prev.reduce((max, c) => Math.max(max, c.id), 0) + 1;
-      const nova: Categoria = {
-        id: nextId,
-        nome: (catData.nome || '').toUpperCase().trim(),
-        ordem: catData.ordem || nextId,
-      };
-      return [...prev, nova];
+      return [...prev, saved].sort((a, b) => a.ordem - b.ordem);
     });
   };
 
   const handleDeleteCategoria = async (id: number) => {
+    await excluirCategoriaSupabase(id);
     setCategorias((prev) => prev.filter((c) => c.id !== id));
   };
 
-  // Bairros & Taxas CRUD
+  // Bairros & Taxas CRUD (100% Nuvem Supabase)
   const handleSaveBairro = async (bairroData: Partial<BairroTaxa>, originalNome?: string) => {
-    setBairros((prev) => {
-      const nomeLimpo = (bairroData.bairro || '').toUpperCase().trim();
-      const taxaNum = Number(bairroData.taxa) || 0;
-      const novoBairro: BairroTaxa = { bairro: nomeLimpo, taxa: taxaNum };
+    const nomeLimpo = (bairroData.bairro || '').toUpperCase().trim();
+    const taxaNum = Number(bairroData.taxa) || 0;
+    const novoBairro: BairroTaxa = { bairro: nomeLimpo, taxa: taxaNum };
 
-      if (originalNome) {
-        return prev.map((b) => (b.bairro.toUpperCase() === originalNome.toUpperCase() ? novoBairro : b));
-      }
-      const exists = prev.some((b) => b.bairro.toUpperCase() === nomeLimpo);
+    let novos: BairroTaxa[] = [];
+    if (originalNome) {
+      novos = bairros.map((b) => (b.bairro.toUpperCase() === originalNome.toUpperCase() ? novoBairro : b));
+    } else {
+      const exists = bairros.some((b) => b.bairro.toUpperCase() === nomeLimpo);
       if (exists) {
-        return prev.map((b) => (b.bairro.toUpperCase() === nomeLimpo ? novoBairro : b));
+        novos = bairros.map((b) => (b.bairro.toUpperCase() === nomeLimpo ? novoBairro : b));
+      } else {
+        novos = [...bairros, novoBairro];
       }
-      return [...prev, novoBairro];
-    });
+    }
+    setBairros(novos);
+    await salvarBairrosSupabase(novos);
   };
 
   const handleDeleteBairro = async (bairroNome: string) => {
-    setBairros((prev) => prev.filter((b) => b.bairro.toUpperCase() !== bairroNome.toUpperCase()));
+    const novos = bairros.filter((b) => b.bairro.toUpperCase() !== bairroNome.toUpperCase());
+    setBairros(novos);
+    await salvarBairrosSupabase(novos);
   };
 
   // Cash Register functional operations via Supabase
   const handleAbrirCaixa = async (valor: number, observacoes?: string) => {
     const novo = await abrirCaixaSupabase(valor, observacoes);
     setCaixa(novo);
+    // Padrão do Restaurante Kaipira: ao abrir o restaurante as mesas estarão vazias (a não ser que estejam reservadas)
+    try {
+      const mesasReset = await resetarMesasVaziasSupabase(mesas, reservas);
+      setMesas(mesasReset);
+    } catch (err) {
+      console.warn('Aviso ao resetar mesas na abertura do caixa:', err);
+    }
+  };
+
+  const handleResetarMesasVazias = async () => {
+    try {
+      const mesasReset = await resetarMesasVaziasSupabase(mesas, reservas);
+      setMesas(mesasReset);
+    } catch (err) {
+      console.warn('Aviso ao resetar mesas vazias:', err);
+    }
   };
 
   const handleFecharCaixa = async (valor: number, observacoes?: string) => {
@@ -840,6 +943,7 @@ export default function App() {
             onFecharMesa={handleFecharMesa}
             onCreateReserva={handleCreateReserva}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}
+            onResetMesas={handleResetarMesasVazias}
           />
         )}
 

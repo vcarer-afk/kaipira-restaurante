@@ -108,6 +108,7 @@ export interface Reserva {
   data_hora: string;
   status: 'confirmada' | 'cancelada' | 'concluida';
   observacoes?: string;
+  pessoas?: number;
 }
 
 export interface ItemPedido {

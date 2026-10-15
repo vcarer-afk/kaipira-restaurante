@@ -45,6 +45,7 @@ interface TablesSaloonProps {
   ) => Promise<void> | void;
   onCreateReserva: (reserva: Partial<Reserva>) => void;
   onPrintReceipt: (pedido: Pedido) => void;
+  onResetMesas?: () => Promise<void> | void;
 }
 
 interface PagamentoParcial {
@@ -64,6 +65,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   onFecharMesa,
   onCreateReserva,
   onPrintReceipt,
+  onResetMesas,
 }) => {
   const [selectedMesa, setSelectedMesa] = useState<Mesa | null>(null);
   const [showReservaModal, setShowReservaModal] = useState(false);
@@ -107,20 +109,20 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   const [novaFormaMultiplo, setNovaFormaMultiplo] = useState<FormaPagamento>('pix');
   const [novoValorMultiplo, setNovoValorMultiplo] = useState('');
 
-  // Filter orders for the selected table
-  const currentMesaOrders = selectedMesa
+  // Filter orders for the selected table - se mesa estiver livre, NÃO carrega pedidos antigos
+  const currentMesaOrders = selectedMesa && selectedMesa.status !== 'livre'
     ? pedidos.filter(
         (p) =>
           p.mesa_id === selectedMesa.numero &&
-          !['cancelado'].includes(p.status)
+          !['cancelado', 'entregue'].includes(p.status)
       )
     : [];
 
   // Active uncompleted orders
-  const activeMesaOrders = currentMesaOrders.filter((p) => p.status !== 'entregue');
+  const activeMesaOrders = currentMesaOrders;
 
-  // Table active orders to be paid (if all already marked entregue, use currentMesaOrders)
-  const ordersToPay = activeMesaOrders.length > 0 ? activeMesaOrders : currentMesaOrders;
+  // Table active orders to be paid
+  const ordersToPay = currentMesaOrders;
 
   // Calculate items and total consumption
   const mesaConsumoPratos = currentMesaOrders.reduce((acc, p) => acc + p.valor_total, 0);
@@ -343,6 +345,17 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
             <span className="text-purple-400">{reservadasCount} Reservas</span>
           </div>
 
+          {onResetMesas && (
+            <button
+              onClick={() => onResetMesas()}
+              title="Padrão de abertura: esvazia as mesas do salão mantendo as que possuem reservas agendadas"
+              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 border border-amber-800/60 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+              <span>Esvaziar Mesas (Padrão Abertura)</span>
+            </button>
+          )}
+
           <button
             onClick={() => setActiveTab(activeTab === 'mapa' ? 'reservas' : 'mapa')}
             className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -361,13 +374,18 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
               <span className="text-xs font-bold text-neutral-300 uppercase">
                 Layout do Salão (Clique na mesa para abrir, lançar pratos ou fechar conta)
               </span>
+              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60">
+                ● Nuvem Supabase Ativa
+              </span>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
               {mesas.map((m) => {
-                const mesaOrders = pedidos.filter(
-                  (p) => p.mesa_id === m.numero && !['cancelado', 'entregue'].includes(p.status)
-                );
+                const mesaOrders = m.status === 'livre'
+                  ? []
+                  : pedidos.filter(
+                      (p) => p.mesa_id === m.numero && !['cancelado', 'entregue'].includes(p.status)
+                    );
                 const mesaTotal = mesaOrders.reduce((sum, p) => sum + p.valor_total, 0);
 
                 let statusStyle = 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-500';

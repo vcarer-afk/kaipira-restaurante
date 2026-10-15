@@ -188,9 +188,6 @@ export const INITIAL_PRODUTOS: Produto[] = [
 
 export const INITIAL_MESAS: Mesa[] = Array.from({ length: 20 }, (_, idx) => {
   const num = idx + 1;
-  if (num === 3) return { id: num, numero: num, status: 'ocupada', cliente_nome: 'FAMÍLIA ALMEIDA', pessoas: 4 };
-  if (num === 7) return { id: num, numero: num, status: 'conta', cliente_nome: 'DR. MARCOS SILVA', pessoas: 2 };
-  if (num === 12) return { id: num, numero: num, status: 'reservada', cliente_nome: 'RESERVA CLUBE ROTARY (12:30)', pessoas: 8 };
   return { id: num, numero: num, status: 'livre' };
 });
 
@@ -353,116 +350,5 @@ export const INITIAL_CAIXA: CaixaDiario = {
   ],
 };
 
-export const INITIAL_PEDIDOS: Pedido[] = [
-  {
-    id: 101,
-    codigo_senha: 42,
-    tipo: 'delivery',
-    status: 'em_preparacao',
-    cliente_id: 'c101-kaipira-pira',
-    cliente: INITIAL_CLIENTES[0],
-    precisa_troco: false,
-    motoboy_tipo: 'proprio',
-    entregador_nome: 'RODRIGO MOTOBOY',
-    valor_total: 106.8,
-    taxa_entrega: 7.0,
-    criado_em: new Date(Date.now() - 18 * 60000).toISOString(),
-    atualizado_em: new Date().toISOString(),
-    itens: [
-      {
-        id: 1,
-        pedido_id: 101,
-        produto_id: 1,
-        produto_nome: 'FEIJOADA COMPLETA DA FAZENDA',
-        quantidade: 2,
-        preco_unitario: 49.9,
-        observacao: 'MANDAR BASTANTE TORRESMO E PIMENTA SEPARADA',
-        opcionais_selecionados: [{ id: 101, nome: 'TORRESMO PURURUCA EXTRA', preco_adicional: 12.0 }],
-      },
-    ],
-    pagamentos: [{ id: 1, pedido_id: 101, forma: 'pix', valor: 106.8, criado_em: new Date().toISOString() }],
-  },
-  {
-    id: 102,
-    codigo_senha: 43,
-    tipo: 'retirada',
-    status: 'pronto',
-    precisa_troco: false,
-    valor_total: 44.9,
-    taxa_entrega: 0,
-    criado_em: new Date(Date.now() - 25 * 60000).toISOString(),
-    atualizado_em: new Date(Date.now() - 5 * 60000).toISOString(),
-    itens: [
-      {
-        id: 2,
-        pedido_id: 102,
-        produto_id: 2,
-        produto_nome: 'FRANGO CAIPIRA COM QUIABO & POLENTA',
-        quantidade: 1,
-        preco_unitario: 44.9,
-        observacao: 'CLIENTE RETIRA NO BALCÃO - NOME: RENATO',
-      },
-    ],
-    pagamentos: [{ id: 2, pedido_id: 102, forma: 'cartao_debito', valor: 44.9, criado_em: new Date().toISOString() }],
-  },
-  {
-    id: 103,
-    codigo_senha: 44,
-    tipo: 'salão',
-    status: 'em_preparacao',
-    mesa_id: 3,
-    precisa_troco: false,
-    valor_total: 121.8,
-    taxa_entrega: 0,
-    criado_em: new Date(Date.now() - 10 * 60000).toISOString(),
-    atualizado_em: new Date().toISOString(),
-    itens: [
-      {
-        id: 3,
-        pedido_id: 103,
-        produto_id: 3,
-        produto_nome: 'COSTELINHA DE PORCO COM MANDIOCA NA MANTEIGA',
-        quantidade: 2,
-        preco_unitario: 52.0,
-        observacao: 'MESA 3 - CAPRICHAR NO CHEIRO-VERDE',
-      },
-      {
-        id: 4,
-        pedido_id: 103,
-        produto_id: 8,
-        produto_nome: 'REFRIGERANTE GUARANÁ ANTARCTICA 2 LITROS',
-        quantidade: 1,
-        preco_unitario: 15.0,
-      },
-    ],
-    pagamentos: [],
-  },
-  {
-    id: 104,
-    codigo_senha: 45,
-    tipo: 'delivery',
-    status: 'a_caminho',
-    cliente_id: 'c102-kaipira-pira',
-    cliente: INITIAL_CLIENTES[1],
-    precisa_troco: true,
-    troco_para: 100.0,
-    motoboy_tipo: 'proprio',
-    entregador_nome: 'RODRIGO MOTOBOY',
-    valor_total: 69.8,
-    taxa_entrega: 10.0,
-    criado_em: new Date(Date.now() - 35 * 60000).toISOString(),
-    atualizado_em: new Date(Date.now() - 12 * 60000).toISOString(),
-    itens: [
-      {
-        id: 5,
-        pedido_id: 104,
-        produto_id: 5,
-        produto_nome: 'MARMITEX EXECUTIVA DO DIA (DELIVERY)',
-        quantidade: 2,
-        preco_unitario: 29.9,
-        observacao: '1 COM BIFE E 1 COM FRANGO GRELHADO',
-      },
-    ],
-    pagamentos: [{ id: 3, pedido_id: 104, forma: 'dinheiro', valor: 69.8, criado_em: new Date().toISOString() }],
-  },
-];
+export const INITIAL_PEDIDOS: Pedido[] = [];
+

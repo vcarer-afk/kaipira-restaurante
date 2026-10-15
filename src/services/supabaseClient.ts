@@ -20,7 +20,13 @@ import {
   Categoria,
   BairroTaxa,
 } from '../types';
-import { INITIAL_CONFIGURACOES, INITIAL_USUARIOS } from '../data/seedData';
+import {
+  INITIAL_CONFIGURACOES,
+  INITIAL_USUARIOS,
+  INITIAL_CATEGORIAS,
+  INITIAL_PRODUTOS,
+  BAIRROS_PIRACICABA,
+} from '../data/seedData';
 import { formatPhone, formatBRL } from '../utils/formatters';
 
 // Re-export singleton Supabase client
@@ -1324,5 +1330,271 @@ export async function excluirMesaSupabase(
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * =========================================================================
+ * GESTÃO DO SALÃO: RESETAR MESAS VAZIAS (PADRÃO DE ABERTURA DO RESTAURANTE)
+ * "nosso padrao é sempre quando abrir o restaurante as mesas estarao vazias (a não ser que esteja reservadas)"
+ * =========================================================================
+ */
+export async function resetarMesasVaziasSupabase(
+  mesasAtuais: Mesa[],
+  reservas: Reserva[] = []
+): Promise<Mesa[]> {
+  const mesasAtualizadas: Mesa[] = [];
+  const hoje = new Date().toISOString().split('T')[0];
+
+  // Identifica reservas ativas para o dia atual
+  const reservasHoje = reservas.filter(
+    (r) =>
+      r.status !== 'cancelada' &&
+      r.status !== 'concluida' &&
+      (!r.data_hora || r.data_hora.startsWith(hoje))
+  );
+
+  for (const m of mesasAtuais) {
+    const num = Number(m.numero || m.id);
+    const reservaMesa = reservasHoje.find((r) => Number(r.mesa_id) === num);
+
+    let novoStatus: Mesa['status'] = 'livre';
+    let novoCliente: string | undefined = undefined;
+    let novoPessoas: number | undefined = undefined;
+
+    if (reservaMesa) {
+      novoStatus = 'reservada';
+      novoCliente = reservaMesa.cliente_nome ? `RESERVA: ${reservaMesa.cliente_nome.toUpperCase()}` : 'RESERVA';
+      novoPessoas = reservaMesa.pessoas || 4;
+    }
+
+    const mesaLimpa: Mesa = {
+      id: m.id || num,
+      numero: num,
+      status: novoStatus,
+      cliente_nome: novoCliente,
+      pessoas: novoPessoas,
+    };
+
+    mesasAtualizadas.push(mesaLimpa);
+
+    // Atualiza individualmente no banco de dados Supabase na nuvem
+    try {
+      await atualizarMesaSupabase(num, novoStatus, novoCliente, novoPessoas);
+    } catch (err) {
+      console.warn(`Erro ao resetar mesa #${num} no Supabase:`, err);
+    }
+  }
+
+  return mesasAtualizadas;
+}
+
+/**
+ * =========================================================================
+ * CRUD COMPLETO: CATEGORIAS (100% NUVEM SUPABASE)
+ * =========================================================================
+ */
+export async function fetchCategoriasSupabase(): Promise<Categoria[]> {
+  try {
+    const { data, error } = await supabase
+      .from('categorias')
+      .select('*')
+      .order('ordem', { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      return data as Categoria[];
+    }
+
+    // Se a tabela estiver vazia na nuvem, faz seed inicial das categorias padrão no Supabase
+    if (!error && (!data || data.length === 0)) {
+      console.info('Categorias vazias na nuvem. Sincronizando categorias padrão no Supabase...');
+      for (const cat of INITIAL_CATEGORIAS) {
+        await supabase.from('categorias').upsert({ id: cat.id, nome: cat.nome, ordem: cat.ordem });
+      }
+      return INITIAL_CATEGORIAS;
+    }
+
+    // Se a tabela não existir, busca no JSON dados de configuracoes
+    const { data: conf } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+    if (conf?.dados?.categorias && Array.isArray(conf.dados.categorias) && conf.dados.categorias.length > 0) {
+      return conf.dados.categorias;
+    }
+
+    return INITIAL_CATEGORIAS;
+  } catch (err) {
+    console.warn('Falha ao buscar categorias no Supabase:', err);
+    return INITIAL_CATEGORIAS;
+  }
+}
+
+export async function salvarCategoriaSupabase(
+  catData: Partial<Categoria>
+): Promise<{ success: boolean; data?: Categoria; error?: string }> {
+  try {
+    const nomeLimpo = (catData.nome || 'NOVA CATEGORIA').toUpperCase().trim();
+    const payload: any = {
+      nome: nomeLimpo,
+      ordem: catData.ordem || 0,
+    };
+    if (catData.id) {
+      payload.id = catData.id;
+    }
+
+    const { data, error } = await supabase
+      .from('categorias')
+      .upsert(payload)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Erro ao salvar categoria no Supabase:', error.message);
+      // Fallback em configuracoes.dados.categorias
+      try {
+        const { data: conf } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+        const existing = conf?.dados?.categorias || INITIAL_CATEGORIAS;
+        const updated = catData.id
+          ? existing.map((c: any) => (c.id === catData.id ? { ...c, ...payload } : c))
+          : [...existing, { id: Date.now(), ...payload }];
+        await supabase.from('configuracoes').upsert({ id: 1, dados: { ...conf?.dados, categorias: updated } });
+      } catch {}
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data: data as Categoria };
+  } catch (err: any) {
+    console.warn('Exceção ao salvar categoria:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function excluirCategoriaSupabase(id: number): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase.from('categorias').delete().eq('id', id);
+    if (error) {
+      console.warn('Erro ao excluir categoria:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * =========================================================================
+ * FETCH COMPLETO: PRODUTOS DO CARDÁPIO NA NUVEM SUPABASE
+ * =========================================================================
+ */
+export async function fetchProdutosSupabase(): Promise<Produto[]> {
+  try {
+    // Tenta carregar produtos com opcionais vinculados
+    let prods: any[] = [];
+    const { data: dataWithOpcionais, error: errOpcionais } = await supabase
+      .from('produtos')
+      .select('*, opcionais(*)')
+      .order('id', { ascending: true });
+
+    if (!errOpcionais && dataWithOpcionais && dataWithOpcionais.length > 0) {
+      prods = dataWithOpcionais;
+    } else {
+      // Fallback para select simples se a tabela opcionais não estiver configurada
+      const { data: dataSimple, error: errSimple } = await supabase
+        .from('produtos')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (!errSimple && dataSimple && dataSimple.length > 0) {
+        prods = dataSimple;
+      }
+    }
+
+    if (prods.length > 0) {
+      return prods.map((p) => ({
+        id: Number(p.id),
+        categoria_id: Number(p.categoria_id) || 1,
+        nome: (p.nome || '').toUpperCase().trim(),
+        descricao: (p.descricao || '').toUpperCase().trim(),
+        preco_salao: Number(p.preco_salao) || 0,
+        preco_delivery: Number(p.preco_delivery) || Number(p.preco_salao) || 0,
+        url_imagem: p.url_imagem,
+        dia_semana: Array.isArray(p.dia_semana) ? p.dia_semana : [1, 2, 3, 4, 5, 6],
+        pausado: Boolean(p.pausado),
+        criado_em: p.criado_em || new Date().toISOString(),
+        opcionais: Array.isArray(p.opcionais) ? p.opcionais : [],
+      }));
+    }
+
+    // Se o banco na nuvem estiver sem produtos, sincroniza produtos iniciais no Supabase
+    console.info('Nenhum produto encontrado no banco na nuvem. Sincronizando produtos no Supabase...');
+    for (const p of INITIAL_PRODUTOS) {
+      await salvarProdutoSupabase(p);
+    }
+    return INITIAL_PRODUTOS;
+  } catch (err) {
+    console.warn('Erro ao carregar produtos do Supabase:', err);
+    return INITIAL_PRODUTOS;
+  }
+}
+
+/**
+ * =========================================================================
+ * BAIRROS & TAXAS DE ENTREGA (100% NUVEM SUPABASE VIA CONFIGURAÇÕES)
+ * =========================================================================
+ */
+export async function fetchBairrosSupabase(): Promise<BairroTaxa[]> {
+  try {
+    const { data, error } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (!error && data?.dados?.bairros && Array.isArray(data.dados.bairros) && data.dados.bairros.length > 0) {
+      return data.dados.bairros as BairroTaxa[];
+    }
+
+    // Salva bairros padrão de Piracicaba na nuvem se ainda não existirem
+    await salvarBairrosSupabase(BAIRROS_PIRACICABA);
+    return BAIRROS_PIRACICABA;
+  } catch (err) {
+    console.warn('Erro ao buscar bairros no Supabase:', err);
+    return BAIRROS_PIRACICABA;
+  }
+}
+
+export async function salvarBairrosSupabase(
+  bairros: BairroTaxa[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: conf } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    const existingDados = conf?.dados || {};
+    const { error } = await supabase
+      .from('configuracoes')
+      .upsert(
+        {
+          id: 1,
+          dados: {
+            ...existingDados,
+            bairros,
+          },
+          atualizado_em: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+
+    if (error) {
+      console.warn('Erro ao salvar bairros no Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.warn('Exceção ao salvar bairros:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 
 
