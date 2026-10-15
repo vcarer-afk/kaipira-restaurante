@@ -17,6 +17,8 @@ import {
   ItemCardapioDiario,
   CanalCardapio,
   Produto,
+  Categoria,
+  BairroTaxa,
 } from '../types';
 import { INITIAL_CONFIGURACOES, INITIAL_USUARIOS } from '../data/seedData';
 import { formatPhone, formatBRL } from '../utils/formatters';
