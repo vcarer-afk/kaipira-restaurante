@@ -315,6 +315,21 @@ ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Acesso publico usuarios" ON usuarios;
 CREATE POLICY "Acesso publico usuarios" ON usuarios FOR ALL USING (true) WITH CHECK (true);
+
+-- 5. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (MONTAGEM DO DIA)
+-- Campos: data (DATE), produto_id (INT), canal ('delivery_balcao' ou 'mesas')
+CREATE TABLE IF NOT EXISTS cardapio_diario (
+    id SERIAL PRIMARY KEY,
+    data DATE NOT NULL DEFAULT CURRENT_DATE,
+    produto_id INT NOT NULL,
+    canal VARCHAR(30) NOT NULL, -- 'delivery_balcao' ou 'mesas'
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT uk_cardapio_data_produto UNIQUE (data, produto_id)
+);
+
+ALTER TABLE cardapio_diario ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acesso publico cardapio_diario" ON cardapio_diario;
+CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING (true) WITH CHECK (true);
 `;
 
   const copySqlToClipboard = () => {

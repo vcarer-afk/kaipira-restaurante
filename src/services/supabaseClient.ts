@@ -15,6 +15,7 @@ import {
   UsuarioSistema,
   CardapioDiarioConfig,
   ItemCardapioDiario,
+  CanalCardapio,
 } from '../types';
 import { INITIAL_CONFIGURACOES, INITIAL_USUARIOS } from '../data/seedData';
 import { formatPhone } from '../utils/formatters';
@@ -644,14 +645,43 @@ export async function excluirUsuarioSupabase(
  */
 
 /**
- * Salva a seleção do Cardápio Diário no Supabase (na tabela 'cardapio_diario' e em 'configuracoes')
+ * Salva a seleção do Cardápio Diário no Supabase:
+ * Utiliza a tabela 'cardapio_diario' com campos: data, produto_id, canal ('delivery_balcao' | 'mesas')
+ * Regra: Cada produto pertence exclusivamente a um único canal no dia.
  */
 export async function salvarCardapioDiarioSupabase(
   cardapio: CardapioDiarioConfig
 ): Promise<{ success: boolean; data?: CardapioDiarioConfig; error?: string }> {
   try {
-    const payload = {
-      data: cardapio.data,
+    const hoje = cardapio.data || new Date().toISOString().split('T')[0];
+
+    // 1. Tabela 'cardapio_diario' (data, produto_id, canal)
+    try {
+      // Remove registros anteriores do dia para salvar a nova seleção exclusiva
+      await supabase.from('cardapio_diario').delete().eq('data', hoje);
+
+      if (cardapio.itens.length > 0) {
+        const rowsToInsert = cardapio.itens.map((it) => ({
+          data: hoje,
+          produto_id: it.produto_id,
+          canal: it.canal, // 'delivery_balcao' ou 'mesas'
+        }));
+
+        const { error: insertError } = await supabase
+          .from('cardapio_diario')
+          .insert(rowsToInsert);
+
+        if (insertError) {
+          console.warn('Aviso ao inserir em cardapio_diario no Supabase:', insertError.message);
+        }
+      }
+    } catch (tblErr: any) {
+      console.warn('Aviso tabela cardapio_diario (campos: data, produto_id, canal):', tblErr?.message);
+    }
+
+    // 2. Redundância em 'configuracoes' (para sincronização Realtime e metadados de status)
+    const payloadMeta = {
+      data: hoje,
       status: cardapio.status,
       confirmado_em: cardapio.confirmado_em || new Date().toISOString(),
       confirmado_por: cardapio.confirmado_por || 'GERENTE / ATENDIMENTO',
@@ -659,18 +689,6 @@ export async function salvarCardapioDiarioSupabase(
       atualizado_em: new Date().toISOString(),
     };
 
-    // 1. Tenta salvar na tabela 'cardapio_diario'
-    const { data, error } = await supabase
-      .from('cardapio_diario')
-      .upsert(payload, { onConflict: 'data' })
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      console.warn('Aviso ao gravar em cardapio_diario no Supabase:', error.message);
-    }
-
-    // 2. Redundância em 'configuracoes' (para garantir sincronização total)
     try {
       const { data: confRow } = await supabase
         .from('configuracoes')
@@ -681,20 +699,23 @@ export async function salvarCardapioDiarioSupabase(
       const existingDados = confRow?.dados || {};
       await supabase
         .from('configuracoes')
-        .upsert({
-          id: 1,
-          dados: {
-            ...existingDados,
-            cardapio_diario_atual: payload,
+        .upsert(
+          {
+            id: 1,
+            dados: {
+              ...existingDados,
+              cardapio_diario_atual: payloadMeta,
+            },
           },
-        }, { onConflict: 'id' });
+          { onConflict: 'id' }
+        );
     } catch (confErr) {
       console.warn('Aviso redundância cardápio configuracoes:', confErr);
     }
 
     return {
       success: true,
-      data: (data as CardapioDiarioConfig) || cardapio,
+      data: cardapio,
     };
   } catch (err: any) {
     console.warn('Exceção ao salvar cardapio diario no Supabase:', err);
@@ -704,6 +725,7 @@ export async function salvarCardapioDiarioSupabase(
 
 /**
  * Busca a configuração do Cardápio Diário para a data especificada (padrão hoje)
+ * Lê da tabela 'cardapio_diario' (campos: data, produto_id, canal)
  */
 export async function fetchCardapioDiarioSupabase(
   dataStr?: string
@@ -711,20 +733,67 @@ export async function fetchCardapioDiarioSupabase(
   const hoje = dataStr || new Date().toISOString().split('T')[0];
 
   try {
-    // 1. Tenta buscar em 'cardapio_diario'
-    const { data, error } = await supabase
+    // 1. Tenta buscar em 'cardapio_diario' (data, produto_id, canal)
+    const { data: rows, error } = await supabase
       .from('cardapio_diario')
       .select('*')
-      .eq('data', hoje)
-      .maybeSingle();
+      .eq('data', hoje);
 
-    if (!error && data) {
+    if (!error && rows && Array.isArray(rows)) {
+      const itensMapeados: ItemCardapioDiario[] = [];
+
+      for (const r of rows) {
+        if (r.produto_id && r.canal) {
+          const canal: CanalCardapio =
+            r.canal === 'mesas' ? 'mesas' : 'delivery_balcao';
+          itensMapeados.push({
+            produto_id: Number(r.produto_id),
+            canal,
+            disponivel_delivery: canal === 'delivery_balcao',
+            disponivel_salao: canal === 'mesas',
+          });
+        } else if (Array.isArray(r.itens)) {
+          // Retrocompatibilidade se a linha salva foi no formato jsonb
+          for (const it of r.itens) {
+            const canal: CanalCardapio =
+              it.canal || (it.disponivel_delivery ? 'delivery_balcao' : 'mesas');
+            itensMapeados.push({
+              produto_id: Number(it.produto_id),
+              canal,
+              disponivel_delivery: canal === 'delivery_balcao',
+              disponivel_salao: canal === 'mesas',
+            });
+          }
+        }
+      }
+
+      // Obtém metadados adicionais de status e horário
+      let status: 'aguardando' | 'aberto' = itensMapeados.length > 0 ? 'aberto' : 'aguardando';
+      let confirmado_em: string | undefined = undefined;
+      let confirmado_por: string | undefined = undefined;
+
+      try {
+        const { data: confData } = await supabase
+          .from('configuracoes')
+          .select('dados')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (confData?.dados?.cardapio_diario_atual?.data === hoje) {
+          status = confData.dados.cardapio_diario_atual.status || status;
+          confirmado_em = confData.dados.cardapio_diario_atual.confirmado_em;
+          confirmado_por = confData.dados.cardapio_diario_atual.confirmado_por;
+        }
+      } catch (confErr) {
+        // silencioso
+      }
+
       return {
-        data: data.data,
-        status: data.status || 'aguardando',
-        confirmado_em: data.confirmado_em,
-        confirmado_por: data.confirmado_por,
-        itens: Array.isArray(data.itens) ? data.itens : [],
+        data: hoje,
+        status,
+        confirmado_em,
+        confirmado_por,
+        itens: itensMapeados,
       };
     }
 
@@ -738,7 +807,24 @@ export async function fetchCardapioDiarioSupabase(
     if (confData?.dados?.cardapio_diario_atual) {
       const saved = confData.dados.cardapio_diario_atual;
       if (saved.data === hoje) {
-        return saved as CardapioDiarioConfig;
+        const normalizedItens = (saved.itens || []).map((it: any) => {
+          const canal: CanalCardapio =
+            it.canal || (it.disponivel_delivery ? 'delivery_balcao' : 'mesas');
+          return {
+            produto_id: Number(it.produto_id),
+            canal,
+            disponivel_delivery: canal === 'delivery_balcao',
+            disponivel_salao: canal === 'mesas',
+          };
+        });
+
+        return {
+          data: hoje,
+          status: saved.status || 'aguardando',
+          confirmado_em: saved.confirmado_em,
+          confirmado_por: saved.confirmado_por,
+          itens: normalizedItens,
+        };
       }
     }
 

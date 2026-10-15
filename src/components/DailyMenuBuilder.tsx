@@ -4,33 +4,30 @@ import {
   Categoria,
   CardapioDiarioConfig,
   ItemCardapioDiario,
+  CanalCardapio,
   Perfil,
 } from '../types';
 import { formatBRL } from '../utils/formatters';
-import { salvarCardapioDiarioSupabase } from '../services/supabaseClient';
 import {
   Calendar,
   CheckCircle2,
   Clock,
-  Plus,
-  Trash2,
   Search,
   Bike,
   Utensils,
   Check,
-  RotateCcw,
   Sparkles,
   ShoppingBag,
   Store,
-  Layers,
   Cloud,
   X,
   AlertCircle,
+  Package,
+  Flame,
+  ArrowRightLeft,
+  Trash2,
   HelpCircle,
-  ToggleLeft,
-  ToggleRight,
-  ChevronRight,
-  ArrowRight,
+  ChefHat,
 } from 'lucide-react';
 
 interface DailyMenuBuilderProps {
@@ -52,10 +49,14 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
   onClose,
   onNavigateTab,
 }) => {
-  // Working list of active items for today
-  const [selectedItems, setSelectedItems] = useState<ItemCardapioDiario[]>(
-    cardapioDiario.itens || []
-  );
+  // Working list of active items for today with exclusive channel ('delivery_balcao' | 'mesas')
+  const [selectedItems, setSelectedItems] = useState<ItemCardapioDiario[]>(() => {
+    return (cardapioDiario.itens || []).map((it) => ({
+      produto_id: it.produto_id,
+      canal: it.canal || (it.disponivel_delivery ? 'delivery_balcao' : 'mesas'),
+    }));
+  });
+
   const [statusAbertura, setStatusAbertura] = useState<'aguardando' | 'aberto'>(
     cardapioDiario.status || 'aguardando'
   );
@@ -82,21 +83,6 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     'Sexta-feira',
     'Sábado',
   ];
-  const MESES_EXTENSO = [
-    'Janeiro',
-    'Fevereiro',
-    'Março',
-    'Abril',
-    'Maio',
-    'Junho',
-    'Julho',
-    'Agosto',
-    'Setembro',
-    'Outubro',
-    'Novembro',
-    'Dezembro',
-  ];
-
   const rawDayIndex = now.getDay();
   const diaSemanaIndex = rawDayIndex === 0 ? 1 : rawDayIndex; // Default domingo to segunda
   const nomeDiaSemana = DIAS_EXTENSO[rawDayIndex];
@@ -105,11 +91,16 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
   ).padStart(2, '0')}/${now.getFullYear()}`;
   const dataHojeISO = now.toISOString().split('T')[0];
 
-  // Sync internal state if props change
+  // Sync internal state if external props change
   useEffect(() => {
     if (cardapioDiario.itens) {
-      setSelectedItems(cardapioDiario.itens);
-      setStatusAbertura(cardapioDiario.status);
+      setSelectedItems(
+        cardapioDiario.itens.map((it) => ({
+          produto_id: it.produto_id,
+          canal: it.canal || (it.disponivel_delivery ? 'delivery_balcao' : 'mesas'),
+        }))
+      );
+      setStatusAbertura(cardapioDiario.status || 'aguardando');
       setConfirmadoEm(cardapioDiario.confirmado_em);
     }
   }, [cardapioDiario]);
@@ -117,8 +108,6 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
   // Filter ONLY Pratos e Marmitex (Categories 1, 2, 3).
   // Category 4 (Bebidas) and Category 5 (Sobremesas) are fixed and NEVER filtered here!
   const availableEligibleDishes = produtos.filter((p) => {
-    // Categories 1 = Pratos Principais, 2 = Marmitas/Executivos, 3 = Porções
-    // Exclude category 4 (Bebidas) and 5 (Sobremesas)
     const isBebidaOuDoce = p.categoria_id === 4 || p.categoria_id === 5;
     if (isBebidaOuDoce) return false;
 
@@ -132,7 +121,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     // Filter by search
     if (searchLibrary.trim()) {
       const q = searchLibrary.toLowerCase();
-      const matchNome = p.nome.toLowerCase().includes(q);
+      const matchNome = (p.nome || '').toLowerCase().includes(q);
       const matchDesc = (p.descricao || '').toLowerCase().includes(q);
       if (!matchNome && !matchDesc) return false;
     }
@@ -140,56 +129,60 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     return true;
   });
 
-  // Check whether a product is currently in today's menu
-  const getItemConfig = (prodId: number): ItemCardapioDiario | undefined => {
-    return selectedItems.find((it) => it.produto_id === prodId);
+  // Check channel of a product in today's menu
+  const getItemCanal = (prodId: number): CanalCardapio | null => {
+    const found = selectedItems.find((it) => it.produto_id === prodId);
+    return found ? found.canal : null;
   };
 
-  // Toggle or add item from library into today's menu
-  const handleToggleAddFromLibrary = (prod: Produto) => {
-    const existing = getItemConfig(prod.id);
-    if (existing) {
-      // Remove if already added
-      setSelectedItems((prev) => prev.filter((it) => it.produto_id !== prod.id));
-    } else {
-      // Auto-assign channels based on category:
-      // Marmitex (cat 2) defaults to delivery ON, salão OFF (or ON if desired)
-      // Pratos (cat 1 or 3) defaults to salão ON and delivery ON
-      const isMarmita = prod.categoria_id === 2;
-      const newItem: ItemCardapioDiario = {
-        produto_id: prod.id,
-        disponivel_delivery: true,
-        disponivel_salao: !isMarmita, // Marmitex focus on delivery, Pratos on both
-      };
-      setSelectedItems((prev) => [...prev, newItem]);
-    }
+  /**
+   * REGRA DE EXCLUSIVIDADE ABSOLUTA:
+   * Define o canal de um produto exclusivamente para 'delivery_balcao' ou 'mesas'.
+   * Se já estiver em outro canal, é removido de lá e alocado no novo.
+   */
+  const handleAssignCanal = (prodId: number, targetCanal: CanalCardapio) => {
+    setSelectedItems((prev) => {
+      // Remove any existing assignment for this product
+      const filtered = prev.filter((it) => it.produto_id !== prodId);
+      // Add product exclusively with targetCanal
+      return [
+        ...filtered,
+        {
+          produto_id: prodId,
+          canal: targetCanal,
+          disponivel_delivery: targetCanal === 'delivery_balcao',
+          disponivel_salao: targetCanal === 'mesas',
+        },
+      ];
+    });
   };
 
-  // Toggle delivery switch for a specific item
-  const handleToggleDelivery = (prodId: number) => {
-    setSelectedItems((prev) =>
-      prev.map((it) =>
-        it.produto_id === prodId
-          ? { ...it, disponivel_delivery: !it.disponivel_delivery }
-          : it
-      )
-    );
-  };
-
-  // Toggle salão switch for a specific item
-  const handleToggleSalao = (prodId: number) => {
-    setSelectedItems((prev) =>
-      prev.map((it) =>
-        it.produto_id === prodId
-          ? { ...it, disponivel_salao: !it.disponivel_salao }
-          : it
-      )
-    );
-  };
-
-  // Remove item completely from today's active menu
+  /**
+   * Remove completamente o produto do cardápio do dia
+   */
   const handleRemoveItem = (prodId: number) => {
     setSelectedItems((prev) => prev.filter((it) => it.produto_id !== prodId));
+  };
+
+  /**
+   * Alterna/Move o item para o outro canal exclusivo
+   */
+  const handleMoveChannel = (prodId: number) => {
+    setSelectedItems((prev) =>
+      prev.map((it) => {
+        if (it.produto_id === prodId) {
+          const novoCanal: CanalCardapio =
+            it.canal === 'delivery_balcao' ? 'mesas' : 'delivery_balcao';
+          return {
+            produto_id: prodId,
+            canal: novoCanal,
+            disponivel_delivery: novoCanal === 'delivery_balcao',
+            disponivel_salao: novoCanal === 'mesas',
+          };
+        }
+        return it;
+      })
+    );
   };
 
   // Helper: Auto-suggest items programmed for today's weekday
@@ -202,11 +195,14 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
 
       // Check if product is programmed for today
       if (prod.dia_semana && prod.dia_semana.includes(diaSemanaIndex)) {
+        // Marmitex (cat 2) goes to Delivery/Balcão; Pratos (cat 1 or 3) goes to Mesas
         const isMarmita = prod.categoria_id === 2;
+        const canal: CanalCardapio = isMarmita ? 'delivery_balcao' : 'mesas';
         suggested.push({
           produto_id: prod.id,
-          disponivel_delivery: true,
-          disponivel_salao: !isMarmita,
+          canal,
+          disponivel_delivery: canal === 'delivery_balcao',
+          disponivel_salao: canal === 'mesas',
         });
       }
     });
@@ -214,20 +210,10 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     if (suggested.length > 0) {
       setSelectedItems(suggested);
       setSaveSuccessMessage(
-        `SUGESTÃO DE ${nomeDiaSemana.toUpperCase()} APLICADA COM ${suggested.length} ITENS!`
+        `SUGESTÃO DE ${nomeDiaSemana.toUpperCase()} APLICADA COM ${suggested.length} ITENS DISTRIBUÍDOS!`
       );
       setTimeout(() => setSaveSuccessMessage(null), 3500);
     }
-  };
-
-  // Helper: Select all items
-  const handleSelectAllDishes = () => {
-    const allItems: ItemCardapioDiario[] = availableEligibleDishes.map((p) => ({
-      produto_id: p.id,
-      disponivel_delivery: true,
-      disponivel_salao: p.categoria_id !== 2,
-    }));
-    setSelectedItems(allItems);
   };
 
   // Helper: Clear all
@@ -242,12 +228,11 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
       return;
     }
 
-    // Verify at least one item is active for delivery or salão
-    const hasDelivery = selectedItems.some((it) => it.disponivel_delivery);
-    const hasSalao = selectedItems.some((it) => it.disponivel_salao);
+    const hasDelivery = selectedItems.some((it) => it.canal === 'delivery_balcao');
+    const hasMesas = selectedItems.some((it) => it.canal === 'mesas');
 
-    if (!hasDelivery && !hasSalao) {
-      alert('ATIVE AO MENOS UM CANAL (DELIVERY OU SALÃO) EM UM DOS PRATOS.');
+    if (!hasDelivery && !hasMesas) {
+      alert('DISTRIBUA AO MENOS UM ITEM PARA DELIVERY OU MESAS.');
       return;
     }
 
@@ -258,14 +243,21 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
       status: 'aberto',
       confirmado_em: timeIso,
       confirmado_por: currentPerfil?.nome || 'ADMINISTRADOR',
-      itens: selectedItems,
+      itens: selectedItems.map((it) => ({
+        produto_id: it.produto_id,
+        canal: it.canal,
+        disponivel_delivery: it.canal === 'delivery_balcao',
+        disponivel_salao: it.canal === 'mesas',
+      })),
     };
 
     try {
       await onSaveCardapio(configAtualizada);
       setStatusAbertura('aberto');
       setConfirmadoEm(timeIso);
-      setSaveSuccessMessage('CARDÁPIO DO DIA CONFIRMADO E ABERTO COM SUCESSO NO SUPABASE!');
+      setSaveSuccessMessage(
+        'CARDÁPIO DO DIA GRAVADO NO SUPABASE COM SUCESSO! OPERAÇÃO LIBERADA.'
+      );
       setTimeout(() => setSaveSuccessMessage(null), 4500);
     } catch (err: any) {
       alert('FALHA AO GRAVAR CARDÁPIO DIÁRIO NO SUPABASE: ' + err.message);
@@ -274,17 +266,44 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     }
   };
 
-  // Channel Lists derived from selectedItems
-  const deliveryItems = selectedItems.filter((it) => it.disponivel_delivery);
-  const salaoItems = selectedItems.filter((it) => it.disponivel_salao);
+  // Separate lists for the two fixed right columns
+  const deliveryItems = selectedItems.filter((it) => it.canal === 'delivery_balcao');
+  const mesasItems = selectedItems.filter((it) => it.canal === 'mesas');
+
+  // Visual helper: Render icon badge without relying on missing local images
+  const renderProductVisual = (prod: Produto) => {
+    const isMarmita = prod.categoria_id === 2;
+    const isPorcao = prod.categoria_id === 3;
+
+    if (isMarmita) {
+      return (
+        <div className="w-11 h-11 rounded-xl bg-cyan-950/80 border border-cyan-800 text-cyan-300 flex items-center justify-center shrink-0 shadow-inner">
+          <Package className="w-5 h-5 text-cyan-400" />
+        </div>
+      );
+    }
+
+    if (isPorcao) {
+      return (
+        <div className="w-11 h-11 rounded-xl bg-orange-950/80 border border-orange-800 text-orange-300 flex items-center justify-center shrink-0 shadow-inner">
+          <Flame className="w-5 h-5 text-orange-400" />
+        </div>
+      );
+    }
+
+    return (
+      <div className="w-11 h-11 rounded-xl bg-amber-950/80 border border-amber-800 text-amber-300 flex items-center justify-center shrink-0 shadow-inner">
+        <Utensils className="w-5 h-5 text-amber-400" />
+      </div>
+    );
+  };
 
   return (
-    <div className="flex flex-col gap-5 min-h-[calc(100vh-120px)] text-neutral-100">
+    <div className="flex flex-col gap-5 min-h-[calc(100vh-120px)] text-neutral-100 pb-10">
       {/* =========================================================================
           1. CABEÇALHO PRINCIPAL (TOPO)
           ========================================================================= */}
       <div className="bg-neutral-850 rounded-2xl border border-neutral-800 p-5 sm:p-6 shadow-xl relative overflow-hidden">
-        {/* Glow visual ambient */}
         <div className="absolute right-0 top-0 bottom-0 w-96 bg-radial from-amber-600/15 via-transparent to-transparent pointer-events-none" />
 
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 relative z-10">
@@ -296,7 +315,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
               </span>
 
               {statusAbertura === 'aberto' ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase bg-emerald-950/80 text-emerald-300 border border-emerald-700 shadow-xs">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase bg-emerald-950/90 text-emerald-300 border border-emerald-700 shadow-xs">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
                   CARDÁPIO ATIVO (DIA ABERTO)
                 </span>
@@ -309,7 +328,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
 
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-neutral-900 border border-neutral-700 text-neutral-400">
                 <Cloud className="w-3 h-3 text-cyan-400" />
-                100% SUPABASE NUVEM
+                TABELA SUPABASE: cardapio_diario
               </span>
             </div>
 
@@ -317,7 +336,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
               VAMOS MONTAR O CARDÁPIO DE HOJE
             </h1>
             <p className="text-xs text-neutral-400 mt-1 max-w-3xl">
-              Defina com 1 clique quais pratos e marmitex estarão disponíveis para venda hoje no <strong>Delivery próprio</strong> e no <strong>Salão (20 mesas)</strong>. Bebidas e sobremesas ficam sempre ativas sem triagem.
+              Selecione quais Pratos e Marmitex serão vendidos hoje. Cada item é alocado de forma <strong>exclusiva</strong> no <strong>Delivery/Retirada</strong> ou nas <strong>Mesas</strong> (nunca nos dois). Bebidas e sobremesas ficam fixas em todos os canais.
             </p>
           </div>
 
@@ -345,7 +364,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
 
         {/* Confirmation banner if active */}
         {confirmadoEm && (
-          <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between text-[11px] text-neutral-400">
+          <div className="mt-4 pt-3 border-t border-neutral-800 flex flex-wrap items-center justify-between text-[11px] text-neutral-400 gap-2">
             <span>
               Última abertura registrada:{' '}
               <strong className="text-neutral-200">
@@ -359,16 +378,18 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                 {cardapioDiario.confirmado_por || 'ADMINISTRADOR'}
               </strong>
             </span>
-            <span className="font-mono text-emerald-400 font-bold">
-              {deliveryItems.length} no Delivery · {salaoItems.length} no Salão
-            </span>
+            <div className="flex items-center gap-3 font-mono font-bold">
+              <span className="text-cyan-400">📦 {deliveryItems.length} no Delivery</span>
+              <span className="text-neutral-600">|</span>
+              <span className="text-amber-400">🍽️ {mesasItems.length} nas Mesas</span>
+            </div>
           </div>
         )}
       </div>
 
       {/* Visual Feedback Message */}
       {saveSuccessMessage && (
-        <div className="p-3.5 bg-emerald-950/80 border border-emerald-800 rounded-xl text-xs font-black uppercase text-emerald-300 flex items-center justify-between shadow-lg">
+        <div className="p-3.5 bg-emerald-950/90 border border-emerald-800 rounded-xl text-xs font-black uppercase text-emerald-300 flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <span>{saveSuccessMessage}</span>
@@ -383,13 +404,13 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
       )}
 
       {/* =========================================================================
-          2. ÁREA CENTRAL: DIVIDIDA EM 2 COLUNAS GRANDES
+          2. ÁREA CENTRAL: BIBLIOTECA (ESQUERDA) + DUAS COLUNAS FIXAS (DIREITA)
           ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 items-start">
         {/* =====================================================================
-            COLUNA DA ESQUERDA (5 ou 6 cols): BIBLIOTECA DE PRODUTOS DISPONÍVEIS
+            COLUNA DA ESQUERDA (5 cols): BIBLIOTECA DE PRODUTOS DISPONÍVEIS
             ===================================================================== */}
-        <div className="lg:col-span-5 bg-neutral-900 border border-neutral-800 rounded-2xl p-4 sm:p-5 flex flex-col gap-4 shadow-md">
+        <div className="xl:col-span-5 bg-neutral-900 border border-neutral-800 rounded-2xl p-4 sm:p-5 flex flex-col gap-4 shadow-md">
           {/* Header da Coluna */}
           <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
             <div>
@@ -413,7 +434,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
               className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
                 categoryFilter === 'todos'
                   ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                  : 'bg-neutral-850 text-neutral-400 hover:text-white'
               }`}
             >
               Todos
@@ -423,7 +444,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
               className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
                 categoryFilter === 'pratos'
                   ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                  : 'bg-neutral-850 text-neutral-400 hover:text-white'
               }`}
             >
               Pratos Principais
@@ -433,7 +454,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
               className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
                 categoryFilter === 'marmitex'
                   ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                  : 'bg-neutral-850 text-neutral-400 hover:text-white'
               }`}
             >
               Marmitex / Delivery
@@ -448,7 +469,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
               value={searchLibrary}
               onChange={(e) => setSearchLibrary(e.target.value)}
               placeholder="BUSCAR PRATO OU MARMITEX PELO NOME..."
-              className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+              className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
             />
           </div>
 
@@ -457,7 +478,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
             <button
               type="button"
               onClick={handleApplyWeekdaySuggestion}
-              className="text-amber-400 hover:text-amber-300 font-extrabold flex items-center gap-1 uppercase hover:underline"
+              className="text-amber-400 hover:text-amber-300 font-extrabold flex items-center gap-1 uppercase hover:underline cursor-pointer"
               title="Ativa os pratos programados para o dia de hoje"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -466,59 +487,45 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
 
             <button
               type="button"
-              onClick={handleSelectAllDishes}
-              className="text-neutral-400 hover:text-white font-bold uppercase hover:underline"
+              onClick={handleClearAll}
+              className="text-neutral-400 hover:text-red-400 font-bold uppercase hover:underline cursor-pointer"
             >
-              Adicionar Todos
+              Limpar Seleção
             </button>
           </div>
 
           {/* List of Large Clickable Cards */}
-          <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+          <div className="space-y-3 max-h-[640px] overflow-y-auto pr-1">
             {availableEligibleDishes.length === 0 ? (
-              <div className="p-8 text-center text-neutral-500 text-xs uppercase font-medium">
+              <div className="p-8 text-center text-neutral-500 text-xs uppercase font-medium bg-neutral-850/40 rounded-xl border border-dashed border-neutral-800">
                 Nenhum prato encontrado com o filtro aplicado.
               </div>
             ) : (
               availableEligibleDishes.map((prod) => {
-                const config = getItemConfig(prod.id);
-                const isSelected = !!config;
+                const assignedCanal = getItemCanal(prod.id);
+                const isSelected = assignedCanal !== null;
                 const cat = categorias.find((c) => c.id === prod.categoria_id);
                 const isMarmita = prod.categoria_id === 2;
 
                 return (
                   <div
                     key={prod.id}
-                    onClick={() => handleToggleAddFromLibrary(prod)}
-                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 text-left group select-none ${
-                      isSelected
-                        ? 'bg-amber-950/25 border-amber-500/60 shadow-md ring-1 ring-amber-500/30'
-                        : 'bg-neutral-850 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/80'
+                    className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-3 text-left ${
+                      assignedCanal === 'delivery_balcao'
+                        ? 'bg-cyan-950/20 border-cyan-700/60 shadow-md ring-1 ring-cyan-500/20'
+                        : assignedCanal === 'mesas'
+                        ? 'bg-amber-950/20 border-amber-700/60 shadow-md ring-1 ring-amber-500/20'
+                        : 'bg-neutral-850 border-neutral-800 hover:border-neutral-700'
                     }`}
                   >
-                    {/* Visual Media / Icon */}
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 bg-neutral-800 border border-neutral-700 relative flex items-center justify-center">
-                        {prod.url_imagem ? (
-                          <img
-                            src={prod.url_imagem}
-                            alt={prod.nome}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          />
-                        ) : (
-                          <Utensils className="w-5 h-5 text-neutral-500" />
-                        )}
-
-                        {isSelected && (
-                          <div className="absolute inset-0 bg-amber-600/60 backdrop-blur-2xs flex items-center justify-center text-white font-black">
-                            <Check className="w-6 h-6 stroke-[3]" />
-                          </div>
-                        )}
-                      </div>
+                    {/* Top row: Icon + Details */}
+                    <div className="flex items-start gap-3">
+                      {/* Product Visual Icon / Category */}
+                      {renderProductVisual(prod)}
 
                       {/* Info */}
-                      <div>
-                        <div className="flex items-center gap-1.5 mb-0.5">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span
                             className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
                               isMarmita
@@ -529,21 +536,27 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                             {cat?.nome || 'CARDÁPIO'}
                           </span>
 
-                          {isSelected && (
-                            <span className="text-[9px] font-bold text-emerald-400 uppercase">
-                              • No Cardápio de Hoje
+                          {assignedCanal === 'delivery_balcao' && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-cyan-950 text-cyan-300 border border-cyan-700">
+                              📦 NO DELIVERY / RETIRADA
+                            </span>
+                          )}
+
+                          {assignedCanal === 'mesas' && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-950 text-amber-300 border border-amber-700">
+                              🍽️ NO SALÃO (MESAS)
                             </span>
                           )}
                         </div>
 
-                        <h4 className="font-extrabold text-neutral-100 uppercase text-xs line-clamp-1 group-hover:text-amber-300 transition-colors">
+                        <h4 className="font-extrabold text-neutral-100 uppercase text-xs line-clamp-1">
                           {prod.nome}
                         </h4>
 
                         <div className="flex items-center gap-3 text-[11px] font-mono mt-1 text-neutral-400">
                           {prod.preco_delivery > 0 && (
                             <span>
-                              Delivery: <strong className="text-emerald-400">{formatBRL(prod.preco_delivery)}</strong>
+                              Delivery: <strong className="text-cyan-400">{formatBRL(prod.preco_delivery)}</strong>
                             </span>
                           )}
                           <span>
@@ -553,19 +566,51 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                       </div>
                     </div>
 
-                    {/* Action Icon */}
-                    <div className="shrink-0">
-                      <button
-                        type="button"
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${
-                          isSelected
-                            ? 'bg-amber-500 text-neutral-950 shadow-xs'
-                            : 'bg-neutral-800 text-neutral-400 group-hover:bg-amber-600 group-hover:text-white'
-                        }`}
-                        title={isSelected ? 'Remover do Cardápio' : 'Adicionar ao Cardápio'}
-                      >
-                        {isSelected ? <Check className="w-4 h-4 stroke-[3]" /> : <Plus className="w-4 h-4" />}
-                      </button>
+                    {/* Bottom row: Direct Exclusive Action Buttons */}
+                    <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-1">
+                        {/* + Delivery Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleAssignCanal(prod.id, 'delivery_balcao')}
+                          className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            assignedCanal === 'delivery_balcao'
+                              ? 'bg-cyan-600 text-white shadow-md'
+                              : 'bg-neutral-800 hover:bg-cyan-950 hover:text-cyan-300 text-neutral-300 border border-neutral-700'
+                          }`}
+                          title="Aloca exclusivamente para Delivery / Balcão"
+                        >
+                          <Bike className="w-3.5 h-3.5 shrink-0" />
+                          <span>{assignedCanal === 'delivery_balcao' ? '✓ Delivery' : '+ Delivery'}</span>
+                        </button>
+
+                        {/* + Mesas Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleAssignCanal(prod.id, 'mesas')}
+                          className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            assignedCanal === 'mesas'
+                              ? 'bg-amber-600 text-white shadow-md'
+                              : 'bg-neutral-800 hover:bg-amber-950 hover:text-amber-300 text-neutral-300 border border-neutral-700'
+                          }`}
+                          title="Aloca exclusivamente para Consumo nas Mesas"
+                        >
+                          <Utensils className="w-3.5 h-3.5 shrink-0" />
+                          <span>{assignedCanal === 'mesas' ? '✓ Mesas' : '+ Mesas'}</span>
+                        </button>
+                      </div>
+
+                      {/* Quick Delete / Clear */}
+                      {isSelected && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(prod.id)}
+                          className="p-1.5 text-neutral-500 hover:text-red-400 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer shrink-0"
+                          title="Remover do cardápio do dia"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -575,251 +620,188 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
         </div>
 
         {/* =====================================================================
-            COLUNA DA DIREITA (7 cols): CARDÁPIO ATIVO DO DIA (DIVIDIDA EM 2 SEÇÕES)
+            COLUNA DA DIREITA (7 cols): DUAS COLUNAS FIXAS COM TÍTULOS DESTACADOS
             ===================================================================== */}
-        <div className="lg:col-span-7 flex flex-col gap-5">
-          {/* Top summary bar of Cardápio Ativo */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-md">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-amber-600/20 text-amber-400 border border-amber-500/40">
-                <ShoppingBag className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-[10px] font-black uppercase text-amber-500 tracking-wider block">
-                  CONFIGURAÇÃO EM TEMPO REAL
-                </span>
-                <h3 className="text-sm font-extrabold text-white uppercase">
-                  CARDÁPIO ATIVO DO DIA ({selectedItems.length} ITENS SELECIONADOS)
-                </h3>
-              </div>
-            </div>
+        <div className="xl:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* ===================================================================
+              COLUNA FIXA 1: 📦 DELIVERY / RETIRADA (Marmitex)
+              =================================================================== */}
+          <div className="bg-neutral-900 border border-cyan-800/60 rounded-2xl p-4 sm:p-5 flex flex-col shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-600/5 rounded-full blur-2xl pointer-events-none" />
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleClearAll}
-                className="px-3 py-1.5 bg-neutral-800 hover:bg-red-950/60 hover:text-red-300 text-neutral-400 rounded-xl text-xs font-bold uppercase transition-colors"
-                title="Limpar todos os itens selecionados"
-              >
-                Limpar
-              </button>
-            </div>
-          </div>
-
-          {selectedItems.length === 0 ? (
-            <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-10 text-center flex flex-col items-center justify-center gap-3">
-              <div className="w-16 h-16 rounded-2xl bg-neutral-800 flex items-center justify-center text-neutral-500">
-                <Utensils className="w-8 h-8" />
-              </div>
-              <h4 className="text-base font-extrabold text-white uppercase">
-                Nenhum prato ativado para hoje ainda
-              </h4>
-              <p className="text-xs text-neutral-400 max-w-md">
-                Clique nos cards da biblioteca à esquerda para incluir os pratos e marmitex no cardápio de hoje, ou clique no botão abaixo para carregar a sugestão programada:
-              </p>
-              <button
-                type="button"
-                onClick={handleApplyWeekdaySuggestion}
-                className="mt-2 px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg transition-transform active:scale-95"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>Aplicar Sugestão de {nomeDiaSemana}</span>
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* ===============================================================
-                  SEÇÃO 1: 📦 ENTREGA & BALCÃO (Marmitex / Delivery)
-                  =============================================================== */}
-              <div className="bg-neutral-900 border border-cyan-800/40 rounded-2xl p-5 shadow-lg">
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-xl bg-cyan-950 border border-cyan-800 text-cyan-400">
-                      <Bike className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
-                        <span>📦 ENTREGA & BALCÃO (MARMITEX / DELIVERY)</span>
-                      </h4>
-                      <span className="text-[10px] text-neutral-400 block mt-0.5">
-                        Estes itens aparecem para os atendentes lançarem em pedidos de delivery próprio e retirada.
-                      </span>
-                    </div>
+            {/* Header Coluna 1 */}
+            <div className="border-b border-neutral-800 pb-3 mb-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-cyan-950 border border-cyan-800 text-cyan-400">
+                    <Bike className="w-4 h-4" />
                   </div>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-mono font-black uppercase bg-cyan-950 text-cyan-300 border border-cyan-800">
-                    {deliveryItems.length} Ativos
-                  </span>
+                  <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-tight">
+                    📦 DELIVERY / RETIRADA (MARMITEX)
+                  </h3>
                 </div>
 
-                {deliveryItems.length === 0 ? (
-                  <div className="p-4 bg-neutral-850/60 rounded-xl border border-dashed border-neutral-800 text-center text-xs text-neutral-500 uppercase">
-                    Nenhum prato ativado para entrega/balcão. Use a chave 'Delivery' nos cards abaixo.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {deliveryItems.map((it) => {
-                      const prod = produtos.find((p) => p.id === it.produto_id);
-                      if (!prod) return null;
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-black uppercase bg-cyan-950 text-cyan-300 border border-cyan-800">
+                  {deliveryItems.length}
+                </span>
+              </div>
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Aparece no Atendimento para pedidos de entrega própria e balcão.
+              </p>
+            </div>
 
-                      return (
-                        <div
-                          key={`deliv-${prod.id}`}
-                          className="p-3 bg-neutral-850 rounded-xl border border-neutral-800 flex flex-col justify-between gap-2.5 shadow-sm hover:border-cyan-800/60 transition-colors"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-1 mb-1">
-                              <span className="text-[10px] font-bold text-cyan-400 uppercase">
-                                DELIVERY PRÓPRIO
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveItem(prod.id)}
-                                className="text-neutral-500 hover:text-red-400 p-0.5 transition-colors"
-                                title="Remover completamente de hoje"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                            <h5 className="font-extrabold text-neutral-100 text-xs uppercase line-clamp-1">
+            {/* Content List */}
+            <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+              {deliveryItems.length === 0 ? (
+                <div className="p-8 text-center text-neutral-500 text-xs uppercase bg-neutral-850/40 rounded-xl border border-dashed border-neutral-800 flex flex-col items-center justify-center gap-2">
+                  <Package className="w-8 h-8 text-neutral-600" />
+                  <span>Nenhum item em Delivery / Retirada</span>
+                  <span className="text-[10px] text-neutral-500">
+                    Clique em <strong>[ + Delivery ]</strong> nos pratos da esquerda para alocar aqui.
+                  </span>
+                </div>
+              ) : (
+                deliveryItems.map((it) => {
+                  const prod = produtos.find((p) => p.id === it.produto_id);
+                  if (!prod) return null;
+
+                  return (
+                    <div
+                      key={`deliv-card-${prod.id}`}
+                      className="p-3 bg-neutral-850 rounded-xl border border-cyan-900/60 hover:border-cyan-700/80 flex flex-col justify-between gap-2.5 shadow-sm transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          {renderProductVisual(prod)}
+                          <div className="min-w-0">
+                            <h5 className="font-extrabold text-neutral-100 text-xs uppercase line-clamp-2">
                               {prod.nome}
                             </h5>
-                            <span className="text-xs font-mono font-bold text-emerald-400 block mt-0.5">
+                            <span className="text-xs font-mono font-bold text-cyan-400 block mt-0.5">
                               {formatBRL(prod.preco_delivery || prod.preco_salao)}
                             </span>
                           </div>
-
-                          {/* Quick Toggles on Card */}
-                          <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[10px]">
-                            {/* Toggle Delivery */}
-                            <button
-                              type="button"
-                              onClick={() => handleToggleDelivery(prod.id)}
-                              className="flex items-center gap-1.5 text-cyan-300 font-bold uppercase hover:opacity-80"
-                            >
-                              <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                              <span>Marmitex Delivery: Ligado</span>
-                            </button>
-
-                            {/* Toggle Salão */}
-                            <button
-                              type="button"
-                              onClick={() => handleToggleSalao(prod.id)}
-                              className={`flex items-center gap-1 text-[10px] font-semibold uppercase ${
-                                it.disponivel_salao ? 'text-amber-400' : 'text-neutral-500'
-                              }`}
-                            >
-                              <span>{it.disponivel_salao ? '+ Salão On' : '+ Salão Off'}</span>
-                            </button>
-                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
 
-              {/* ===============================================================
-                  SEÇÃO 2: 🍽️ CONSUMO NO SALÃO (Pratos / Mesas)
-                  =============================================================== */}
-              <div className="bg-neutral-900 border border-amber-800/40 rounded-2xl p-5 shadow-lg">
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-xl bg-amber-950 border border-amber-800 text-amber-400">
-                      <Store className="w-4 h-4" />
+                        {/* Quick Remove Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(prod.id)}
+                          className="text-neutral-500 hover:text-red-400 p-1 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer shrink-0"
+                          title="Remover do cardápio"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Action: Transfer Exclusively to Mesas */}
+                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveChannel(prod.id)}
+                          className="w-full py-1.5 px-2 bg-neutral-800 hover:bg-amber-950/70 hover:text-amber-300 text-neutral-300 border border-neutral-700 hover:border-amber-700 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          title="Transfere este produto exclusivamente para as Mesas"
+                        >
+                          <ArrowRightLeft className="w-3 h-3 text-amber-400" />
+                          <span>Mover para Mesas 🍽️</span>
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
-                        <span>🍽️ CONSUMO NO SALÃO (PRATOS / MESAS)</span>
-                      </h4>
-                      <span className="text-[10px] text-neutral-400 block mt-0.5">
-                        Estes itens aparecem para os garçons e atendentes lançarem nas 20 mesas e comandas do salão.
-                      </span>
-                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* ===================================================================
+              COLUNA FIXA 2: 🍽️ CONSUMO NAS MESAS (Pratos)
+              =================================================================== */}
+          <div className="bg-neutral-900 border border-amber-800/60 rounded-2xl p-4 sm:p-5 flex flex-col shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-amber-600/5 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Header Coluna 2 */}
+            <div className="border-b border-neutral-800 pb-3 mb-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-amber-950 border border-amber-800 text-amber-400">
+                    <Store className="w-4 h-4" />
                   </div>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-mono font-black uppercase bg-amber-950 text-amber-300 border border-amber-800">
-                    {salaoItems.length} Ativos
-                  </span>
+                  <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-tight">
+                    🍽️ CONSUMO NAS MESAS (PRATOS)
+                  </h3>
                 </div>
 
-                {salaoItems.length === 0 ? (
-                  <div className="p-4 bg-neutral-850/60 rounded-xl border border-dashed border-neutral-800 text-center text-xs text-neutral-500 uppercase">
-                    Nenhum prato ativado para o Salão/Mesas. Use a chave 'Salão' nos cards.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {salaoItems.map((it) => {
-                      const prod = produtos.find((p) => p.id === it.produto_id);
-                      if (!prod) return null;
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-black uppercase bg-amber-950 text-amber-300 border border-amber-800">
+                  {mesasItems.length}
+                </span>
+              </div>
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Aparece exclusivamente para garçons e mesas no salão.
+              </p>
+            </div>
 
-                      return (
-                        <div
-                          key={`salao-${prod.id}`}
-                          className="p-3 bg-neutral-850 rounded-xl border border-neutral-800 flex flex-col justify-between gap-2.5 shadow-sm hover:border-amber-800/60 transition-colors"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-1 mb-1">
-                              <span className="text-[10px] font-bold text-amber-400 uppercase">
-                                SALÃO (20 MESAS)
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveItem(prod.id)}
-                                className="text-neutral-500 hover:text-red-400 p-0.5 transition-colors"
-                                title="Remover completamente de hoje"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                            <h5 className="font-extrabold text-neutral-100 text-xs uppercase line-clamp-1">
+            {/* Content List */}
+            <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+              {mesasItems.length === 0 ? (
+                <div className="p-8 text-center text-neutral-500 text-xs uppercase bg-neutral-850/40 rounded-xl border border-dashed border-neutral-800 flex flex-col items-center justify-center gap-2">
+                  <Utensils className="w-8 h-8 text-neutral-600" />
+                  <span>Nenhum item em Mesas</span>
+                  <span className="text-[10px] text-neutral-500">
+                    Clique em <strong>[ + Mesas ]</strong> nos pratos da esquerda para alocar aqui.
+                  </span>
+                </div>
+              ) : (
+                mesasItems.map((it) => {
+                  const prod = produtos.find((p) => p.id === it.produto_id);
+                  if (!prod) return null;
+
+                  return (
+                    <div
+                      key={`mesas-card-${prod.id}`}
+                      className="p-3 bg-neutral-850 rounded-xl border border-amber-900/60 hover:border-amber-700/80 flex flex-col justify-between gap-2.5 shadow-sm transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          {renderProductVisual(prod)}
+                          <div className="min-w-0">
+                            <h5 className="font-extrabold text-neutral-100 text-xs uppercase line-clamp-2">
                               {prod.nome}
                             </h5>
                             <span className="text-xs font-mono font-bold text-amber-400 block mt-0.5">
                               {formatBRL(prod.preco_salao)}
                             </span>
                           </div>
-
-                          {/* Quick Toggles on Card */}
-                          <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[10px]">
-                            {/* Toggle Salão */}
-                            <button
-                              type="button"
-                              onClick={() => handleToggleSalao(prod.id)}
-                              className="flex items-center gap-1.5 text-amber-300 font-bold uppercase hover:opacity-80"
-                            >
-                              <span className="w-2 h-2 rounded-full bg-amber-400" />
-                              <span>Prato Salão: Ligado</span>
-                            </button>
-
-                            {/* Toggle Delivery */}
-                            <button
-                              type="button"
-                              onClick={() => handleToggleDelivery(prod.id)}
-                              className={`flex items-center gap-1 text-[10px] font-semibold uppercase ${
-                                it.disponivel_delivery ? 'text-cyan-400' : 'text-neutral-500'
-                              }`}
-                            >
-                              <span>{it.disponivel_delivery ? '+ Delivery On' : '+ Delivery Off'}</span>
-                            </button>
-                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
 
-              {/* Informative notice on Bebidas & Doces */}
-              <div className="p-4 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-start gap-3 text-xs text-neutral-400 shadow-xs">
-                <HelpCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <div className="leading-relaxed">
-                  <strong className="text-neutral-200 uppercase block mb-0.5">
-                    Nota Operacional sobre Bebidas & Sobremesas:
-                  </strong>
-                  Bebidas (Refrigerantes, Cervejas, Sucos, Água) e Sobremesas Caseiras (Pudim, Doce de Abóbora, etc.) permanecem sempre ativas automaticamente para todos os pedidos e não precisam passar pela montagem diária.
-                </div>
-              </div>
+                        {/* Quick Remove Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(prod.id)}
+                          className="text-neutral-500 hover:text-red-400 p-1 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer shrink-0"
+                          title="Remover do cardápio"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Action: Transfer Exclusively to Delivery */}
+                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveChannel(prod.id)}
+                          className="w-full py-1.5 px-2 bg-neutral-800 hover:bg-cyan-950/70 hover:text-cyan-300 text-neutral-300 border border-neutral-700 hover:border-cyan-700 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          title="Transfere este produto exclusivamente para Delivery / Balcão"
+                        >
+                          <ArrowRightLeft className="w-3 h-3 text-cyan-400" />
+                          <span>Mover para Delivery 📦</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

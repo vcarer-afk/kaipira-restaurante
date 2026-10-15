@@ -220,14 +220,14 @@ VALUES (1, 'RESTAURANTE KAIPIRA', 'contato@restaurantekaipira.com.br', '(19) 3-4
 ON CONFLICT (id) DO NOTHING;
 
 -- 10. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (MONTAGEM DO DIA)
+-- Campos: data, produto_id, canal ('delivery_balcao' ou 'mesas')
 CREATE TABLE IF NOT EXISTS cardapio_diario (
     id SERIAL PRIMARY KEY,
-    data DATE UNIQUE NOT NULL DEFAULT CURRENT_DATE,
-    status VARCHAR(20) NOT NULL DEFAULT 'aguardando',
-    confirmado_em TIMESTAMP WITH TIME ZONE,
-    confirmado_por VARCHAR(150),
-    itens JSONB DEFAULT '[]'::jsonb,
-    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    data DATE NOT NULL DEFAULT CURRENT_DATE,
+    produto_id INT NOT NULL,
+    canal VARCHAR(30) NOT NULL, -- 'delivery_balcao' ou 'mesas'
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT uk_cardapio_data_produto UNIQUE (data, produto_id)
 );
 
 ALTER TABLE cardapio_diario ENABLE ROW LEVEL SECURITY;

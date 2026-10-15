@@ -353,9 +353,13 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       if (!itemConfig) return false;
 
       if (tipoPedido === 'delivery' || tipoPedido === 'retirada') {
-        if (!itemConfig.disponivel_delivery) return false;
+        const isDelivery =
+          itemConfig.canal === 'delivery_balcao' || !!itemConfig.disponivel_delivery;
+        if (!isDelivery) return false;
       } else if (tipoPedido === 'salão') {
-        if (!itemConfig.disponivel_salao) return false;
+        const isSalao =
+          itemConfig.canal === 'mesas' || !!itemConfig.disponivel_salao;
+        if (!isSalao) return false;
       }
     } else {
       // Se não houver cardápio ativo configurado ou for override, filtra por dia da semana (exceto bebidas/doces)
@@ -559,22 +563,46 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                 }`}
               >
                 <div>
-                  {prod.url_imagem && (
-                    <div className="w-full h-28 rounded-lg overflow-hidden mb-2 bg-neutral-900 relative">
+                  <div className="w-full h-16 rounded-lg overflow-hidden mb-2 bg-neutral-900 border border-neutral-800 flex items-center justify-center relative">
+                    {prod.url_imagem && prod.url_imagem.startsWith('http') ? (
                       <img
                         src={prod.url_imagem}
                         alt={prod.nome}
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
                       />
-                      {prod.pausado && (
-                        <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-red-400 font-extrabold text-xs tracking-wider uppercase">
-                          <Ban className="w-4 h-4 mr-1" />
-                          Esgotado no Dia
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    ) : (
+                      <div className="flex items-center justify-center">
+                        {prod.categoria_id === 2 ? (
+                          <div className="p-2 rounded-lg bg-cyan-950/80 text-cyan-400 border border-cyan-800">
+                            <Bike className="w-5 h-5" />
+                          </div>
+                        ) : prod.categoria_id === 4 ? (
+                          <div className="p-2 rounded-lg bg-blue-950/80 text-blue-400 border border-blue-800">
+                            <Utensils className="w-5 h-5" />
+                          </div>
+                        ) : prod.categoria_id === 5 ? (
+                          <div className="p-2 rounded-lg bg-pink-950/80 text-pink-400 border border-pink-800">
+                            <Sparkles className="w-5 h-5" />
+                          </div>
+                        ) : (
+                          <div className="p-2 rounded-lg bg-amber-950/80 text-amber-400 border border-amber-800">
+                            <Utensils className="w-5 h-5" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {prod.pausado && (
+                      <div className="absolute inset-0 bg-black/75 flex items-center justify-center text-red-400 font-extrabold text-xs tracking-wider uppercase">
+                        <Ban className="w-4 h-4 mr-1" />
+                        Esgotado no Dia
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex items-start justify-between gap-2">
                     <h4 className="text-xs font-bold text-white uppercase leading-snug">

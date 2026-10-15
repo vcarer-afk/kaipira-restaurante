@@ -64,7 +64,6 @@ export const INITIAL_PRODUTOS: Produto[] = [
     descricao: 'FEIJÃO PRETO SELECIONADO COM CARNES NOBRES, ARROZ BRANCO SOLTINHO, COUVE REFOGADA NO ALHO, FAROFA DA ROÇA, TORRESMO PURURUCA E LARANJA.',
     preco_salao: 54.9,
     preco_delivery: 49.9,
-    url_imagem: '/src/assets/images/kaipira_dish_feijoada_1791836449716.jpg',
     dia_semana: [3, 6], // Quarta e Sábado
     pausado: false,
     criado_em: new Date().toISOString(),
@@ -82,7 +81,6 @@ export const INITIAL_PRODUTOS: Produto[] = [
     descricao: 'FRANGO CAIPIRA COZIDO LENTAMENTE AO MOLHO FERRUGEM TRADICIONAL, QUIABO FRESCO SEM BABA E POLENTA CREMOSA NO PONTO DA ROÇA.',
     preco_salao: 48.9,
     preco_delivery: 44.9,
-    url_imagem: '/src/assets/images/kaipira_dish_frango_quiabo_1791836459955.jpg',
     dia_semana: [1, 2, 4, 5], // Seg, Ter, Qui, Sex
     pausado: false,
     criado_em: new Date().toISOString(),
@@ -99,7 +97,6 @@ export const INITIAL_PRODUTOS: Produto[] = [
     descricao: 'COSTELA SUÍNA DOURADA NO TACHO, GLACEADA COM ERVAS DA HORTA E SERVIDA COM MANDIOCA MANTEIGA DERRETENDO E ARROZ.',
     preco_salao: 52.0,
     preco_delivery: 47.0,
-    url_imagem: '/src/assets/images/kaipira_hero_restaurant_1791836438343.jpg',
     dia_semana: [1, 2, 3, 4, 5, 6],
     pausado: false,
     criado_em: new Date().toISOString(),
@@ -115,7 +112,6 @@ export const INITIAL_PRODUTOS: Produto[] = [
     descricao: 'TUTU DE FEIJÃO CREMOSO, BISTECA SUÍNA GRELHADA, COUVE FINA, OVO CAIPIRA ESTALADO, ARROZ E BANANA MILANESA.',
     preco_salao: 46.0,
     preco_delivery: 42.0,
-    url_imagem: '/src/assets/images/kaipira_hero_restaurant_1791836438343.jpg',
     dia_semana: [1, 2, 3, 4, 5, 6],
     pausado: false,
     criado_em: new Date().toISOString(),
