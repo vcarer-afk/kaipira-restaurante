@@ -6,7 +6,7 @@ interface UpperInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElemen
   maskType?: 'phone' | 'cep' | 'none';
   isEmail?: boolean;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: any) => void;
   error?: string;
   helperText?: string;
 }
@@ -31,7 +31,12 @@ export const UpperInput: React.FC<UpperInputProps> = ({
     } else {
       raw = forceUppercase(raw, isEmail);
     }
-    onChange(raw);
+    const hybrid: any = new String(raw);
+    hybrid.target = { value: raw };
+    hybrid.currentTarget = { value: raw };
+    hybrid.valueOf = () => raw;
+    hybrid.toString = () => raw;
+    onChange(hybrid);
   };
 
   return (
@@ -58,7 +63,7 @@ export const UpperInput: React.FC<UpperInputProps> = ({
 interface UpperTextareaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange'> {
   label?: string;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: any) => void;
   error?: string;
 }
 
@@ -71,7 +76,13 @@ export const UpperTextarea: React.FC<UpperTextareaProps> = ({
   ...props
 }) => {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onChange(forceUppercase(e.target.value));
+    const raw = forceUppercase(e.target.value);
+    const hybrid: any = new String(raw);
+    hybrid.target = { value: raw };
+    hybrid.currentTarget = { value: raw };
+    hybrid.valueOf = () => raw;
+    hybrid.toString = () => raw;
+    onChange(hybrid);
   };
 
   return (

@@ -4,7 +4,6 @@ import {
   Categoria,
   CardapioDiarioConfig,
   ItemCardapioDiario,
-  CanalCardapio,
   Perfil,
 } from '../types';
 import { formatBRL } from '../utils/formatters';
@@ -21,13 +20,9 @@ import {
   Store,
   Cloud,
   X,
-  AlertCircle,
   Package,
   Flame,
-  ArrowRightLeft,
-  Trash2,
-  HelpCircle,
-  ChefHat,
+  Plus,
 } from 'lucide-react';
 
 interface DailyMenuBuilderProps {
@@ -49,11 +44,12 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
   onClose,
   onNavigateTab,
 }) => {
-  // Working list of active items for today with exclusive channel ('delivery_balcao' | 'mesas')
+  // Working list of active items for today with independent channel booleans
   const [selectedItems, setSelectedItems] = useState<ItemCardapioDiario[]>(() => {
     return (cardapioDiario.itens || []).map((it) => ({
       produto_id: it.produto_id,
-      canal: it.canal || (it.disponivel_delivery ? 'delivery_balcao' : 'mesas'),
+      disponivel_delivery: !!it.disponivel_delivery || it.canal === 'delivery_balcao',
+      disponivel_salao: !!it.disponivel_salao || it.canal === 'mesas',
     }));
   });
 
@@ -84,7 +80,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     'Sábado',
   ];
   const rawDayIndex = now.getDay();
-  const diaSemanaIndex = rawDayIndex === 0 ? 1 : rawDayIndex; // Default domingo to segunda
+  const diaSemanaIndex = rawDayIndex === 0 ? 1 : rawDayIndex;
   const nomeDiaSemana = DIAS_EXTENSO[rawDayIndex];
   const dataFormatada = `${nomeDiaSemana}, ${String(now.getDate()).padStart(2, '0')}/${String(
     now.getMonth() + 1
@@ -97,7 +93,8 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
       setSelectedItems(
         cardapioDiario.itens.map((it) => ({
           produto_id: it.produto_id,
-          canal: it.canal || (it.disponivel_delivery ? 'delivery_balcao' : 'mesas'),
+          disponivel_delivery: !!it.disponivel_delivery || it.canal === 'delivery_balcao',
+          disponivel_salao: !!it.disponivel_salao || it.canal === 'mesas',
         }))
       );
       setStatusAbertura(cardapioDiario.status || 'aguardando');
@@ -129,60 +126,121 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     return true;
   });
 
-  // Check channel of a product in today's menu
-  const getItemCanal = (prodId: number): CanalCardapio | null => {
-    const found = selectedItems.find((it) => it.produto_id === prodId);
-    return found ? found.canal : null;
+  // Check state of a product in today's menu
+  const getItemConfig = (prodId: number): ItemCardapioDiario | undefined => {
+    return selectedItems.find((it) => it.produto_id === prodId);
   };
 
   /**
-   * REGRA DE EXCLUSIVIDADE ABSOLUTA:
-   * Define o canal de um produto exclusivamente para 'delivery_balcao' ou 'mesas'.
-   * Se já estiver em outro canal, é removido de lá e alocado no novo.
+   * TOGGLE INDEPENDENTE:
+   * Permite que um item esteja em Delivery, em Mesas, ou em AMBOS simultaneamente!
+   * Se já estiver em Delivery e o usuário clicar em Mesas, fica ativo para os dois.
+   * Se clicar novamente em um canal ativo, desativa apenas aquele canal.
    */
-  const handleAssignCanal = (prodId: number, targetCanal: CanalCardapio) => {
+  const handleToggleChannel = (prodId: number, channel: 'delivery' | 'mesas') => {
     setSelectedItems((prev) => {
-      // Remove any existing assignment for this product
-      const filtered = prev.filter((it) => it.produto_id !== prodId);
-      // Add product exclusively with targetCanal
-      return [
-        ...filtered,
-        {
-          produto_id: prodId,
-          canal: targetCanal,
-          disponivel_delivery: targetCanal === 'delivery_balcao',
-          disponivel_salao: targetCanal === 'mesas',
-        },
-      ];
+      const existing = prev.find((it) => it.produto_id === prodId);
+
+      if (!existing) {
+        // Not in menu yet -> add with selected channel active
+        return [
+          ...prev,
+          {
+            produto_id: prodId,
+            disponivel_delivery: channel === 'delivery',
+            disponivel_salao: channel === 'mesas',
+          },
+        ];
+      }
+
+      // Existing item -> toggle target channel
+      const updatedDelivery =
+        channel === 'delivery' ? !existing.disponivel_delivery : existing.disponivel_delivery;
+      const updatedSalao =
+        channel === 'mesas' ? !existing.disponivel_salao : existing.disponivel_salao;
+
+      // If both channels turned off, remove completely
+      if (!updatedDelivery && !updatedSalao) {
+        return prev.filter((it) => it.produto_id !== prodId);
+      }
+
+      // Otherwise update both channel flags
+      return prev.map((it) =>
+        it.produto_id === prodId
+          ? {
+              ...it,
+              disponivel_delivery: updatedDelivery,
+              disponivel_salao: updatedSalao,
+            }
+          : it
+      );
     });
   };
 
   /**
-   * Remove completamente o produto do cardápio do dia
+   * Remove completamente o produto de ambos os canais do dia
    */
   const handleRemoveItem = (prodId: number) => {
     setSelectedItems((prev) => prev.filter((it) => it.produto_id !== prodId));
   };
 
   /**
-   * Alterna/Move o item para o outro canal exclusivo
+   * Ativa ou desativa AMBOS os canais (Delivery E Mesas) simultaneamente
    */
-  const handleMoveChannel = (prodId: number) => {
-    setSelectedItems((prev) =>
-      prev.map((it) => {
-        if (it.produto_id === prodId) {
-          const novoCanal: CanalCardapio =
-            it.canal === 'delivery_balcao' ? 'mesas' : 'delivery_balcao';
-          return {
-            produto_id: prodId,
-            canal: novoCanal,
-            disponivel_delivery: novoCanal === 'delivery_balcao',
-            disponivel_salao: novoCanal === 'mesas',
-          };
-        }
-        return it;
-      })
-    );
+  const handleToggleBothChannels = (prodId: number) => {
+    setSelectedItems((prev) => {
+      const existing = prev.find((it) => it.produto_id === prodId);
+      if (existing && existing.disponivel_delivery && existing.disponivel_salao) {
+        // Já está em ambos -> desativa (remove)
+        return prev.filter((it) => it.produto_id !== prodId);
+      }
+      if (existing) {
+        // Já está em um deles -> ativa os dois
+        return prev.map((it) =>
+          it.produto_id === prodId
+            ? { ...it, disponivel_delivery: true, disponivel_salao: true }
+            : it
+        );
+      }
+      // Não estava no cardápio -> adiciona para ambos os canais
+      return [
+        ...prev,
+        {
+          produto_id: prodId,
+          disponivel_delivery: true,
+          disponivel_salao: true,
+        },
+      ];
+    });
+  };
+
+  /**
+   * Clique inteligente no card:
+   * 1. Se não selecionado: ativa canal padrão (delivery para marmitex, mesas para pratos)
+   * 2. Se já selecionado para um canal: ao clicar novamente, seleciona também o outro canal (disponível para AMBOS os cardápios!)
+   * 3. Se já selecionado para ambos: desativa (remove)
+   */
+  const handleCardClick = (prod: Produto) => {
+    const config = getItemConfig(prod.id);
+    const isDelivery = !!config?.disponivel_delivery;
+    const isSalao = !!config?.disponivel_salao;
+
+    if (!isDelivery && !isSalao) {
+      if (prod.categoria_id === 2) {
+        handleToggleChannel(prod.id, 'delivery');
+      } else {
+        handleToggleChannel(prod.id, 'mesas');
+      }
+    } else if (isDelivery && !isSalao) {
+      // Já está em delivery -> seleciona também para mesas!
+      handleToggleChannel(prod.id, 'mesas');
+    } else if (!isDelivery && isSalao) {
+      // Já está em mesas -> seleciona também para delivery!
+      handleToggleChannel(prod.id, 'delivery');
+    } else {
+      // Já está em ambos -> limpa
+      handleRemoveItem(prod.id);
+    }
   };
 
   // Helper: Auto-suggest items programmed for today's weekday
@@ -195,14 +253,11 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
 
       // Check if product is programmed for today
       if (prod.dia_semana && prod.dia_semana.includes(diaSemanaIndex)) {
-        // Marmitex (cat 2) goes to Delivery/Balcão; Pratos (cat 1 or 3) goes to Mesas
         const isMarmita = prod.categoria_id === 2;
-        const canal: CanalCardapio = isMarmita ? 'delivery_balcao' : 'mesas';
         suggested.push({
           produto_id: prod.id,
-          canal,
-          disponivel_delivery: canal === 'delivery_balcao',
-          disponivel_salao: canal === 'mesas',
+          disponivel_delivery: true,
+          disponivel_salao: !isMarmita, // Pratos no salão, marmitex no delivery
         });
       }
     });
@@ -210,7 +265,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     if (suggested.length > 0) {
       setSelectedItems(suggested);
       setSaveSuccessMessage(
-        `SUGESTÃO DE ${nomeDiaSemana.toUpperCase()} APLICADA COM ${suggested.length} ITENS DISTRIBUÍDOS!`
+        `SUGESTÃO DE ${nomeDiaSemana.toUpperCase()} APLICADA COM ${suggested.length} ITENS!`
       );
       setTimeout(() => setSaveSuccessMessage(null), 3500);
     }
@@ -228,11 +283,11 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
       return;
     }
 
-    const hasDelivery = selectedItems.some((it) => it.canal === 'delivery_balcao');
-    const hasMesas = selectedItems.some((it) => it.canal === 'mesas');
+    const hasDelivery = selectedItems.some((it) => it.disponivel_delivery);
+    const hasMesas = selectedItems.some((it) => it.disponivel_salao);
 
     if (!hasDelivery && !hasMesas) {
-      alert('DISTRIBUA AO MENOS UM ITEM PARA DELIVERY OU MESAS.');
+      alert('ATIVE AO MENOS UM CANAL (DELIVERY OU MESAS) EM UM DOS PRATOS.');
       return;
     }
 
@@ -243,12 +298,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
       status: 'aberto',
       confirmado_em: timeIso,
       confirmado_por: currentPerfil?.nome || 'ADMINISTRADOR',
-      itens: selectedItems.map((it) => ({
-        produto_id: it.produto_id,
-        canal: it.canal,
-        disponivel_delivery: it.canal === 'delivery_balcao',
-        disponivel_salao: it.canal === 'mesas',
-      })),
+      itens: selectedItems,
     };
 
     try {
@@ -267,8 +317,8 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
   };
 
   // Separate lists for the two fixed right columns
-  const deliveryItems = selectedItems.filter((it) => it.canal === 'delivery_balcao');
-  const mesasItems = selectedItems.filter((it) => it.canal === 'mesas');
+  const deliveryItems = selectedItems.filter((it) => it.disponivel_delivery);
+  const mesasItems = selectedItems.filter((it) => it.disponivel_salao);
 
   // Visual helper: Render icon badge without relying on missing local images
   const renderProductVisual = (prod: Produto) => {
@@ -336,7 +386,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
               VAMOS MONTAR O CARDÁPIO DE HOJE
             </h1>
             <p className="text-xs text-neutral-400 mt-1 max-w-3xl">
-              Selecione quais Pratos e Marmitex serão vendidos hoje. Cada item é alocado de forma <strong>exclusiva</strong> no <strong>Delivery/Retirada</strong> ou nas <strong>Mesas</strong> (nunca nos dois). Bebidas e sobremesas ficam fixas em todos os canais.
+              Defina os pratos e marmitex disponíveis hoje. Cada item pode ser ativado para <strong>Delivery/Retirada</strong>, para <strong>Consumo no Salão (Mesas)</strong> ou para <strong>ambos os canais simultaneamente</strong>.
             </p>
           </div>
 
@@ -494,7 +544,15 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
             </button>
           </div>
 
-          {/* List of Large Clickable Cards */}
+          {/* Multi-channel Selection Notice */}
+          <div className="p-2.5 rounded-xl bg-purple-950/40 border border-purple-800/50 text-[11px] text-purple-200 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+            <span>
+              <strong>CANAL DUPLO LIBERADO:</strong> O mesmo item pode ser ativado para <strong>Delivery</strong>, <strong>Mesas</strong> ou <strong>Ambos</strong> simultaneamente.
+            </span>
+          </div>
+
+          {/* List of Clickable Cards */}
           <div className="space-y-3 max-h-[640px] overflow-y-auto pr-1">
             {availableEligibleDishes.length === 0 ? (
               <div className="p-8 text-center text-neutral-500 text-xs uppercase font-medium bg-neutral-850/40 rounded-xl border border-dashed border-neutral-800">
@@ -502,8 +560,10 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
               </div>
             ) : (
               availableEligibleDishes.map((prod) => {
-                const assignedCanal = getItemCanal(prod.id);
-                const isSelected = assignedCanal !== null;
+                const config = getItemConfig(prod.id);
+                const isDelivery = !!config?.disponivel_delivery;
+                const isSalao = !!config?.disponivel_salao;
+                const isSelected = isDelivery || isSalao;
                 const cat = categorias.find((c) => c.id === prod.categoria_id);
                 const isMarmita = prod.categoria_id === 2;
 
@@ -511,15 +571,29 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                   <div
                     key={prod.id}
                     className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-3 text-left ${
-                      assignedCanal === 'delivery_balcao'
+                      isDelivery && isSalao
+                        ? 'bg-gradient-to-r from-cyan-950/30 via-neutral-850 to-amber-950/30 border-amber-600/60 shadow-md ring-1 ring-amber-500/30'
+                        : isDelivery
                         ? 'bg-cyan-950/20 border-cyan-700/60 shadow-md ring-1 ring-cyan-500/20'
-                        : assignedCanal === 'mesas'
+                        : isSalao
                         ? 'bg-amber-950/20 border-amber-700/60 shadow-md ring-1 ring-amber-500/20'
                         : 'bg-neutral-850 border-neutral-800 hover:border-neutral-700'
                     }`}
                   >
-                    {/* Top row: Icon + Details */}
-                    <div className="flex items-start gap-3">
+                    {/* Top row: Icon + Details (Clickable to activate or add complementary channel) */}
+                    <div
+                      onClick={() => handleCardClick(prod)}
+                      className="flex items-start gap-3 cursor-pointer group select-none"
+                      title={
+                        isDelivery && isSalao
+                          ? 'Item ativo em ambos os cardápios. Clique para remover.'
+                          : isDelivery
+                          ? 'Ativo no Delivery. Clique novamente para ativar TAMBÉM nas Mesas!'
+                          : isSalao
+                          ? 'Ativo nas Mesas. Clique novamente para ativar TAMBÉM no Delivery!'
+                          : 'Clique para ativar no cardápio de hoje'
+                      }
+                    >
                       {/* Product Visual Icon / Category */}
                       {renderProductVisual(prod)}
 
@@ -536,20 +610,23 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                             {cat?.nome || 'CARDÁPIO'}
                           </span>
 
-                          {assignedCanal === 'delivery_balcao' && (
+                          {/* Channel status badges */}
+                          {isDelivery && isSalao ? (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-purple-950 text-purple-300 border border-purple-700 flex items-center gap-1">
+                              <span>📦 DELIVERY & 🍽️ MESAS (AMBOS)</span>
+                            </span>
+                          ) : isDelivery ? (
                             <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-cyan-950 text-cyan-300 border border-cyan-700">
                               📦 NO DELIVERY / RETIRADA
                             </span>
-                          )}
-
-                          {assignedCanal === 'mesas' && (
+                          ) : isSalao ? (
                             <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-950 text-amber-300 border border-amber-700">
                               🍽️ NO SALÃO (MESAS)
                             </span>
-                          )}
+                          ) : null}
                         </div>
 
-                        <h4 className="font-extrabold text-neutral-100 uppercase text-xs line-clamp-1">
+                        <h4 className="font-extrabold text-neutral-100 uppercase text-xs line-clamp-1 group-hover:text-amber-300 transition-colors">
                           {prod.nome}
                         </h4>
 
@@ -566,47 +643,70 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                       </div>
                     </div>
 
-                    {/* Bottom row: Direct Exclusive Action Buttons */}
-                    <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 flex-1">
-                        {/* + Delivery Button */}
+                    {/* Bottom row: Direct Channel Toggles (Independent & Multi-Select) */}
+                    <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+                        {/* Delivery Button: Toggles Delivery ON/OFF */}
                         <button
                           type="button"
-                          onClick={() => handleAssignCanal(prod.id, 'delivery_balcao')}
-                          className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            assignedCanal === 'delivery_balcao'
-                              ? 'bg-cyan-600 text-white shadow-md'
-                              : 'bg-neutral-800 hover:bg-cyan-950 hover:text-cyan-300 text-neutral-300 border border-neutral-700'
+                          onClick={() => handleToggleChannel(prod.id, 'delivery')}
+                          className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] sm:text-[11px] font-black uppercase flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                            isDelivery
+                              ? 'bg-cyan-600 text-white shadow-md ring-1 ring-cyan-400'
+                              : 'bg-neutral-800 hover:bg-cyan-950/70 hover:text-cyan-300 text-neutral-300 border border-neutral-700'
                           }`}
-                          title="Aloca exclusivamente para Delivery / Balcão"
+                          title={
+                            isDelivery
+                              ? 'Clique para desativar do Delivery'
+                              : 'Clique para ativar no Delivery (pode ficar ativo em ambos!)'
+                          }
                         >
                           <Bike className="w-3.5 h-3.5 shrink-0" />
-                          <span>{assignedCanal === 'delivery_balcao' ? '✓ Delivery' : '+ Delivery'}</span>
+                          <span>{isDelivery ? '✓ DELIVERY' : '+ DELIVERY'}</span>
                         </button>
 
-                        {/* + Mesas Button */}
+                        {/* Mesas Button: Toggles Mesas ON/OFF */}
                         <button
                           type="button"
-                          onClick={() => handleAssignCanal(prod.id, 'mesas')}
-                          className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            assignedCanal === 'mesas'
-                              ? 'bg-amber-600 text-white shadow-md'
-                              : 'bg-neutral-800 hover:bg-amber-950 hover:text-amber-300 text-neutral-300 border border-neutral-700'
+                          onClick={() => handleToggleChannel(prod.id, 'mesas')}
+                          className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] sm:text-[11px] font-black uppercase flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                            isSalao
+                              ? 'bg-amber-600 text-white shadow-md ring-1 ring-amber-400'
+                              : 'bg-neutral-800 hover:bg-amber-950/70 hover:text-amber-300 text-neutral-300 border border-neutral-700'
                           }`}
-                          title="Aloca exclusivamente para Consumo nas Mesas"
+                          title={
+                            isSalao
+                              ? 'Clique para desativar das Mesas'
+                              : 'Clique para ativar nas Mesas (pode ficar ativo em ambos!)'
+                          }
                         >
                           <Utensils className="w-3.5 h-3.5 shrink-0" />
-                          <span>{assignedCanal === 'mesas' ? '✓ Mesas' : '+ Mesas'}</span>
+                          <span>{isSalao ? '✓ MESAS' : '+ MESAS'}</span>
+                        </button>
+
+                        {/* Ambos Button: Toggles Both channels at once */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleBothChannels(prod.id)}
+                          className={`py-1.5 px-2.5 rounded-xl text-[10px] sm:text-[11px] font-black uppercase flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                            isDelivery && isSalao
+                              ? 'bg-purple-600 text-white shadow-md ring-1 ring-purple-400'
+                              : 'bg-neutral-800 hover:bg-purple-950/70 hover:text-purple-300 text-neutral-400 border border-neutral-700'
+                          }`}
+                          title="Ativar ou desativar este prato em AMBOS os cardápios (Delivery + Mesas)"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 shrink-0 text-purple-300" />
+                          <span>{isDelivery && isSalao ? '✓ AMBOS' : '+ AMBOS'}</span>
                         </button>
                       </div>
 
-                      {/* Quick Delete / Clear */}
+                      {/* Clear / Delete from both channels */}
                       {isSelected && (
                         <button
                           type="button"
                           onClick={() => handleRemoveItem(prod.id)}
                           className="p-1.5 text-neutral-500 hover:text-red-400 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer shrink-0"
-                          title="Remover do cardápio do dia"
+                          title="Remover de ambos os cardápios do dia"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -646,7 +746,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                 </span>
               </div>
               <p className="text-[10px] text-neutral-400 mt-1">
-                Aparece no Atendimento para pedidos de entrega própria e balcão.
+                Disponível para atendentes no delivery próprio e retirada no balcão.
               </p>
             </div>
 
@@ -657,7 +757,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                   <Package className="w-8 h-8 text-neutral-600" />
                   <span>Nenhum item em Delivery / Retirada</span>
                   <span className="text-[10px] text-neutral-500">
-                    Clique em <strong>[ + Delivery ]</strong> nos pratos da esquerda para alocar aqui.
+                    Clique em <strong>[ + DELIVERY ]</strong> nos pratos da esquerda para alocar aqui.
                   </span>
                 </div>
               ) : (
@@ -683,27 +783,31 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                           </div>
                         </div>
 
-                        {/* Quick Remove Button */}
+                        {/* Quick Deactivate from Delivery Button */}
                         <button
                           type="button"
-                          onClick={() => handleRemoveItem(prod.id)}
+                          onClick={() => handleToggleChannel(prod.id, 'delivery')}
                           className="text-neutral-500 hover:text-red-400 p-1 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer shrink-0"
-                          title="Remover do cardápio"
+                          title="Remover do Delivery"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      {/* Action: Transfer Exclusively to Mesas */}
-                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+                      {/* Bottom action: Quick Toggle Mesas */}
+                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between text-[10px]">
                         <button
                           type="button"
-                          onClick={() => handleMoveChannel(prod.id)}
-                          className="w-full py-1.5 px-2 bg-neutral-800 hover:bg-amber-950/70 hover:text-amber-300 text-neutral-300 border border-neutral-700 hover:border-amber-700 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                          title="Transfere este produto exclusivamente para as Mesas"
+                          onClick={() => handleToggleChannel(prod.id, 'mesas')}
+                          className={`py-1 px-2.5 rounded-lg font-black uppercase flex items-center gap-1.5 transition-colors cursor-pointer ${
+                            it.disponivel_salao
+                              ? 'bg-amber-950/80 text-amber-300 border border-amber-700'
+                              : 'bg-neutral-800 hover:bg-amber-950/40 text-neutral-400 hover:text-amber-300 border border-neutral-700'
+                          }`}
+                          title="Ativa ou desativa a disponibilidade deste prato nas Mesas"
                         >
-                          <ArrowRightLeft className="w-3 h-3 text-amber-400" />
-                          <span>Mover para Mesas 🍽️</span>
+                          <Utensils className="w-3 h-3 text-amber-400" />
+                          <span>{it.disponivel_salao ? '✓ Também nas Mesas' : '+ Ativar nas Mesas'}</span>
                         </button>
                       </div>
                     </div>
@@ -736,7 +840,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                 </span>
               </div>
               <p className="text-[10px] text-neutral-400 mt-1">
-                Aparece exclusivamente para garçons e mesas no salão.
+                Disponível exclusivamente para garçons e mesas no salão.
               </p>
             </div>
 
@@ -747,7 +851,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                   <Utensils className="w-8 h-8 text-neutral-600" />
                   <span>Nenhum item em Mesas</span>
                   <span className="text-[10px] text-neutral-500">
-                    Clique em <strong>[ + Mesas ]</strong> nos pratos da esquerda para alocar aqui.
+                    Clique em <strong>[ + MESAS ]</strong> nos pratos da esquerda para alocar aqui.
                   </span>
                 </div>
               ) : (
@@ -773,27 +877,31 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                           </div>
                         </div>
 
-                        {/* Quick Remove Button */}
+                        {/* Quick Deactivate from Mesas Button */}
                         <button
                           type="button"
-                          onClick={() => handleRemoveItem(prod.id)}
+                          onClick={() => handleToggleChannel(prod.id, 'mesas')}
                           className="text-neutral-500 hover:text-red-400 p-1 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer shrink-0"
-                          title="Remover do cardápio"
+                          title="Remover das Mesas"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      {/* Action: Transfer Exclusively to Delivery */}
-                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+                      {/* Bottom action: Quick Toggle Delivery */}
+                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between text-[10px]">
                         <button
                           type="button"
-                          onClick={() => handleMoveChannel(prod.id)}
-                          className="w-full py-1.5 px-2 bg-neutral-800 hover:bg-cyan-950/70 hover:text-cyan-300 text-neutral-300 border border-neutral-700 hover:border-cyan-700 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                          title="Transfere este produto exclusivamente para Delivery / Balcão"
+                          onClick={() => handleToggleChannel(prod.id, 'delivery')}
+                          className={`py-1 px-2.5 rounded-lg font-black uppercase flex items-center gap-1.5 transition-colors cursor-pointer ${
+                            it.disponivel_delivery
+                              ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-700'
+                              : 'bg-neutral-800 hover:bg-cyan-950/40 text-neutral-400 hover:text-cyan-300 border border-neutral-700'
+                          }`}
+                          title="Ativa ou desativa a disponibilidade deste prato no Delivery"
                         >
-                          <ArrowRightLeft className="w-3 h-3 text-cyan-400" />
-                          <span>Mover para Delivery 📦</span>
+                          <Bike className="w-3 h-3 text-cyan-400" />
+                          <span>{it.disponivel_delivery ? '✓ Também no Delivery' : '+ Ativar no Delivery'}</span>
                         </button>
                       </div>
                     </div>

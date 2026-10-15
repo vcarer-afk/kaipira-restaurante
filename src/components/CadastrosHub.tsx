@@ -7,20 +7,25 @@ import {
   Categoria,
   Mesa,
   Perfil,
+  BairroTaxa,
 } from '../types';
-import { formatPhone, forceUppercase, formatBRL } from '../utils/formatters';
-import { UpperInput } from './UpperInput';
-import { supabase } from '../lib/supabase';
+import { formatPhone, formatBRL } from '../utils/formatters';
+import { UpperInput, UpperTextarea } from './UpperInput';
 import {
   salvarUsuarioSupabase,
   excluirUsuarioSupabase,
   garantirMasterSupabase,
+  salvarClienteSupabase,
+  excluirClienteSupabase,
+  salvarProdutoSupabase,
+  excluirProdutoSupabase,
+  salvarMesaSupabase,
+  excluirMesaSupabase,
 } from '../services/supabaseClient';
 import {
   Users,
   UserCheck,
   UserPlus,
-  ShieldCheck,
   Crown,
   Search,
   Edit2,
@@ -28,13 +33,11 @@ import {
   Cloud,
   CheckCircle2,
   AlertTriangle,
-  RefreshCw,
   Copy,
   Check,
   FileCode,
   Utensils,
   ShoppingBag,
-  Layers,
   Phone,
   Mail,
   Lock,
@@ -44,6 +47,20 @@ import {
   Briefcase,
   Store,
   Sparkles,
+  LayoutGrid,
+  List,
+  Plus,
+  X,
+  Package,
+  Flame,
+  Coffee,
+  Cake,
+  Ban,
+  CheckCircle,
+  Tag,
+  MapPin,
+  Sliders,
+  DollarSign,
 } from 'lucide-react';
 
 interface CadastrosHubProps {
@@ -54,13 +71,31 @@ interface CadastrosHubProps {
   produtos: Produto[];
   categorias: Categoria[];
   mesas: Mesa[];
+  bairros?: BairroTaxa[];
   onOpenSupabaseModal: () => void;
   onNavigateTab: (tab: any) => void;
+  onSaveCliente?: (c: Partial<Cliente>) => Promise<void>;
+  onDeleteCliente?: (id: string) => Promise<void>;
+  onSaveProduto?: (p: Partial<Produto>) => Promise<void>;
+  onDeleteProduto?: (id: number) => Promise<void>;
+  onSaveMesa?: (m: Partial<Mesa>) => Promise<void>;
+  onDeleteMesa?: (numero: number) => Promise<void>;
+  onSaveCategoria?: (cat: Partial<Categoria>) => Promise<void>;
+  onDeleteCategoria?: (id: number) => Promise<void>;
+  onSaveBairro?: (b: Partial<BairroTaxa>, originalNome?: string) => Promise<void>;
+  onDeleteBairro?: (bairro: string) => Promise<void>;
   onCadastrarCliente?: (c: Partial<Cliente>) => void;
   onTogglePauseProduto?: (id: number) => void;
 }
 
-export type CadastrosSubTab = 'usuarios' | 'clientes' | 'produtos' | 'cargos' | 'mesas' | 'sql';
+export type CadastrosSubTab =
+  | 'usuarios'
+  | 'clientes'
+  | 'produtos'
+  | 'mesas'
+  | 'categorias'
+  | 'bairros'
+  | 'sql';
 
 export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   usuarios,
@@ -70,53 +105,127 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   produtos,
   categorias,
   mesas,
+  bairros = [],
   onOpenSupabaseModal,
   onNavigateTab,
-  onCadastrarCliente,
+  onSaveCliente,
+  onDeleteCliente,
+  onSaveProduto,
+  onDeleteProduto,
+  onSaveMesa,
+  onDeleteMesa,
+  onSaveCategoria,
+  onDeleteCategoria,
+  onSaveBairro,
+  onDeleteBairro,
   onTogglePauseProduto,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<CadastrosSubTab>('usuarios');
 
-  // Search & Filter state for users
+  // View Mode state (Bloco vs Lista) for every single cadastre block
+  const [usuariosViewMode, setUsuariosViewMode] = useState<'bloco' | 'lista'>('bloco');
+  const [clientesViewMode, setClientesViewMode] = useState<'bloco' | 'lista'>('bloco');
+  const [produtosViewMode, setProdutosViewMode] = useState<'bloco' | 'lista'>('bloco');
+  const [mesasViewMode, setMesasViewMode] = useState<'bloco' | 'lista'>('bloco');
+  const [categoriasViewMode, setCategoriasViewMode] = useState<'bloco' | 'lista'>('bloco');
+  const [bairrosViewMode, setBairrosViewMode] = useState<'bloco' | 'lista'>('bloco');
+
+  // Global Feedback Notification
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // =========================================================================
+  // 1. USUÁRIOS STATE & MODAL
+  // =========================================================================
   const [userSearch, setUserSearch] = useState('');
   const [filterCargo, setFilterCargo] = useState<string>('todos');
-
-  // User Add/Edit Modal
   const [showUserModal, setShowUserModal] = useState(false);
   const [isEditingUser, setIsEditingUser] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-
-  // Form Fields (all text converted to UPPERCASE except email)
-  const [formNome, setFormNome] = useState('');
-  const [formEmail, setFormEmail] = useState('');
-  const [formTelefone, setFormTelefone] = useState('');
-  const [formCargo, setFormCargo] = useState<TipoUsuario>('atendente');
-  const [formSenha, setFormSenha] = useState('1234');
-  const [formStatus, setFormStatus] = useState<'ativo' | 'inativo'>('ativo');
+  const [formUserNome, setFormUserNome] = useState('');
+  const [formUserEmail, setFormUserEmail] = useState('');
+  const [formUserTelefone, setFormUserTelefone] = useState('');
+  const [formUserCargo, setFormUserCargo] = useState<TipoUsuario>('atendente');
+  const [formUserSenha, setFormUserSenha] = useState('1234');
+  const [formUserStatus, setFormUserStatus] = useState<'ativo' | 'inativo'>('ativo');
   const [showFormPassword, setShowFormPassword] = useState(false);
-
-  // Loading & Feedback
-  const [isSaving, setIsSaving] = useState(false);
-  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  // Delete modal
   const [userToDelete, setUserToDelete] = useState<UsuarioSistema | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  // Quick Seed Master State
   const [isSeedingMaster, setIsSeedingMaster] = useState(false);
+
+  // =========================================================================
+  // 2. CLIENTES STATE & MODAL
+  // =========================================================================
+  const [clientSearch, setClientSearch] = useState('');
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [isEditingClient, setIsEditingClient] = useState(false);
+  const [editingClientId, setEditingClientId] = useState<string | null>(null);
+  const [formClientNome, setFormClientNome] = useState('');
+  const [formClientTelefone, setFormClientTelefone] = useState('');
+  const [formClientCep, setFormClientCep] = useState('13400-010');
+  const [formClientEndereco, setFormClientEndereco] = useState('');
+  const [formClientNumero, setFormClientNumero] = useState('');
+  const [formClientBairro, setFormClientBairro] = useState('CENTRO');
+  const [formClientComplemento, setFormClientComplemento] = useState('');
+  const [formClientEhMensalista, setFormClientEhMensalista] = useState(false);
+  const [formClientSaldoDevedor, setFormClientSaldoDevedor] = useState('0');
+  const [clientToDelete, setClientToDelete] = useState<Cliente | null>(null);
+
+  // =========================================================================
+  // 3. PRODUTOS STATE & MODAL
+  // =========================================================================
+  const [prodSearch, setProdSearch] = useState('');
+  const [selectedCategoriaId, setSelectedCategoriaId] = useState<number | 'todas'>('todas');
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [isEditingProduct, setIsEditingProduct] = useState(false);
+  const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  const [formProdNome, setFormProdNome] = useState('');
+  const [formProdDescricao, setFormProdDescricao] = useState('');
+  const [formProdCategoriaId, setFormProdCategoriaId] = useState<number>(1);
+  const [formProdPrecoSalao, setFormProdPrecoSalao] = useState('');
+  const [formProdPrecoDelivery, setFormProdPrecoDelivery] = useState('');
+  const [formProdDiasSemana, setFormProdDiasSemana] = useState<number[]>([1, 2, 3, 4, 5, 6]);
+  const [formProdPausado, setFormProdPausado] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<Produto | null>(null);
+
+  // =========================================================================
+  // 4. MESAS STATE & MODAL
+  // =========================================================================
+  const [showMesaModal, setShowMesaModal] = useState(false);
+  const [isEditingMesa, setIsEditingMesa] = useState(false);
+  const [formMesaNumero, setFormMesaNumero] = useState('');
+  const [formMesaStatus, setFormMesaStatus] = useState<Mesa['status']>('livre');
+  const [formMesaPessoas, setFormMesaPessoas] = useState('2');
+  const [formMesaCliente, setFormMesaCliente] = useState('');
+  const [mesaToDelete, setMesaToDelete] = useState<Mesa | null>(null);
+
+  // =========================================================================
+  // 5. CATEGORIAS STATE & MODAL
+  // =========================================================================
+  const [categoriaSearch, setCategoriaSearch] = useState('');
+  const [showCategoriaModal, setShowCategoriaModal] = useState(false);
+  const [isEditingCategoria, setIsEditingCategoria] = useState(false);
+  const [editingCategoriaId, setEditingCategoriaId] = useState<number | null>(null);
+  const [formCategoriaNome, setFormCategoriaNome] = useState('');
+  const [formCategoriaOrdem, setFormCategoriaOrdem] = useState('1');
+  const [categoriaToDelete, setCategoriaToDelete] = useState<Categoria | null>(null);
+
+  // =========================================================================
+  // 6. BAIRROS STATE & MODAL
+  // =========================================================================
+  const [bairroSearch, setBairroSearch] = useState('');
+  const [showBairroModal, setShowBairroModal] = useState(false);
+  const [isEditingBairro, setIsEditingBairro] = useState(false);
+  const [editingBairroOriginalNome, setEditingBairroOriginalNome] = useState<string | null>(null);
+  const [formBairroNome, setFormBairroNome] = useState('');
+  const [formBairroTaxa, setFormBairroTaxa] = useState('7.00');
+  const [bairroToDelete, setBairroToDelete] = useState<BairroTaxa | null>(null);
 
   // SQL Copy state
   const [copiedSql, setCopiedSql] = useState(false);
 
-  // Client search in Cadastros
-  const [clientSearch, setClientSearch] = useState('');
-
-  // Product search in Cadastros
-  const [prodSearch, setProdSearch] = useState('');
-  const [selectedCategoriaId, setSelectedCategoriaId] = useState<number | 'todas'>('todas');
-
-  // Filtered users
+  // =========================================================================
+  // USUÁRIOS HANDLERS
+  // =========================================================================
   const filteredUsuarios = usuarios.filter((u) => {
     if (filterCargo !== 'todos' && u.cargo !== filterCargo) return false;
     if (userSearch) {
@@ -132,12 +241,12 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const openNewUserModal = () => {
     setIsEditingUser(false);
     setEditingUserId(null);
-    setFormNome('');
-    setFormEmail('');
-    setFormTelefone('');
-    setFormCargo('atendente');
-    setFormSenha('1234');
-    setFormStatus('ativo');
+    setFormUserNome('');
+    setFormUserEmail('');
+    setFormUserTelefone('');
+    setFormUserCargo('atendente');
+    setFormUserSenha('1234');
+    setFormUserStatus('ativo');
     setShowFormPassword(false);
     setFeedbackMessage(null);
     setShowUserModal(true);
@@ -146,211 +255,500 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const openEditUserModal = (u: UsuarioSistema) => {
     setIsEditingUser(true);
     setEditingUserId(u.id);
-    setFormNome(u.nome || '');
-    setFormEmail(u.email || '');
-    setFormTelefone(u.telefone || '');
-    setFormCargo(u.cargo);
-    setFormSenha(u.senha || 'DNDIGQOL');
-    setFormStatus(u.status || 'ativo');
+    setFormUserNome(u.nome || '');
+    setFormUserEmail(u.email || '');
+    setFormUserTelefone(u.telefone || '');
+    setFormUserCargo(u.cargo);
+    setFormUserSenha(u.senha || 'DNDIGQOL');
+    setFormUserStatus(u.status || 'ativo');
     setShowFormPassword(false);
     setFeedbackMessage(null);
     setShowUserModal(true);
-  };
-
-  const handlePhoneChange = (val: string) => {
-    // Enforce mandatory phone mask (99) 9-9999-9999
-    const formatted = formatPhone(val);
-    setFormTelefone(formatted);
   };
 
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedbackMessage(null);
 
-    // Validations
-    if (!formNome.trim()) {
+    if (!formUserNome.trim()) {
       setFeedbackMessage({ type: 'error', text: 'O NOME É OBRIGATÓRIO (SERÁ SALVO EM MAIÚSCULAS).' });
       return;
     }
-    if (!formEmail.trim() || !formEmail.includes('@')) {
+    if (!formUserEmail.trim() || !formUserEmail.includes('@')) {
       setFeedbackMessage({ type: 'error', text: 'INFORME UM E-MAIL VÁLIDO.' });
       return;
     }
-    if (!formTelefone.trim() || formTelefone.replace(/\D/g, '').length < 10) {
+    if (!formUserTelefone.trim() || formUserTelefone.replace(/\D/g, '').length < 10) {
       setFeedbackMessage({ type: 'error', text: 'INFORME O TELEFONE COMPLETO COM DDD.' });
       return;
     }
 
     setIsSaving(true);
-    try {
-      const payload: Partial<UsuarioSistema> = {
-        id: editingUserId || undefined,
-        nome: formNome.trim().toUpperCase(),
-        email: formEmail.trim().toLowerCase(),
-        telefone: formTelefone.trim(),
-        cargo: formCargo,
-        status: formStatus,
-        senha: formSenha.trim() || '1234',
-      };
+    const payload: Partial<UsuarioSistema> = {
+      id: editingUserId || undefined,
+      nome: formUserNome.toUpperCase().trim(),
+      email: formUserEmail.trim().toLowerCase(),
+      telefone: formatPhone(formUserTelefone),
+      cargo: formUserCargo,
+      senha: formUserSenha,
+      status: formUserStatus,
+    };
 
-      const result = await salvarUsuarioSupabase(payload);
-      if (result.success) {
-        await onReloadUsuarios();
-        setShowUserModal(false);
-        setFeedbackMessage({
-          type: 'success',
-          text: `USUÁRIO ${payload.nome} SALVO COM SUCESSO NO SUPABASE!`,
-        });
-        setTimeout(() => setFeedbackMessage(null), 4000);
-      } else {
-        setFeedbackMessage({
-          type: 'error',
-          text: result.error || 'FALHA AO SALVAR USUÁRIO NO SUPABASE.',
-        });
-      }
-    } catch (err: any) {
+    const res = await salvarUsuarioSupabase(payload);
+    setIsSaving(false);
+
+    if (res.success) {
       setFeedbackMessage({
-        type: 'error',
-        text: err.message || 'ERRO INESPERADO AO CONECTAR COM A NUVEM.',
+        type: 'success',
+        text: isEditingUser ? 'USUÁRIO ATUALIZADO NO SUPABASE COM SUCESSO!' : 'NOVO USUÁRIO SALVO NO SUPABASE!',
       });
-    } finally {
-      setIsSaving(false);
+      setShowUserModal(false);
+      await onReloadUsuarios();
+    } else {
+      setFeedbackMessage({ type: 'error', text: res.error || 'FALHA AO GRAVAR NO SUPABASE.' });
     }
   };
 
   const handleConfirmDeleteUser = async () => {
     if (!userToDelete) return;
-    setIsDeleting(true);
-    try {
-      const res = await excluirUsuarioSupabase(userToDelete.id, userToDelete.email);
-      if (res.success) {
-        await onReloadUsuarios();
-        setUserToDelete(null);
-        setFeedbackMessage({
-          type: 'success',
-          text: `USUÁRIO ${userToDelete.nome} EXCLUÍDO DO SUPABASE!`,
-        });
-        setTimeout(() => setFeedbackMessage(null), 4000);
-      } else {
-        setFeedbackMessage({
-          type: 'error',
-          text: res.error || 'NÃO FOI POSSÍVEL EXCLUIR ESTE USUÁRIO.',
-        });
-      }
-    } catch (err: any) {
-      setFeedbackMessage({
-        type: 'error',
-        text: err.message || 'ERRO AO EXCLUIR USUÁRIO.',
-      });
-    } finally {
-      setIsDeleting(false);
+    if (userToDelete.cargo === 'master' || userToDelete.email === 'master@kaipira.com') {
+      alert('O USUÁRIO MASTER NÃO PODE SER EXCLUÍDO DO SISTEMA POR SEGURANÇA.');
+      setUserToDelete(null);
+      return;
+    }
+
+    setIsSaving(true);
+    const res = await excluirUsuarioSupabase(userToDelete.id);
+    setIsSaving(false);
+    setUserToDelete(null);
+
+    if (res.success) {
+      setFeedbackMessage({ type: 'success', text: 'USUÁRIO EXCLUÍDO DO SUPABASE COM SUCESSO.' });
+      await onReloadUsuarios();
+    } else {
+      setFeedbackMessage({ type: 'error', text: res.error || 'FALHA AO EXCLUIR NO SUPABASE.' });
     }
   };
 
   const handleSeedMasterNow = async () => {
     setIsSeedingMaster(true);
+    setFeedbackMessage(null);
     try {
-      const master = await garantirMasterSupabase();
+      await garantirMasterSupabase();
       await onReloadUsuarios();
       setFeedbackMessage({
         type: 'success',
-        text: 'USUÁRIO MASTER (master@kaipira.com / DNDIGQOL) SINCRONIZADO E GARANTIDO NO SUPABASE!',
+        text: 'USUÁRIO MASTER (master@kaipira.com / DNDIGQOL) SINCRONIZADO NO SUPABASE COM SUCESSO!',
       });
-      setTimeout(() => setFeedbackMessage(null), 5000);
     } catch (err: any) {
-      setFeedbackMessage({
-        type: 'error',
-        text: 'ERRO AO SINCRONIZAR MASTER NO SUPABASE: ' + err.message,
-      });
+      setFeedbackMessage({ type: 'error', text: 'ERRO AO SINCRONIZAR MASTER: ' + err.message });
     } finally {
       setIsSeedingMaster(false);
     }
   };
 
-  const sqlDDLForUsuarios = `-- =========================================================================
--- TABELA DE USUÁRIOS & PERFIS DO RESTAURANTE KAIPIRA
--- Execute no SQL Editor do Supabase (https://app.supabase.com)
--- =========================================================================
-
--- 1. TIPO ENUM COM O PERFIL 'master'
-DO $$ BEGIN
-    CREATE TYPE tipo_usuario AS ENUM ('master', 'admin', 'atendente', 'cozinha', 'garcom', 'entregador');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-
--- Se o tipo já existir no seu banco sem 'master', adicione:
-ALTER TYPE tipo_usuario ADD VALUE IF NOT EXISTS 'master';
-
--- 2. TABELA DE USUÁRIOS / FUNCIONÁRIOS
-CREATE TABLE IF NOT EXISTS usuarios (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    nome VARCHAR(150) NOT NULL,
-    email VARCHAR(150) UNIQUE NOT NULL,
-    telefone VARCHAR(25) NOT NULL,
-    cargo VARCHAR(50) NOT NULL DEFAULT 'atendente',
-    status VARCHAR(20) NOT NULL DEFAULT 'ativo',
-    senha VARCHAR(100) NOT NULL DEFAULT 'DNDIGQOL',
-    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- 3. CRIAÇÃO AUTOMÁTICA DO USUÁRIO MASTER INICIAL (SEED)
--- Credenciais Oficiais: master@kaipira.com / DNDIGQOL / Cargo: master (Livre Acesso Irrestrito)
-INSERT INTO usuarios (nome, email, telefone, cargo, status, senha)
-VALUES (
-    'ADMINISTRADOR MASTER GERAL',
-    'master@kaipira.com',
-    '(19) 9-9999-9999',
-    'master',
-    'ativo',
-    'DNDIGQOL'
-)
-ON CONFLICT (email) DO UPDATE 
-SET cargo = 'master',
-    senha = 'DNDIGQOL',
-    status = 'ativo',
-    atualizado_em = NOW();
-
--- 4. POLÍTICAS DE ACESSO (RLS DESATIVADO OU LIBERADO PARA ANON KEY DO APP)
-ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Acesso publico usuarios" ON usuarios;
-CREATE POLICY "Acesso publico usuarios" ON usuarios FOR ALL USING (true) WITH CHECK (true);
-
--- 5. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (MONTAGEM DO DIA)
--- Campos: data (DATE), produto_id (INT), canal ('delivery_balcao' ou 'mesas')
-CREATE TABLE IF NOT EXISTS cardapio_diario (
-    id SERIAL PRIMARY KEY,
-    data DATE NOT NULL DEFAULT CURRENT_DATE,
-    produto_id INT NOT NULL,
-    canal VARCHAR(30) NOT NULL, -- 'delivery_balcao' ou 'mesas'
-    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CONSTRAINT uk_cardapio_data_produto UNIQUE (data, produto_id)
-);
-
-ALTER TABLE cardapio_diario ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Acesso publico cardapio_diario" ON cardapio_diario;
-CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING (true) WITH CHECK (true);
-`;
-
-  const copySqlToClipboard = () => {
-    navigator.clipboard.writeText(sqlDDLForUsuarios);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2500);
+  // =========================================================================
+  // CLIENTES HANDLERS
+  // =========================================================================
+  const openNewClientModal = () => {
+    setIsEditingClient(false);
+    setEditingClientId(null);
+    setFormClientNome('');
+    setFormClientTelefone('');
+    setFormClientCep('13400-010');
+    setFormClientEndereco('RUA DO ROSÁRIO');
+    setFormClientNumero('1240');
+    setFormClientBairro('CENTRO');
+    setFormClientComplemento('');
+    setFormClientEhMensalista(false);
+    setFormClientSaldoDevedor('0');
+    setFeedbackMessage(null);
+    setShowClientModal(true);
   };
 
-  const getCargoBadge = (cargo: TipoUsuario) => {
+  const openEditClientModal = (c: Cliente) => {
+    setIsEditingClient(true);
+    setEditingClientId(c.id);
+    setFormClientNome(c.nome || '');
+    setFormClientTelefone(c.telefone || '');
+    setFormClientCep(c.cep || '13400-010');
+    setFormClientEndereco(c.endereco || '');
+    setFormClientNumero(c.numero || '');
+    setFormClientBairro(c.bairro || 'CENTRO');
+    setFormClientComplemento(c.complemento || '');
+    setFormClientEhMensalista(!!c.eh_mensalista);
+    setFormClientSaldoDevedor(String(c.saldo_devedor || 0));
+    setFeedbackMessage(null);
+    setShowClientModal(true);
+  };
+
+  const handleSaveClientForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formClientNome.trim()) {
+      setFeedbackMessage({ type: 'error', text: 'O NOME DO CLIENTE É OBRIGATÓRIO.' });
+      return;
+    }
+    if (!formClientTelefone.trim() || formClientTelefone.replace(/\D/g, '').length < 10) {
+      setFeedbackMessage({ type: 'error', text: 'INFORME O TELEFONE COMPLETO COM DDD.' });
+      return;
+    }
+
+    setIsSaving(true);
+    const clientPayload: Partial<Cliente> = {
+      id: editingClientId || undefined,
+      nome: formClientNome.toUpperCase().trim(),
+      telefone: formatPhone(formClientTelefone),
+      cep: formClientCep.trim(),
+      endereco: formClientEndereco.toUpperCase().trim(),
+      numero: formClientNumero.toUpperCase().trim(),
+      bairro: formClientBairro.toUpperCase().trim(),
+      complemento: formClientComplemento.toUpperCase().trim(),
+      eh_mensalista: formClientEhMensalista,
+      saldo_devedor: Number(formClientSaldoDevedor) || 0,
+    };
+
+    if (onSaveCliente) {
+      await onSaveCliente(clientPayload);
+    } else {
+      await salvarClienteSupabase(clientPayload);
+    }
+    setIsSaving(false);
+    setShowClientModal(false);
+    setFeedbackMessage({
+      type: 'success',
+      text: isEditingClient ? 'CLIENTE ATUALIZADO NO SUPABASE COM SUCESSO!' : 'CLIENTE CADASTRADO NO SUPABASE!',
+    });
+  };
+
+  const handleConfirmDeleteClient = async () => {
+    if (!clientToDelete) return;
+    setIsSaving(true);
+    if (onDeleteCliente) {
+      await onDeleteCliente(clientToDelete.id);
+    } else {
+      await excluirClienteSupabase(clientToDelete.id);
+    }
+    setIsSaving(false);
+    setClientToDelete(null);
+    setFeedbackMessage({ type: 'success', text: 'CLIENTE EXCLUÍDO DO SUPABASE COM SUCESSO.' });
+  };
+
+  // =========================================================================
+  // PRODUTOS HANDLERS
+  // =========================================================================
+  const openNewProductModal = () => {
+    setIsEditingProduct(false);
+    setEditingProductId(null);
+    setFormProdNome('');
+    setFormProdDescricao('');
+    setFormProdCategoriaId(1);
+    setFormProdPrecoSalao('');
+    setFormProdPrecoDelivery('');
+    setFormProdDiasSemana([1, 2, 3, 4, 5, 6]);
+    setFormProdPausado(false);
+    setFeedbackMessage(null);
+    setShowProductModal(true);
+  };
+
+  const openEditProductModal = (p: Produto) => {
+    setIsEditingProduct(true);
+    setEditingProductId(p.id);
+    setFormProdNome(p.nome || '');
+    setFormProdDescricao(p.descricao || '');
+    setFormProdCategoriaId(p.categoria_id || 1);
+    setFormProdPrecoSalao(String(p.preco_salao || ''));
+    setFormProdPrecoDelivery(String(p.preco_delivery || ''));
+    setFormProdDiasSemana(p.dia_semana || [1, 2, 3, 4, 5, 6]);
+    setFormProdPausado(!!p.pausado);
+    setFeedbackMessage(null);
+    setShowProductModal(true);
+  };
+
+  const handleSaveProductForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formProdNome.trim()) {
+      setFeedbackMessage({ type: 'error', text: 'O NOME DO PRODUTO É OBRIGATÓRIO.' });
+      return;
+    }
+    const precoSalao = parseFloat(formProdPrecoSalao.replace(',', '.'));
+    if (isNaN(precoSalao) || precoSalao <= 0) {
+      setFeedbackMessage({ type: 'error', text: 'INFORME UM PREÇO DE SALÃO VÁLIDO.' });
+      return;
+    }
+    const precoDeliv = formProdPrecoDelivery
+      ? parseFloat(formProdPrecoDelivery.replace(',', '.'))
+      : precoSalao;
+
+    setIsSaving(true);
+    const prodPayload: Partial<Produto> = {
+      id: editingProductId || undefined,
+      nome: formProdNome.toUpperCase().trim(),
+      descricao: formProdDescricao.toUpperCase().trim(),
+      categoria_id: formProdCategoriaId,
+      preco_salao: precoSalao,
+      preco_delivery: precoDeliv,
+      dia_semana: formProdDiasSemana,
+      pausado: formProdPausado,
+    };
+
+    if (onSaveProduto) {
+      await onSaveProduto(prodPayload);
+    } else {
+      await salvarProdutoSupabase(prodPayload);
+    }
+    setIsSaving(false);
+    setShowProductModal(false);
+    setFeedbackMessage({
+      type: 'success',
+      text: isEditingProduct ? 'PRATO/PRODUTO ATUALIZADO NO SUPABASE!' : 'NOVO PRATO SALVO NO SUPABASE!',
+    });
+  };
+
+  const handleConfirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    setIsSaving(true);
+    if (onDeleteProduto) {
+      await onDeleteProduto(productToDelete.id);
+    } else {
+      await excluirProdutoSupabase(productToDelete.id);
+    }
+    setIsSaving(false);
+    setProductToDelete(null);
+    setFeedbackMessage({ type: 'success', text: 'PRODUTO EXCLUÍDO DO SUPABASE COM SUCESSO.' });
+  };
+
+  // =========================================================================
+  // MESAS HANDLERS
+  // =========================================================================
+  const openNewMesaModal = () => {
+    setIsEditingMesa(false);
+    // Suggest next table number
+    const maxNum = mesas.reduce((max, m) => Math.max(max, m.numero), 0);
+    setFormMesaNumero(String(maxNum + 1));
+    setFormMesaStatus('livre');
+    setFormMesaPessoas('4');
+    setFormMesaCliente('');
+    setFeedbackMessage(null);
+    setShowMesaModal(true);
+  };
+
+  const openEditMesaModal = (m: Mesa) => {
+    setIsEditingMesa(true);
+    setFormMesaNumero(String(m.numero));
+    setFormMesaStatus(m.status);
+    setFormMesaPessoas(String(m.pessoas || 2));
+    setFormMesaCliente(m.cliente_nome || '');
+    setFeedbackMessage(null);
+    setShowMesaModal(true);
+  };
+
+  const handleSaveMesaForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const num = parseInt(formMesaNumero, 10);
+    if (isNaN(num) || num <= 0) {
+      setFeedbackMessage({ type: 'error', text: 'NÚMERO DE MESA INVÁLIDO.' });
+      return;
+    }
+
+    setIsSaving(true);
+    const mesaPayload: Partial<Mesa> = {
+      numero: num,
+      status: formMesaStatus,
+      pessoas: parseInt(formMesaPessoas, 10) || 2,
+      cliente_nome: formMesaCliente.toUpperCase().trim() || undefined,
+    };
+
+    if (onSaveMesa) {
+      await onSaveMesa(mesaPayload);
+    } else {
+      await salvarMesaSupabase(mesaPayload);
+    }
+    setIsSaving(false);
+    setShowMesaModal(false);
+    setFeedbackMessage({
+      type: 'success',
+      text: isEditingMesa ? `MESA ${num} ATUALIZADA NO SUPABASE!` : `MESA ${num} CADASTRADA NO SUPABASE!`,
+    });
+  };
+
+  const handleConfirmDeleteMesa = async () => {
+    if (!mesaToDelete) return;
+    setIsSaving(true);
+    if (onDeleteMesa) {
+      await onDeleteMesa(mesaToDelete.numero);
+    } else {
+      await excluirMesaSupabase(mesaToDelete.numero);
+    }
+    setIsSaving(false);
+    setMesaToDelete(null);
+    setFeedbackMessage({ type: 'success', text: `MESA ${mesaToDelete.numero} EXCLUÍDA DO SUPABASE COM SUCESSO.` });
+  };
+
+  // =========================================================================
+  // CATEGORIAS HANDLERS
+  // =========================================================================
+  const openNewCategoriaModal = () => {
+    setIsEditingCategoria(false);
+    setEditingCategoriaId(null);
+    setFormCategoriaNome('');
+    const maxOrd = categorias.reduce((max, c) => Math.max(max, c.ordem), 0);
+    setFormCategoriaOrdem(String(maxOrd + 1));
+    setFeedbackMessage(null);
+    setShowCategoriaModal(true);
+  };
+
+  const openEditCategoriaModal = (cat: Categoria) => {
+    setIsEditingCategoria(true);
+    setEditingCategoriaId(cat.id);
+    setFormCategoriaNome(cat.nome);
+    setFormCategoriaOrdem(String(cat.ordem));
+    setFeedbackMessage(null);
+    setShowCategoriaModal(true);
+  };
+
+  const handleSaveCategoriaForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formCategoriaNome.trim()) {
+      setFeedbackMessage({ type: 'error', text: 'O NOME DA CATEGORIA É OBRIGATÓRIO.' });
+      return;
+    }
+    setIsSaving(true);
+    const payload: Partial<Categoria> = {
+      id: editingCategoriaId || undefined,
+      nome: formCategoriaNome.toUpperCase().trim(),
+      ordem: parseInt(formCategoriaOrdem, 10) || 1,
+    };
+    if (onSaveCategoria) {
+      await onSaveCategoria(payload);
+    }
+    setIsSaving(false);
+    setShowCategoriaModal(false);
+    setFeedbackMessage({
+      type: 'success',
+      text: isEditingCategoria ? 'CATEGORIA ATUALIZADA COM SUCESSO!' : 'NOVA CATEGORIA CADASTRADA COM SUCESSO!',
+    });
+  };
+
+  const handleConfirmDeleteCategoria = async () => {
+    if (!categoriaToDelete) return;
+    setIsSaving(true);
+    if (onDeleteCategoria) {
+      await onDeleteCategoria(categoriaToDelete.id);
+    }
+    setIsSaving(false);
+    setCategoriaToDelete(null);
+    setFeedbackMessage({ type: 'success', text: 'CATEGORIA EXCLUÍDA COM SUCESSO.' });
+  };
+
+  // =========================================================================
+  // BAIRROS & TAXAS DE ENTREGA HANDLERS
+  // =========================================================================
+  const openNewBairroModal = () => {
+    setIsEditingBairro(false);
+    setEditingBairroOriginalNome(null);
+    setFormBairroNome('');
+    setFormBairroTaxa('8.00');
+    setFeedbackMessage(null);
+    setShowBairroModal(true);
+  };
+
+  const openEditBairroModal = (b: BairroTaxa) => {
+    setIsEditingBairro(true);
+    setEditingBairroOriginalNome(b.bairro);
+    setFormBairroNome(b.bairro);
+    setFormBairroTaxa(String(b.taxa));
+    setFeedbackMessage(null);
+    setShowBairroModal(true);
+  };
+
+  const handleSaveBairroForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formBairroNome.trim()) {
+      setFeedbackMessage({ type: 'error', text: 'O NOME DO BAIRRO É OBRIGATÓRIO.' });
+      return;
+    }
+    const taxaNum = parseFloat(formBairroTaxa.replace(',', '.'));
+    if (isNaN(taxaNum) || taxaNum < 0) {
+      setFeedbackMessage({ type: 'error', text: 'INFORME UMA TAXA DE ENTREGA VÁLIDA (R$).' });
+      return;
+    }
+    setIsSaving(true);
+    const payload: Partial<BairroTaxa> = {
+      bairro: formBairroNome.toUpperCase().trim(),
+      taxa: taxaNum,
+    };
+    if (onSaveBairro) {
+      await onSaveBairro(payload, editingBairroOriginalNome || undefined);
+    }
+    setIsSaving(false);
+    setShowBairroModal(false);
+    setFeedbackMessage({
+      type: 'success',
+      text: isEditingBairro ? 'TAXA DO BAIRRO ATUALIZADA COM SUCESSO!' : 'NOVO BAIRRO CADASTRADO COM SUCESSO!',
+    });
+  };
+
+  const handleConfirmDeleteBairro = async () => {
+    if (!bairroToDelete) return;
+    setIsSaving(true);
+    if (onDeleteBairro) {
+      await onDeleteBairro(bairroToDelete.bairro);
+    }
+    setIsSaving(false);
+    setBairroToDelete(null);
+    setFeedbackMessage({ type: 'success', text: `BAIRRO ${bairroToDelete.bairro} EXCLUÍDO COM SUCESSO.` });
+  };
+
+  // Helper visual category icon for products
+  const renderProductCategoryVisual = (catId: number) => {
+    switch (catId) {
+      case 2:
+        return (
+          <div className="w-10 h-10 rounded-xl bg-cyan-950/80 border border-cyan-800 text-cyan-400 flex items-center justify-center shrink-0">
+            <Package className="w-5 h-5" />
+          </div>
+        );
+      case 3:
+        return (
+          <div className="w-10 h-10 rounded-xl bg-orange-950/80 border border-orange-800 text-orange-400 flex items-center justify-center shrink-0">
+            <Flame className="w-5 h-5" />
+          </div>
+        );
+      case 4:
+        return (
+          <div className="w-10 h-10 rounded-xl bg-blue-950/80 border border-blue-800 text-blue-400 flex items-center justify-center shrink-0">
+            <Coffee className="w-5 h-5" />
+          </div>
+        );
+      case 5:
+        return (
+          <div className="w-10 h-10 rounded-xl bg-pink-950/80 border border-pink-800 text-pink-400 flex items-center justify-center shrink-0">
+            <Cake className="w-5 h-5" />
+          </div>
+        );
+      default:
+        return (
+          <div className="w-10 h-10 rounded-xl bg-amber-950/80 border border-amber-800 text-amber-400 flex items-center justify-center shrink-0">
+            <Utensils className="w-5 h-5" />
+          </div>
+        );
+    }
+  };
+
+  // Badge cargo renderer
+  const renderCargoBadge = (cargo: TipoUsuario) => {
     switch (cargo) {
       case 'master':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-xs">
-            <Crown className="w-3 h-3 text-amber-400" />
-            MASTER (IRRESTRITO)
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-gradient-to-r from-amber-500/30 to-amber-600/30 text-amber-300 border border-amber-500/50 shadow-xs">
+            <Crown className="w-3.5 h-3.5 text-amber-400" />
+            MASTER (GERAL)
           </span>
         );
       case 'admin':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-purple-500/20 text-purple-300 border border-purple-500/40">
-            <ShieldCheck className="w-3 h-3 text-purple-400" />
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
+            <UserCog className="w-3 h-3 text-purple-400" />
             ADMINISTRADOR
           </span>
         );
@@ -391,8 +789,97 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
     }
   };
 
+  const sqlDDL = `-- =========================================================================
+-- TABELAS DE CADASTROS DO RESTAURANTE KAIPIRA NO SUPABASE
+-- =========================================================================
+
+-- 1. ENUM E TABELA DE USUÁRIOS
+DO $$ BEGIN
+    CREATE TYPE tipo_usuario AS ENUM ('master', 'admin', 'atendente', 'cozinha', 'garcom', 'entregador');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+ALTER TYPE tipo_usuario ADD VALUE IF NOT EXISTS 'master';
+
+CREATE TABLE IF NOT EXISTS usuarios (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome VARCHAR(150) NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    telefone VARCHAR(25) NOT NULL,
+    cargo VARCHAR(50) NOT NULL DEFAULT 'atendente',
+    status VARCHAR(20) NOT NULL DEFAULT 'ativo',
+    senha VARCHAR(100) NOT NULL DEFAULT 'DNDIGQOL',
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- SEED MASTER
+INSERT INTO usuarios (nome, email, telefone, cargo, status, senha)
+VALUES ('ADMINISTRADOR MASTER GERAL', 'master@kaipira.com', '(19) 9-9999-9999', 'master', 'ativo', 'DNDIGQOL')
+ON CONFLICT (email) DO UPDATE SET cargo = 'master', senha = 'DNDIGQOL', status = 'ativo', atualizado_em = NOW();
+
+-- 2. TABELA DE CLIENTES
+CREATE TABLE IF NOT EXISTS clientes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome VARCHAR(150) NOT NULL,
+    telefone VARCHAR(25) UNIQUE NOT NULL,
+    cep VARCHAR(10) NOT NULL DEFAULT '13400-010',
+    endereco VARCHAR(200) NOT NULL,
+    numero VARCHAR(20) NOT NULL,
+    bairro VARCHAR(100) NOT NULL,
+    complemento VARCHAR(100),
+    eh_mensalista BOOLEAN DEFAULT FALSE,
+    saldo_devedor DECIMAL(10,2) DEFAULT 0.00,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. TABELA DE PRODUTOS & CARDÁPIO
+CREATE TABLE IF NOT EXISTS produtos (
+    id SERIAL PRIMARY KEY,
+    categoria_id INT NOT NULL DEFAULT 1,
+    nome VARCHAR(150) NOT NULL,
+    descricao TEXT,
+    preco_salao DECIMAL(10,2) NOT NULL,
+    preco_delivery DECIMAL(10,2) NOT NULL,
+    dia_semana INT[] DEFAULT '{1,2,3,4,5,6}',
+    pausado BOOLEAN DEFAULT FALSE,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. TABELA DE MESAS
+CREATE TABLE IF NOT EXISTS mesas (
+    id SERIAL PRIMARY KEY,
+    numero INT UNIQUE NOT NULL,
+    status VARCHAR(20) DEFAULT 'livre',
+    cliente_nome VARCHAR(150),
+    pessoas INT DEFAULT 2
+);
+
+-- 5. TABELA DE CARDÁPIO DIÁRIO (CANAL 'delivery_balcao' OU 'mesas')
+CREATE TABLE IF NOT EXISTS cardapio_diario (
+    id SERIAL PRIMARY KEY,
+    data DATE NOT NULL DEFAULT CURRENT_DATE,
+    produto_id INT NOT NULL,
+    canal VARCHAR(30) NOT NULL,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT uk_cardapio_data_produto_canal UNIQUE (data, produto_id, canal)
+);
+
+-- 6. TABELA DE CATEGORIAS DO CARDÁPIO
+CREATE TABLE IF NOT EXISTS categorias (
+    id SERIAL PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    ordem INT DEFAULT 1
+);
+
+-- 7. TABELA DE BAIRROS & TAXAS DE ENTREGA (PIRACICABA)
+CREATE TABLE IF NOT EXISTS bairros_taxas (
+    bairro VARCHAR(100) PRIMARY KEY,
+    taxa DECIMAL(10,2) NOT NULL DEFAULT 7.00
+);
+`;
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 pb-12">
       {/* Top Banner: Central de Cadastros */}
       <div className="bg-neutral-850 rounded-2xl border border-neutral-800 p-6 shadow-md relative overflow-hidden">
         <div className="absolute right-0 top-0 bottom-0 w-80 bg-radial from-amber-600/10 via-transparent to-transparent pointer-events-none" />
@@ -410,7 +897,7 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
               Central Integrada de Cadastros
             </h1>
             <p className="text-xs text-neutral-400 mt-1 max-w-2xl">
-              Gerencie em um só local todos os cadastros essenciais do sistema: Usuários & Funcionários, Clientes, Produtos do Cardápio, Cargos com Regras de Acesso e Mesas.
+              Gerencie todos os cadastros essenciais: Usuários & Equipe, Clientes, Pratos do Cardápio e Mesas do Salão. Disponível em <strong>Blocos</strong> e <strong>Lista</strong> com inclusão, alteração e exclusão ativas.
             </p>
           </div>
 
@@ -419,7 +906,7 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
               onClick={handleSeedMasterNow}
               disabled={isSeedingMaster}
               className="px-3.5 py-2 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all shadow-sm cursor-pointer"
-              title="Garante que o usuário MASTER esteja criado no Supabase"
+              title="Garante que o usuário MASTER esteja sincronizado no Supabase"
             >
               <Crown className="w-4 h-4 text-amber-400" />
               {isSeedingMaster ? 'Sincronizando Master...' : 'Setup Master na Nuvem'}
@@ -436,7 +923,8 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
         </div>
 
         {/* Global Stats bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6 pt-5 border-t border-neutral-800 text-xs">
+        {/* Global Stats bar */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-5 border-t border-neutral-800 text-xs">
           <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800/80">
             <span className="text-[11px] text-neutral-400 uppercase font-bold block">Usuários / Equipe</span>
             <span className="text-lg font-black text-white">{usuarios.length}</span>
@@ -446,7 +934,7 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
           </div>
 
           <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800/80">
-            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Clientes & Mensalistas</span>
+            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Clientes Cadastrados</span>
             <span className="text-lg font-black text-white">{clientes.length}</span>
             <span className="text-[10px] text-cyan-400 block mt-0.5">
               {clientes.filter((c) => c.eh_mensalista).length} mensalistas
@@ -454,27 +942,31 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
           </div>
 
           <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800/80">
-            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Cardápio / Produtos</span>
+            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Cardápio & Pratos</span>
             <span className="text-lg font-black text-white">{produtos.length}</span>
             <span className="text-[10px] text-amber-400 block mt-0.5">
-              {categorias.length} categorias ativas
+              {produtos.filter((p) => !p.pausado).length} disponíveis
             </span>
           </div>
 
           <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800/80">
-            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Salão de Mesas</span>
+            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Mesas do Salão</span>
             <span className="text-lg font-black text-white">{mesas.length}</span>
-            <span className="text-[10px] text-purple-400 block mt-0.5">Capacidade 20 mesas</span>
+            <span className="text-[10px] text-purple-400 block mt-0.5">
+              {mesas.filter((m) => m.status === 'livre').length} livres
+            </span>
           </div>
 
           <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800/80">
-            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Perfil Atual Conectado</span>
-            <span className="text-sm font-black text-amber-400 uppercase truncate block">
-              {currentPerfil?.cargo || 'ADMIN'}
-            </span>
-            <span className="text-[10px] text-neutral-400 block mt-0.5 truncate">
-              {currentPerfil?.nome || 'DONA BENEDITA'}
-            </span>
+            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Categorias</span>
+            <span className="text-lg font-black text-white">{categorias.length}</span>
+            <span className="text-[10px] text-orange-400 block mt-0.5">organizadas</span>
+          </div>
+
+          <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800/80">
+            <span className="text-[11px] text-neutral-400 uppercase font-bold block">Bairros & Entregas</span>
+            <span className="text-lg font-black text-white">{bairros.length}</span>
+            <span className="text-[10px] text-blue-400 block mt-0.5">rotas delivery</span>
           </div>
         </div>
       </div>
@@ -484,8 +976,8 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
         <div
           className={`p-4 rounded-xl border flex items-center justify-between gap-3 text-xs font-bold uppercase transition-all shadow-lg ${
             feedbackMessage.type === 'success'
-              ? 'bg-emerald-950/80 border-emerald-800 text-emerald-200'
-              : 'bg-red-950/80 border-red-800 text-red-200'
+              ? 'bg-emerald-950/90 border-emerald-800 text-emerald-200'
+              : 'bg-red-950/90 border-red-800 text-red-200'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -498,7 +990,7 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
           </div>
           <button
             onClick={() => setFeedbackMessage(null)}
-            className="text-neutral-400 hover:text-white px-2 py-1"
+            className="text-neutral-400 hover:text-white px-2 py-1 cursor-pointer"
           >
             ✕
           </button>
@@ -516,7 +1008,7 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
           }`}
         >
           <UserCog className="w-4 h-4" />
-          <span>1. Usuários & Funcionários ({usuarios.length})</span>
+          <span>1. Usuários & Equipe ({usuarios.length})</span>
         </button>
 
         <button
@@ -544,18 +1036,6 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
         </button>
 
         <button
-          onClick={() => setActiveSubTab('cargos')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'cargos'
-              ? 'bg-amber-600 text-white shadow-md'
-              : 'bg-neutral-850 text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>4. Cargos & Permissões</span>
-        </button>
-
-        <button
           onClick={() => setActiveSubTab('mesas')}
           className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
             activeSubTab === 'mesas'
@@ -564,7 +1044,31 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
           }`}
         >
           <Utensils className="w-4 h-4" />
-          <span>5. Mesas ({mesas.length})</span>
+          <span>4. Mesas do Salão ({mesas.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('categorias')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'categorias'
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'bg-neutral-850 text-neutral-400 hover:text-white hover:bg-neutral-800'
+          }`}
+        >
+          <Tag className="w-4 h-4" />
+          <span>5. Categorias ({categorias.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('bairros')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'bairros'
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'bg-neutral-850 text-neutral-400 hover:text-white hover:bg-neutral-800'
+          }`}
+        >
+          <MapPin className="w-4 h-4" />
+          <span>6. Bairros & Taxas ({bairros.length})</span>
         </button>
 
         <button
@@ -576,216 +1080,228 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
           }`}
         >
           <FileCode className="w-4 h-4" />
-          <span>SQL Supabase</span>
+          <span>7. Esquema SQL Supabase</span>
         </button>
       </div>
 
       {/* =========================================================================
-          ABA 1: GESTÃO COMPLETA DE USUÁRIOS E FUNCIONÁRIOS (CRUD NA NUVEM)
+          ABA 1: USUÁRIOS & FUNCIONÁRIOS
           ========================================================================= */}
       {activeSubTab === 'usuarios' && (
-        <div className="flex flex-col gap-4">
-          {/* Controls Bar */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shadow-sm">
-            {/* Search */}
-            <div className="flex-1 relative">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+            <div>
+              <h3 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
+                <UserCog className="w-4 h-4 text-amber-400" />
+                <span>Gestão de Usuários & Perfis (CRUD na Nuvem)</span>
+              </h3>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Cadastre e gerencie funcionários, atendentes, garçons, equipe da cozinha e o acesso Master.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-neutral-850 border border-neutral-700 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => setUsuariosViewMode('bloco')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    usuariosViewMode === 'bloco'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Blocos / Cards"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Blocos</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUsuariosViewMode('lista')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    usuariosViewMode === 'lista'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Lista / Tabela"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>Lista</span>
+                </button>
+              </div>
+
+              {/* Botão Novo Usuário */}
+              <button
+                type="button"
+                onClick={openNewUserModal}
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Novo Usuário</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Filters */}
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="flex-1 relative w-full">
               <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
               <input
                 type="text"
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
                 placeholder="BUSCAR USUÁRIO POR NOME, E-MAIL OU TELEFONE..."
-                className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+                className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
               />
             </div>
 
-            {/* Filter by Cargo */}
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-bold text-neutral-400 uppercase whitespace-nowrap">
-                Cargo:
-              </label>
-              <select
-                value={filterCargo}
-                onChange={(e) => setFilterCargo(e.target.value)}
-                className="px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 font-semibold"
-              >
-                <option value="todos">TODOS OS CARGOS</option>
-                <option value="master">MASTER (LIVRE ACESSO)</option>
-                <option value="admin">ADMINISTRADOR</option>
-                <option value="atendente">ATENDENTE</option>
-                <option value="cozinha">COZINHA</option>
-                <option value="garcom">GARÇOM</option>
-                <option value="entregador">ENTREGADOR</option>
-              </select>
-
-              <button
-                onClick={onReloadUsuarios}
-                className="p-2.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded-xl border border-neutral-700 transition-colors"
-                title="Recarregar usuários da Nuvem Supabase"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={openNewUserModal}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-md transition-all hover:scale-105 active:scale-95 shrink-0"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Cadastrar Usuário</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Master Profile Callout Banner */}
-          <div className="p-4 bg-amber-950/20 border border-amber-600/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 mt-0.5">
-                <Crown className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="font-extrabold text-amber-300 uppercase tracking-wide block">
-                  Usuário Master Inicial do Kaipira
-                </span>
-                <span className="text-neutral-300 mt-0.5 block">
-                  Login: <strong className="text-white font-mono">master@kaipira.com</strong> · Senha:{' '}
-                  <strong className="text-white font-mono">DNDIGQOL</strong> · Cargo:{' '}
-                  <strong className="text-amber-400 font-bold uppercase">master</strong>
-                </span>
-                <span className="text-[11px] text-neutral-400 mt-0.5 block">
-                  * O cargo MASTER possui bypass total: acesso irrestrito a todas as telas, configurações, caixas, cardápio e permissões.
-                </span>
-              </div>
-            </div>
-
-            <button
-              onClick={handleSeedMasterNow}
-              disabled={isSeedingMaster}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-[11px] uppercase rounded-lg shadow-sm transition-transform active:scale-95 shrink-0"
+            <select
+              value={filterCargo}
+              onChange={(e) => setFilterCargo(e.target.value)}
+              className="px-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-200 rounded-xl text-xs uppercase"
             >
-              {isSeedingMaster ? 'Verificando...' : 'Garantir no Banco'}
-            </button>
+              <option value="todos">TODOS OS CARGOS ({usuarios.length})</option>
+              <option value="master">MASTER</option>
+              <option value="admin">ADMINISTRADOR</option>
+              <option value="atendente">ATENDENTE</option>
+              <option value="cozinha">COZINHA</option>
+              <option value="garcom">GARÇOM</option>
+              <option value="entregador">ENTREGADOR</option>
+            </select>
           </div>
 
-          {/* Users Table / Grid */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-md">
-            <div className="overflow-x-auto">
+          {/* CONTENT: BLOCOS OU LISTA */}
+          {usuariosViewMode === 'bloco' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {filteredUsuarios.map((u) => {
+                const isMaster = u.cargo === 'master' || u.email === 'master@kaipira.com';
+                return (
+                  <div
+                    key={u.id}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 text-xs ${
+                      isMaster
+                        ? 'bg-gradient-to-br from-amber-950/30 to-neutral-850 border-amber-600/50 shadow-md ring-1 ring-amber-500/20'
+                        : 'bg-neutral-850 border-neutral-800 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        {renderCargoBadge(u.cargo)}
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            u.status === 'inativo'
+                              ? 'bg-red-950 text-red-300 border border-red-800'
+                              : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                          }`}
+                        >
+                          {u.status || 'ativo'}
+                        </span>
+                      </div>
+
+                      <h4 className="font-black text-white text-sm uppercase truncate mb-1">
+                        {u.nome}
+                      </h4>
+
+                      <div className="space-y-1 text-neutral-400 text-[11px] font-mono">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Mail className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                          <span>{u.email}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                          <span>{formatPhone(u.telefone)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-neutral-800 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditUserModal(u)}
+                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3 text-amber-400" />
+                        <span>Editar</span>
+                      </button>
+
+                      {!isMaster && (
+                        <button
+                          type="button"
+                          onClick={() => setUserToDelete(u)}
+                          className="px-3 py-1.5 bg-neutral-800 hover:bg-red-950/80 hover:text-red-300 text-neutral-400 border border-neutral-700 hover:border-red-800 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-400" />
+                          <span>Excluir</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-neutral-800">
               <table className="w-full text-left text-xs">
                 <thead className="bg-neutral-850 text-neutral-400 uppercase text-[11px] font-bold border-b border-neutral-800">
                   <tr>
-                    <th className="px-4 py-3">Funcionário / Usuário</th>
-                    <th className="px-4 py-3">Cargo / Perfil</th>
-                    <th className="px-4 py-3">E-mail (Único)</th>
-                    <th className="px-4 py-3">Telefone Obrigatório</th>
+                    <th className="px-4 py-3">Nome do Funcionário</th>
+                    <th className="px-4 py-3">Cargo</th>
+                    <th className="px-4 py-3">E-mail</th>
+                    <th className="px-4 py-3">Telefone</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-800/60">
-                  {filteredUsuarios.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-neutral-500 uppercase">
-                        Nenhum usuário encontrado com os filtros selecionados.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredUsuarios.map((u) => {
-                      const isMasterUser = u.cargo === 'master' || u.email === 'master@kaipira.com';
-                      return (
-                        <tr
-                          key={u.id || u.email}
-                          className={`hover:bg-neutral-850/60 transition-colors ${
-                            isMasterUser ? 'bg-amber-950/10' : ''
-                          }`}
-                        >
-                          {/* Nome */}
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className={`w-8 h-8 rounded-lg flex items-center justify-center font-black uppercase text-xs shadow-xs ${
-                                  isMasterUser
-                                    ? 'bg-amber-600 text-white border border-amber-400'
-                                    : 'bg-neutral-800 text-neutral-200 border border-neutral-700'
-                                }`}
-                              >
-                                {isMasterUser ? <Crown className="w-4 h-4" /> : u.nome.charAt(0)}
-                              </div>
-                              <div>
-                                <span className="font-extrabold text-neutral-100 uppercase block">
-                                  {u.nome}
-                                </span>
-                                {isMasterUser && (
-                                  <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider block">
-                                    Acesso Total Irrestrito
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Cargo */}
-                          <td className="px-4 py-3.5 whitespace-nowrap">
-                            {getCargoBadge(u.cargo)}
-                          </td>
-
-                          {/* Email */}
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-1.5 text-neutral-300 font-mono text-[11px]">
-                              <Mail className="w-3.5 h-3.5 text-neutral-500" />
-                              <span>{u.email}</span>
-                            </div>
-                          </td>
-
-                          {/* Telefone */}
-                          <td className="px-4 py-3.5 whitespace-nowrap">
-                            <div className="flex items-center gap-1.5 text-neutral-300 font-mono text-[11px]">
-                              <Phone className="w-3.5 h-3.5 text-neutral-500" />
-                              <span>{formatPhone(u.telefone)}</span>
-                            </div>
-                          </td>
-
-                          {/* Status */}
-                          <td className="px-4 py-3.5 whitespace-nowrap">
-                            {u.status === 'inativo' ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-950/60 text-red-400 border border-red-900">
-                                Inativo
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-950/60 text-emerald-400 border border-emerald-900">
-                                Ativo
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Ações */}
-                          <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                            <div className="inline-flex items-center gap-1.5">
+                <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
+                  {filteredUsuarios.map((u) => {
+                    const isMaster = u.cargo === 'master' || u.email === 'master@kaipira.com';
+                    return (
+                      <tr key={u.id} className="hover:bg-neutral-850/50">
+                        <td className="px-4 py-3 font-bold text-neutral-100 uppercase">{u.nome}</td>
+                        <td className="px-4 py-3">{renderCargoBadge(u.cargo)}</td>
+                        <td className="px-4 py-3 font-mono text-neutral-300">{u.email}</td>
+                        <td className="px-4 py-3 font-mono text-neutral-300">{formatPhone(u.telefone)}</td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              u.status === 'inativo'
+                                ? 'bg-red-950 text-red-300 border border-red-800'
+                                : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                            }`}
+                          >
+                            {u.status || 'ativo'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openEditUserModal(u)}
+                              className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer"
+                              title="Editar usuário"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                            </button>
+                            {!isMaster && (
                               <button
-                                onClick={() => openEditUserModal(u)}
-                                className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors"
-                                title="Editar Usuário"
+                                type="button"
+                                onClick={() => setUserToDelete(u)}
+                                className="p-1.5 bg-neutral-800 hover:bg-red-950 text-neutral-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
+                                title="Excluir usuário"
                               >
-                                <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
                               </button>
-
-                              {!isMasterUser && (
-                                <button
-                                  onClick={() => setUserToDelete(u)}
-                                  className="p-1.5 bg-neutral-800 hover:bg-red-900/40 text-neutral-400 hover:text-red-300 rounded-lg transition-colors"
-                                  title="Excluir Usuário"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -794,23 +1310,58 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
           ========================================================================= */}
       {activeSubTab === 'clientes' && (
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
             <div>
               <h3 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
                 <Users className="w-4 h-4 text-amber-400" />
-                <span>Cadastro Geral de Clientes & Mensalistas</span>
+                <span>Cadastro de Clientes & Mensalistas</span>
               </h3>
               <p className="text-xs text-neutral-400 mt-0.5">
-                Base centralizada de clientes cadastrados para entregas em Piracicaba e controle de mensalistas.
+                Base cadastral de Piracicaba para delivery rápido, histórico e mensalistas com saldo.
               </p>
             </div>
 
-            <button
-              onClick={() => onNavigateTab('mensalistas')}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold uppercase transition-all shadow-sm"
-            >
-              Abrir Módulo Completo de Mensalistas
-            </button>
+            <div className="flex items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-neutral-850 border border-neutral-700 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => setClientesViewMode('bloco')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    clientesViewMode === 'bloco'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Blocos"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Blocos</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClientesViewMode('lista')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    clientesViewMode === 'lista'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Lista"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>Lista</span>
+                </button>
+              </div>
+
+              {/* Botão Novo Cliente */}
+              <button
+                type="button"
+                onClick={openNewClientModal}
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Novo Cliente</span>
+              </button>
+            </div>
           </div>
 
           <div className="relative">
@@ -820,51 +1371,142 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
               value={clientSearch}
               onChange={(e) => setClientSearch(e.target.value)}
               placeholder="BUSCAR CLIENTE POR NOME OU TELEFONE..."
-              className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
             />
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-850 text-neutral-400 uppercase text-[11px] font-bold border-b border-neutral-800">
-                <tr>
-                  <th className="px-4 py-2.5">Nome do Cliente</th>
-                  <th className="px-4 py-2.5">Telefone</th>
-                  <th className="px-4 py-2.5">Bairro / Endereço</th>
-                  <th className="px-4 py-2.5">Mensalista</th>
-                  <th className="px-4 py-2.5 text-right">Saldo Devedor</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-800/60">
-                {clientes
-                  .filter((c) => {
-                    if (!clientSearch) return true;
-                    const q = clientSearch.toLowerCase();
-                    return c.nome.toLowerCase().includes(q) || c.telefone.includes(q);
-                  })
-                  .slice(0, 15)
-                  .map((c) => (
-                    <tr key={c.id} className="hover:bg-neutral-850/50">
-                      <td className="px-4 py-2.5 font-bold text-neutral-200 uppercase">{c.nome}</td>
-                      <td className="px-4 py-2.5 font-mono text-neutral-300">{formatPhone(c.telefone)}</td>
-                      <td className="px-4 py-2.5 text-neutral-400 uppercase">{c.bairro} - {c.endereco}, {c.numero}</td>
-                      <td className="px-4 py-2.5">
-                        {c.eh_mensalista ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] bg-purple-950/60 text-purple-300 border border-purple-800 font-bold uppercase">
-                            Sim
+          {/* CONTENT: BLOCOS OU LISTA */}
+          {clientesViewMode === 'bloco' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {clientes
+                .filter((c) => {
+                  if (!clientSearch) return true;
+                  const q = clientSearch.toLowerCase();
+                  return (c.nome || '').toLowerCase().includes(q) || (c.telefone || '').includes(q);
+                })
+                .map((c) => (
+                  <div
+                    key={c.id}
+                    className="p-4 rounded-2xl bg-neutral-850 border border-neutral-800 hover:border-neutral-700 flex flex-col justify-between gap-3 text-xs"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-mono text-neutral-300 font-bold flex items-center gap-1">
+                          <Phone className="w-3.5 h-3.5 text-neutral-500" />
+                          {formatPhone(c.telefone)}
+                        </span>
+                        {c.eh_mensalista && (
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-purple-950/80 text-purple-300 border border-purple-800 font-black uppercase">
+                            MENSALISTA
                           </span>
-                        ) : (
-                          <span className="text-neutral-500 text-[11px]">Não</span>
                         )}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-400">
-                        {formatBRL(c.saldo_devedor || 0)}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+
+                      <h4 className="font-black text-white text-sm uppercase truncate mb-1">
+                        {c.nome}
+                      </h4>
+
+                      <p className="text-neutral-400 text-[11px] uppercase line-clamp-2">
+                        {c.bairro} · {c.endereco}, {c.numero} {c.complemento ? `(${c.complemento})` : ''}
+                      </p>
+
+                      {c.eh_mensalista && (
+                        <div className="mt-2 pt-2 border-t border-neutral-800 flex items-center justify-between text-[11px]">
+                          <span className="text-neutral-400">Saldo Devedor:</span>
+                          <span className="font-mono font-bold text-amber-400">
+                            {formatBRL(c.saldo_devedor || 0)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2.5 border-t border-neutral-800 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditClientModal(c)}
+                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3 text-amber-400" />
+                        <span>Editar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setClientToDelete(c)}
+                        className="px-3 py-1.5 bg-neutral-800 hover:bg-red-950/80 hover:text-red-300 text-neutral-400 border border-neutral-700 hover:border-red-800 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3 text-red-400" />
+                        <span>Excluir</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-neutral-800">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-850 text-neutral-400 uppercase text-[11px] font-bold border-b border-neutral-800">
+                  <tr>
+                    <th className="px-4 py-3">Nome do Cliente</th>
+                    <th className="px-4 py-3">Telefone</th>
+                    <th className="px-4 py-3">Bairro / Endereço</th>
+                    <th className="px-4 py-3">Mensalista</th>
+                    <th className="px-4 py-3 text-right">Saldo Devedor</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
+                  {clientes
+                    .filter((c) => {
+                      if (!clientSearch) return true;
+                      const q = clientSearch.toLowerCase();
+                      return (c.nome || '').toLowerCase().includes(q) || (c.telefone || '').includes(q);
+                    })
+                    .map((c) => (
+                      <tr key={c.id} className="hover:bg-neutral-850/50">
+                        <td className="px-4 py-3 font-bold text-neutral-200 uppercase">{c.nome}</td>
+                        <td className="px-4 py-3 font-mono text-neutral-300">{formatPhone(c.telefone)}</td>
+                        <td className="px-4 py-3 text-neutral-400 uppercase">
+                          {c.bairro} - {c.endereco}, {c.numero}
+                        </td>
+                        <td className="px-4 py-3">
+                          {c.eh_mensalista ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] bg-purple-950/60 text-purple-300 border border-purple-800 font-bold uppercase">
+                              Sim
+                            </span>
+                          ) : (
+                            <span className="text-neutral-500 text-[11px]">Não</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-amber-400">
+                          {formatBRL(c.saldo_devedor || 0)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openEditClientModal(c)}
+                              className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer"
+                              title="Editar cliente"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setClientToDelete(c)}
+                              className="p-1.5 bg-neutral-800 hover:bg-red-950 text-neutral-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
+                              title="Excluir cliente"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -873,7 +1515,7 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
           ========================================================================= */}
       {activeSubTab === 'produtos' && (
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
             <div>
               <h3 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
                 <ShoppingBag className="w-4 h-4 text-amber-400" />
@@ -885,19 +1527,53 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-neutral-850 border border-neutral-700 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => setProdutosViewMode('bloco')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    produtosViewMode === 'bloco'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Blocos"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Blocos</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProdutosViewMode('lista')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    produtosViewMode === 'lista'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Lista"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>Lista</span>
+                </button>
+              </div>
+
+              {/* Botão Novo Produto */}
               <button
-                onClick={() => onNavigateTab('cardapio-dia')}
+                type="button"
+                onClick={openNewProductModal}
                 className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95"
               >
-                <Sparkles className="w-3.5 h-3.5 text-white" />
-                <span>Montar Cardápio de Hoje</span>
+                <Plus className="w-4 h-4" />
+                <span>Novo Prato / Item</span>
               </button>
 
               <button
-                onClick={() => onNavigateTab('pdv')}
-                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-xl text-xs font-bold uppercase transition-all shadow-sm"
+                type="button"
+                onClick={() => onNavigateTab('cardapio-dia')}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-amber-300 border border-neutral-700 rounded-xl text-xs font-bold uppercase flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
               >
-                Ir para Atendimento / PDV
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Montar Cardápio de Hoje</span>
               </button>
             </div>
           </div>
@@ -910,7 +1586,7 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
                 value={prodSearch}
                 onChange={(e) => setProdSearch(e.target.value)}
                 placeholder="BUSCAR PRATO OU PRODUTO..."
-                className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
               />
             </div>
 
@@ -919,9 +1595,9 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
               onChange={(e) =>
                 setSelectedCategoriaId(e.target.value === 'todas' ? 'todas' : Number(e.target.value))
               }
-              className="px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-xl text-xs uppercase"
+              className="px-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-200 rounded-xl text-xs uppercase"
             >
-              <option value="todas">TODAS AS CATEGORIAS</option>
+              <option value="todas">TODAS AS CATEGORIAS ({produtos.length})</option>
               {categorias.map((cat) => (
                 <option key={cat.id} value={cat.id}>
                   {cat.nome}
@@ -930,266 +1606,750 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
             </select>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {produtos
-              .filter((p) => {
-                if (selectedCategoriaId !== 'todas' && p.categoria_id !== selectedCategoriaId) return false;
-                if (prodSearch && !p.nome.toLowerCase().includes(prodSearch.toLowerCase())) return false;
-                return true;
-              })
-              .map((p) => {
-                const cat = categorias.find((c) => c.id === p.categoria_id);
+          {/* CONTENT: BLOCOS OU LISTA */}
+          {produtosViewMode === 'bloco' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {produtos
+                .filter((p) => {
+                  if (selectedCategoriaId !== 'todas' && p.categoria_id !== selectedCategoriaId)
+                    return false;
+                  if (prodSearch) {
+                    const q = prodSearch.toLowerCase();
+                    return (
+                      (p.nome || '').toLowerCase().includes(q) ||
+                      (p.descricao || '').toLowerCase().includes(q)
+                    );
+                  }
+                  return true;
+                })
+                .map((p) => {
+                  const cat = categorias.find((c) => c.id === p.categoria_id);
+                  return (
+                    <div
+                      key={p.id}
+                      className={`p-4 rounded-2xl bg-neutral-850 border flex flex-col justify-between gap-3 text-xs transition-all ${
+                        p.pausado
+                          ? 'border-red-900/60 opacity-70'
+                          : 'border-neutral-800 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start gap-3 mb-2">
+                          {renderProductCategoryVisual(p.categoria_id)}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-800 text-neutral-300 border border-neutral-700">
+                                {cat?.nome || 'CARDÁPIO'}
+                              </span>
+                              {p.pausado && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-950 text-red-300 border border-red-800 flex items-center gap-1">
+                                  <Ban className="w-3 h-3" />
+                                  ESGOTADO
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="font-black text-white text-sm uppercase line-clamp-1">
+                              {p.nome}
+                            </h4>
+                          </div>
+                        </div>
+
+                        {p.descricao && (
+                          <p className="text-neutral-400 text-[11px] line-clamp-2 mb-2 uppercase">
+                            {p.descricao}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between text-[11px] font-mono mt-1 pt-2 border-t border-neutral-800">
+                          <span>
+                            Salão: <strong className="text-amber-400">{formatBRL(p.preco_salao)}</strong>
+                          </span>
+                          <span>
+                            Delivery:{' '}
+                            <strong className="text-cyan-400">{formatBRL(p.preco_delivery)}</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between gap-2">
+                        {onTogglePauseProduto && (
+                          <button
+                            type="button"
+                            onClick={() => onTogglePauseProduto(p.id)}
+                            className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-colors cursor-pointer ${
+                              p.pausado
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                            }`}
+                          >
+                            {p.pausado ? 'Despausar' : 'Pausar'}
+                          </button>
+                        )}
+
+                        <div className="flex items-center gap-1.5 ml-auto">
+                          <button
+                            type="button"
+                            onClick={() => openEditProductModal(p)}
+                            className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3 text-amber-400" />
+                            <span>Editar</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setProductToDelete(p)}
+                            className="p-1.5 bg-neutral-800 hover:bg-red-950/80 text-neutral-400 hover:text-red-300 border border-neutral-700 hover:border-red-800 rounded-lg transition-colors cursor-pointer"
+                            title="Excluir produto"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-neutral-800">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-850 text-neutral-400 uppercase text-[11px] font-bold border-b border-neutral-800">
+                  <tr>
+                    <th className="px-4 py-3">Produto / Prato</th>
+                    <th className="px-4 py-3">Categoria</th>
+                    <th className="px-4 py-3">Preço Salão</th>
+                    <th className="px-4 py-3">Preço Delivery</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
+                  {produtos
+                    .filter((p) => {
+                      if (selectedCategoriaId !== 'todas' && p.categoria_id !== selectedCategoriaId)
+                        return false;
+                      if (prodSearch) {
+                        const q = prodSearch.toLowerCase();
+                        return (
+                          (p.nome || '').toLowerCase().includes(q) ||
+                          (p.descricao || '').toLowerCase().includes(q)
+                        );
+                      }
+                      return true;
+                    })
+                    .map((p) => {
+                      const cat = categorias.find((c) => c.id === p.categoria_id);
+                      return (
+                        <tr key={p.id} className="hover:bg-neutral-850/50">
+                          <td className="px-4 py-3 font-bold text-neutral-100 uppercase">{p.nome}</td>
+                          <td className="px-4 py-3 uppercase text-neutral-400">{cat?.nome || '-'}</td>
+                          <td className="px-4 py-3 font-mono text-amber-400 font-bold">
+                            {formatBRL(p.preco_salao)}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-cyan-400 font-bold">
+                            {formatBRL(p.preco_delivery)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                p.pausado
+                                  ? 'bg-red-950 text-red-300 border border-red-800'
+                                  : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                              }`}
+                            >
+                              {p.pausado ? 'Pausado' : 'Disponível'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditProductModal(p)}
+                                className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer"
+                                title="Editar produto"
+                              >
+                                <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setProductToDelete(p)}
+                                className="p-1.5 bg-neutral-800 hover:bg-red-950 text-neutral-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
+                                title="Excluir produto"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =========================================================================
+          ABA 4: MESAS DO SALÃO
+          ========================================================================= */}
+      {activeSubTab === 'mesas' && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+            <div>
+              <h3 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
+                <Utensils className="w-4 h-4 text-amber-400" />
+                <span>Cadastro e Gestão das Mesas do Salão</span>
+              </h3>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Layout de atendimento presencial do Restaurante Kaipira. Cadastre, edite status e gerencie mesas.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-neutral-850 border border-neutral-700 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => setMesasViewMode('bloco')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    mesasViewMode === 'bloco'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Blocos"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Blocos</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMesasViewMode('lista')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    mesasViewMode === 'lista'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Lista"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>Lista</span>
+                </button>
+              </div>
+
+              {/* Botão Nova Mesa */}
+              <button
+                type="button"
+                onClick={openNewMesaModal}
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nova Mesa</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigateTab('mesas')}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-xl text-xs font-bold uppercase transition-all shadow-sm cursor-pointer"
+              >
+                Abrir Salão de Mesas
+              </button>
+            </div>
+          </div>
+
+          {/* CONTENT: BLOCOS OU LISTA */}
+          {mesasViewMode === 'bloco' ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+              {mesas.map((m) => {
+                const statusColor =
+                  m.status === 'ocupada'
+                    ? 'border-amber-600/70 bg-amber-950/20'
+                    : m.status === 'conta'
+                    ? 'border-purple-600/70 bg-purple-950/20'
+                    : m.status === 'reservada'
+                    ? 'border-blue-600/70 bg-blue-950/20'
+                    : 'border-neutral-800 bg-neutral-850 hover:border-neutral-700';
+
                 return (
                   <div
-                    key={p.id}
-                    className={`p-3.5 rounded-xl border flex flex-col justify-between gap-2 text-xs transition-colors ${
-                      p.pausado
-                        ? 'bg-neutral-900/60 border-neutral-800 opacity-60'
-                        : 'bg-neutral-850 border-neutral-800 hover:border-neutral-700'
-                    }`}
+                    key={m.numero}
+                    className={`p-3.5 rounded-2xl border flex flex-col justify-between gap-3 text-xs transition-all ${statusColor}`}
                   >
                     <div>
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-[10px] font-bold uppercase text-amber-500">
-                          {cat?.nome || 'GERAL'}
-                        </span>
-                        {p.pausado && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-red-950 text-red-400 border border-red-800">
-                            Pausado
-                          </span>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-black text-white text-base">Mesa {m.numero}</span>
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            m.status === 'ocupada'
+                              ? 'bg-amber-400'
+                              : m.status === 'conta'
+                              ? 'bg-purple-400'
+                              : m.status === 'reservada'
+                              ? 'bg-blue-400'
+                              : 'bg-emerald-400'
+                          }`}
+                        />
+                      </div>
+
+                      <div className="space-y-1 text-[11px] text-neutral-400">
+                        <div>
+                          Status:{' '}
+                          <strong className="uppercase text-neutral-200">{m.status}</strong>
+                        </div>
+                        <div>Capacidade: {m.pessoas || 2} pessoas</div>
+                        {m.cliente_nome && (
+                          <div className="text-amber-400 font-bold uppercase truncate">
+                            {m.cliente_nome}
+                          </div>
                         )}
                       </div>
-                      <h4 className="font-extrabold text-neutral-100 uppercase">{p.nome}</h4>
-                      <p className="text-[11px] text-neutral-400 mt-1 line-clamp-2">{p.descricao}</p>
                     </div>
 
-                    <div className="pt-2 border-t border-neutral-800 flex items-center justify-between font-mono">
-                      <div>
-                        <span className="text-[10px] text-neutral-500 block">SALÃO:</span>
-                        <strong className="text-amber-400 font-bold">{formatBRL(p.preco_salao)}</strong>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-neutral-500 block">DELIVERY:</span>
-                        <strong className="text-emerald-400 font-bold">
-                          {p.preco_delivery ? formatBRL(p.preco_delivery) : '-'}
-                        </strong>
-                      </div>
-                      {onTogglePauseProduto && (
-                        <button
-                          onClick={() => onTogglePauseProduto(p.id)}
-                          className={`px-2 py-1 rounded text-[10px] font-bold uppercase border transition-colors ${
-                            p.pausado
-                              ? 'bg-emerald-950/70 border-emerald-800 text-emerald-300 hover:bg-emerald-900'
-                              : 'bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700'
-                          }`}
-                        >
-                          {p.pausado ? 'Ativar' : 'Pausar'}
-                        </button>
-                      )}
+                    <div className="pt-2 border-t border-neutral-800 flex items-center justify-between gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openEditMesaModal(m)}
+                        className="flex-1 py-1 px-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 rounded-lg text-[10px] font-bold uppercase flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3 text-amber-400" />
+                        <span>Editar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMesaToDelete(m)}
+                        className="p-1 text-neutral-500 hover:text-red-400 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
+                        title="Excluir mesa"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 );
               })}
-          </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-neutral-800">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-850 text-neutral-400 uppercase text-[11px] font-bold border-b border-neutral-800">
+                  <tr>
+                    <th className="px-4 py-3">Número da Mesa</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Capacidade</th>
+                    <th className="px-4 py-3">Cliente Alocado</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
+                  {mesas.map((m) => (
+                    <tr key={m.numero} className="hover:bg-neutral-850/50">
+                      <td className="px-4 py-3 font-black text-neutral-100 uppercase">
+                        Mesa {m.numero}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            m.status === 'ocupada'
+                              ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                              : m.status === 'conta'
+                              ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                              : m.status === 'reservada'
+                              ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                              : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                          }`}
+                        >
+                          {m.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-neutral-300">{m.pessoas || 2} pessoas</td>
+                      <td className="px-4 py-3 font-bold text-amber-400 uppercase">
+                        {m.cliente_nome || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEditMesaModal(m)}
+                            className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer"
+                            title="Editar mesa"
+                          >
+                            <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMesaToDelete(m)}
+                            className="p-1.5 bg-neutral-800 hover:bg-red-950 text-neutral-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
+                            title="Excluir mesa"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
       {/* =========================================================================
-          ABA 4: CARGOS & MATRIZ DE PERMISSÕES
+          ABA 5: CATEGORIAS DO CARDÁPIO
           ========================================================================= */}
-      {activeSubTab === 'cargos' && (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-5">
-          <div>
-            <h3 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span>Matriz de Cargos & Perfis de Acesso ao Sistema</span>
-            </h3>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Definição técnica de cada cargo no Restaurante Kaipira e seus privilégios de acesso.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Cargo MASTER */}
-            <div className="p-4 rounded-xl border border-amber-500/50 bg-amber-950/20 flex flex-col justify-between gap-3 text-xs shadow-md">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase bg-amber-500 text-neutral-950 shadow-xs">
-                    <Crown className="w-3.5 h-3.5" />
-                    MASTER
-                  </span>
-                  <span className="text-[10px] font-bold text-amber-400 uppercase">Acesso Irrestrito</span>
-                </div>
-                <h4 className="font-extrabold text-white uppercase text-sm mb-1">
-                  Administrador Master Geral
-                </h4>
-                <p className="text-neutral-300 text-[11px] leading-relaxed">
-                  Possui <strong>bypass total e irrestrito</strong> a absolutamente todas as telas, funções, configurações de nuvem, caixas, cardápio, exclusão de registros e criação de novos usuários.
-                </p>
-              </div>
-              <div className="p-2.5 bg-neutral-900/90 rounded-lg text-[10px] space-y-1 font-mono text-neutral-300 border border-amber-800/40">
-                <div>LOGIN: <strong className="text-amber-400">master@kaipira.com</strong></div>
-                <div>SENHA PADRÃO: <strong className="text-amber-400">DNDIGQOL</strong></div>
-                <div>PERMISSÕES: <span className="text-emerald-400 font-bold">100% LIBERADO</span></div>
-              </div>
-            </div>
-
-            {/* Cargo ADMIN */}
-            <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-850 flex flex-col justify-between gap-3 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/40">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    ADMIN
-                  </span>
-                  <span className="text-[10px] text-neutral-400 uppercase">Gerência Geral</span>
-                </div>
-                <h4 className="font-bold text-white uppercase text-sm mb-1">Gerente Administrativo</h4>
-                <p className="text-neutral-400 text-[11px] leading-relaxed">
-                  Gerencia operações, visualiza o dashboard financeiro, abertura/fechamento de caixas, gestão de mesas, clientes e estoque.
-                </p>
-              </div>
-              <div className="p-2.5 bg-neutral-900 rounded-lg text-[10px] space-y-1 font-mono text-neutral-300 border border-neutral-800">
-                <div>PERMISSÕES: <span className="text-purple-400">Gestão, Caixa, Salão, PDV</span></div>
-              </div>
-            </div>
-
-            {/* Cargo ATENDENTE */}
-            <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-850 flex flex-col justify-between gap-3 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                    <UserCheck className="w-3.5 h-3.5" />
-                    ATENDENTE
-                  </span>
-                  <span className="text-[10px] text-neutral-400 uppercase">Balcão & Delivery</span>
-                </div>
-                <h4 className="font-bold text-white uppercase text-sm mb-1">Atendimento ao Cliente</h4>
-                <p className="text-neutral-400 text-[11px] leading-relaxed">
-                  Lança novos pedidos no balcão e WhatsApp, consulta cardápio do dia, cadastra novos clientes de Piracicaba e acompanha expedição.
-                </p>
-              </div>
-              <div className="p-2.5 bg-neutral-900 rounded-lg text-[10px] space-y-1 font-mono text-neutral-300 border border-neutral-800">
-                <div>PERMISSÕES: <span className="text-blue-400">PDV, Pedidos, Clientes, Painel LED</span></div>
-              </div>
-            </div>
-
-            {/* Cargo COZINHA */}
-            <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-850 flex flex-col justify-between gap-3 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-orange-500/20 text-orange-300 border border-orange-500/30">
-                    <Utensils className="w-3.5 h-3.5" />
-                    COZINHA
-                  </span>
-                  <span className="text-[10px] text-neutral-400 uppercase">Cozinha</span>
-                </div>
-                <h4 className="font-bold text-white uppercase text-sm mb-1">Equipe da Cozinha & KDS</h4>
-                <p className="text-neutral-400 text-[11px] leading-relaxed">
-                  Visualiza comandas em tempo real na tela KDS, avança status para 'em preparo' e 'pronto', e confere estoque mínimo de insumos e carnes.
-                </p>
-              </div>
-              <div className="p-2.5 bg-neutral-900 rounded-lg text-[10px] space-y-1 font-mono text-neutral-300 border border-neutral-800">
-                <div>PERMISSÕES: <span className="text-orange-400">KDS Cozinha, Painel LED, Estoque</span></div>
-              </div>
-            </div>
-
-            {/* Cargo GARÇOM */}
-            <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-850 flex flex-col justify-between gap-3 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    <Store className="w-3.5 h-3.5" />
-                    GARÇOM
-                  </span>
-                  <span className="text-[10px] text-neutral-400 uppercase">Salão 20 Mesas</span>
-                </div>
-                <h4 className="font-bold text-white uppercase text-sm mb-1">Atendimento de Salão</h4>
-                <p className="text-neutral-400 text-[11px] leading-relaxed">
-                  Operação do mapa de 20 mesas, abertura e acréscimo de itens em comandas presenciais, e fechamento de conta.
-                </p>
-              </div>
-              <div className="p-2.5 bg-neutral-900 rounded-lg text-[10px] space-y-1 font-mono text-neutral-300 border border-neutral-800">
-                <div>PERMISSÕES: <span className="text-emerald-400">Salão & Mesas, PDV, Painel LED</span></div>
-              </div>
-            </div>
-
-            {/* Cargo ENTREGADOR */}
-            <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-850 flex flex-col justify-between gap-3 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                    <Briefcase className="w-3.5 h-3.5" />
-                    ENTREGADOR
-                  </span>
-                  <span className="text-[10px] text-neutral-400 uppercase">Delivery Próprio</span>
-                </div>
-                <h4 className="font-bold text-white uppercase text-sm mb-1">Motoboys e Entregadores</h4>
-                <p className="text-neutral-400 text-[11px] leading-relaxed">
-                  Controle de rotas de entrega por bairro em Piracicaba, despacho de pedidos e baixa em pedidos entregues ao cliente.
-                </p>
-              </div>
-              <div className="p-2.5 bg-neutral-900 rounded-lg text-[10px] space-y-1 font-mono text-neutral-300 border border-neutral-800">
-                <div>PERMISSÕES: <span className="text-cyan-400">Expedição Delivery, Rotas de Piracicaba</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================================
-          ABA 5: SALÃO & 20 MESAS
-          ========================================================================= */}
-      {activeSubTab === 'mesas' && (
+      {activeSubTab === 'categorias' && (
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
             <div>
               <h3 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
-                <Utensils className="w-4 h-4 text-amber-400" />
-                <span>Cadastro e Configuração das 20 Mesas do Salão</span>
+                <Tag className="w-4 h-4 text-amber-400" />
+                <span>Cadastro e Gestão de Categorias do Cardápio</span>
               </h3>
               <p className="text-xs text-neutral-400 mt-0.5">
-                Layout fixo do salão do Restaurante Kaipira com 20 mesas numeradas.
+                Organize as seções do restaurante: Pratos, Marmitex, Porções, Bebidas e Sobremesas.
               </p>
             </div>
 
-            <button
-              onClick={() => onNavigateTab('mesas')}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold uppercase transition-all shadow-sm"
-            >
-              Abrir Mapa Completo de Mesas
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-neutral-850 border border-neutral-700 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => setCategoriasViewMode('bloco')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    categoriasViewMode === 'bloco'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Blocos"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Blocos</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCategoriasViewMode('lista')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    categoriasViewMode === 'lista'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Lista"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>Lista</span>
+                </button>
+              </div>
+
+              {/* Botão Nova Categoria */}
+              <button
+                type="button"
+                onClick={openNewCategoriaModal}
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nova Categoria</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
-            {mesas.map((m) => (
-              <div
-                key={m.numero}
-                className="p-3 bg-neutral-850 rounded-xl border border-neutral-800 flex items-center justify-between text-xs"
-              >
-                <div>
-                  <span className="font-black text-white text-sm block">Mesa {m.numero}</span>
-                  <span className="text-[10px] text-neutral-400 uppercase font-semibold">
-                    {m.status}
-                  </span>
-                </div>
-                <div
-                  className={`w-3 h-3 rounded-full ${
-                    m.status === 'ocupada'
-                      ? 'bg-amber-500'
-                      : m.status === 'conta'
-                      ? 'bg-purple-500'
-                      : 'bg-emerald-500'
-                  }`}
-                />
-              </div>
-            ))}
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
+            <input
+              type="text"
+              value={categoriaSearch}
+              onChange={(e) => setCategoriaSearch(e.target.value)}
+              placeholder="BUSCAR CATEGORIA..."
+              className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+            />
           </div>
+
+          {/* CONTENT: BLOCOS OU LISTA */}
+          {categoriasViewMode === 'bloco' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {categorias
+                .filter((cat) => {
+                  if (!categoriaSearch) return true;
+                  return (cat.nome || '').toLowerCase().includes(categoriaSearch.toLowerCase());
+                })
+                .map((cat) => {
+                  const qtdProdutos = produtos.filter((p) => p.categoria_id === cat.id).length;
+                  return (
+                    <div
+                      key={cat.id}
+                      className="p-4 rounded-2xl bg-neutral-850 border border-neutral-800 hover:border-neutral-700 flex flex-col justify-between gap-3 text-xs transition-all"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-neutral-800 text-amber-400 border border-neutral-700">
+                            ORDEM #{cat.ordem}
+                          </span>
+                          <span className="text-neutral-400 text-[11px] font-bold">
+                            {qtdProdutos} {qtdProdutos === 1 ? 'prato vinculado' : 'pratos vinculados'}
+                          </span>
+                        </div>
+
+                        <h4 className="font-black text-white text-sm uppercase mb-1 flex items-center gap-2">
+                          <Tag className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>{cat.nome}</span>
+                        </h4>
+                      </div>
+
+                      <div className="pt-2.5 border-t border-neutral-800 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditCategoriaModal(cat)}
+                          className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Edit2 className="w-3 h-3 text-amber-400" />
+                          <span>Editar</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCategoriaToDelete(cat)}
+                          className="px-3 py-1.5 bg-neutral-800 hover:bg-red-950/80 hover:text-red-300 text-neutral-400 border border-neutral-700 hover:border-red-800 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-400" />
+                          <span>Excluir</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-neutral-800">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-850 text-neutral-400 uppercase text-[11px] font-bold border-b border-neutral-800">
+                  <tr>
+                    <th className="px-4 py-3">ID</th>
+                    <th className="px-4 py-3">Nome da Categoria</th>
+                    <th className="px-4 py-3">Ordem no Cardápio</th>
+                    <th className="px-4 py-3">Pratos Cadastrados</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
+                  {categorias
+                    .filter((cat) => {
+                      if (!categoriaSearch) return true;
+                      return (cat.nome || '').toLowerCase().includes(categoriaSearch.toLowerCase());
+                    })
+                    .map((cat) => {
+                      const qtdProdutos = produtos.filter((p) => p.categoria_id === cat.id).length;
+                      return (
+                        <tr key={cat.id} className="hover:bg-neutral-850/50">
+                          <td className="px-4 py-3 font-mono text-neutral-400">#{cat.id}</td>
+                          <td className="px-4 py-3 font-black text-neutral-100 uppercase">{cat.nome}</td>
+                          <td className="px-4 py-3 font-mono font-bold text-amber-400">Ordem {cat.ordem}</td>
+                          <td className="px-4 py-3 text-neutral-300 font-bold">{qtdProdutos} pratos</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditCategoriaModal(cat)}
+                                className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer"
+                                title="Editar categoria"
+                              >
+                                <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCategoriaToDelete(cat)}
+                                className="p-1.5 bg-neutral-800 hover:bg-red-950 text-neutral-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
+                                title="Excluir categoria"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
       {/* =========================================================================
-          ABA 6: SCRIPT SQL SUPABASE
+          ABA 6: BAIRROS & TAXAS DE ENTREGA (DELIVERY)
+          ========================================================================= */}
+      {activeSubTab === 'bairros' && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+            <div>
+              <h3 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-amber-400" />
+                <span>Cadastro de Bairros & Taxas de Entrega de Piracicaba</span>
+              </h3>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Valores de entrega cobrados por bairro nas rotas de motoboy e delivery próprio.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-neutral-850 border border-neutral-700 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => setBairrosViewMode('bloco')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    bairrosViewMode === 'bloco'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Blocos"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Blocos</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBairrosViewMode('lista')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                    bairrosViewMode === 'lista'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Lista"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>Lista</span>
+                </button>
+              </div>
+
+              {/* Botão Novo Bairro */}
+              <button
+                type="button"
+                onClick={openNewBairroModal}
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Novo Bairro</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
+            <input
+              type="text"
+              value={bairroSearch}
+              onChange={(e) => setBairroSearch(e.target.value)}
+              placeholder="BUSCAR BAIRRO DE PIRACICABA..."
+              className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+            />
+          </div>
+
+          {/* CONTENT: BLOCOS OU LISTA */}
+          {bairrosViewMode === 'bloco' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+              {bairros
+                .filter((b) => {
+                  if (!bairroSearch) return true;
+                  return (b.bairro || '').toLowerCase().includes(bairroSearch.toLowerCase());
+                })
+                .map((b) => (
+                  <div
+                    key={b.bairro}
+                    className="p-4 rounded-2xl bg-neutral-850 border border-neutral-800 hover:border-neutral-700 flex flex-col justify-between gap-3 text-xs transition-all"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-1.5 text-neutral-400">
+                        <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Piracicaba / Região</span>
+                      </div>
+                      <h4 className="font-black text-white text-sm uppercase truncate mb-2">
+                        {b.bairro}
+                      </h4>
+                      <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800/80 flex items-center justify-between">
+                        <span className="text-neutral-400 text-[11px] uppercase font-bold">Taxa Delivery:</span>
+                        <span className="font-mono text-cyan-400 font-extrabold text-sm">
+                          {formatBRL(b.taxa)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-neutral-800 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditBairroModal(b)}
+                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3 text-amber-400" />
+                        <span>Editar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setBairroToDelete(b)}
+                        className="px-3 py-1.5 bg-neutral-800 hover:bg-red-950/80 hover:text-red-300 text-neutral-400 border border-neutral-700 hover:border-red-800 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3 text-red-400" />
+                        <span>Excluir</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-neutral-800">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-850 text-neutral-400 uppercase text-[11px] font-bold border-b border-neutral-800">
+                  <tr>
+                    <th className="px-4 py-3">Nome do Bairro</th>
+                    <th className="px-4 py-3">Cidade / UF</th>
+                    <th className="px-4 py-3">Taxa de Entrega</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800/60 bg-neutral-900">
+                  {bairros
+                    .filter((b) => {
+                      if (!bairroSearch) return true;
+                      return (b.bairro || '').toLowerCase().includes(bairroSearch.toLowerCase());
+                    })
+                    .map((b) => (
+                      <tr key={b.bairro} className="hover:bg-neutral-850/50">
+                        <td className="px-4 py-3 font-black text-neutral-100 uppercase">{b.bairro}</td>
+                        <td className="px-4 py-3 text-neutral-400 uppercase font-mono">PIRACICABA - SP</td>
+                        <td className="px-4 py-3 font-mono font-bold text-cyan-400">
+                          {formatBRL(b.taxa)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openEditBairroModal(b)}
+                              className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer"
+                              title="Editar bairro"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setBairroToDelete(b)}
+                              className="p-1.5 bg-neutral-800 hover:bg-red-950 text-neutral-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
+                              title="Excluir bairro"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =========================================================================
+          ABA 7: SCRIPT SQL SUPABASE
           ========================================================================= */}
       {activeSubTab === 'sql' && (
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
@@ -1197,16 +2357,21 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
             <div>
               <h3 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
                 <FileCode className="w-4 h-4 text-cyan-400" />
-                <span>Script SQL de Usuários & Master para Supabase</span>
+                <span>Script SQL de Tabelas & Cadastros para o Supabase</span>
               </h3>
               <p className="text-xs text-neutral-400 mt-0.5">
-                Copie e cole este script no SQL Editor do seu projeto Supabase para criar a tabela de usuários com enum e seed do Master.
+                Estrutura completa das tabelas `usuarios`, `clientes`, `produtos`, `mesas` e `cardapio_diario`.
               </p>
             </div>
 
             <div className="flex items-center gap-2">
               <button
-                onClick={copySqlToClipboard}
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(sqlDDL);
+                  setCopiedSql(true);
+                  setTimeout(() => setCopiedSql(false), 2500);
+                }}
                 className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold uppercase flex items-center gap-2 transition-all shadow-sm cursor-pointer"
               >
                 {copiedSql ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -1214,30 +2379,32 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
               </button>
 
               <button
+                type="button"
                 onClick={onOpenSupabaseModal}
-                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-xl text-xs font-bold uppercase transition-colors"
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-xl text-xs font-bold uppercase transition-colors cursor-pointer"
               >
-                Ver Schema Completo do Restaurante
+                Ver Schema Geral
               </button>
             </div>
           </div>
 
           <pre className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 font-mono text-[11px] text-neutral-300 overflow-x-auto leading-relaxed max-h-[450px]">
-            {sqlDDLForUsuarios}
+            {sqlDDL}
           </pre>
         </div>
       )}
 
       {/* =========================================================================
-          MODAL: CADASTRAR OU EDITAR USUÁRIO
+          MODAIS DE CADASTRO / EDIÇÃO / EXCLUSÃO
           ========================================================================= */}
+
+      {/* MODAL 1: USUÁRIO */}
       {showUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
           <form
             onSubmit={handleSaveUser}
             className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
           >
-            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
                 <UserCog className="w-4 h-4 text-amber-500" />
@@ -1246,128 +2413,94 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
               <button
                 type="button"
                 onClick={() => setShowUserModal(false)}
-                className="text-neutral-400 hover:text-white p-1"
+                className="text-neutral-400 hover:text-white p-1 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* Notice */}
-            <div className="p-3 bg-neutral-850 rounded-xl border border-neutral-800 text-[11px] text-neutral-400">
-              * Todos os campos de texto digitáveis (exceto o e-mail) são convertidos automaticamente para <strong>MAIÚSCULAS (UPPERCASE)</strong> e salvos diretamente no Supabase na nuvem.
-            </div>
-
-            {/* Campo 1: Nome Completo (UPPERCASE obrigatório) */}
             <div>
               <label className="text-xs font-bold text-neutral-300 block mb-1">
-                NOME COMPLETO: *
+                NOME COMPLETO: * (SERÁ SALVO EM MAIÚSCULAS)
               </label>
-              <input
-                type="text"
+              <UpperInput
                 required
-                value={formNome}
-                onChange={(e) => setFormNome(e.target.value.toUpperCase())}
-                placeholder="EX: DONA BENEDITA OU JOÃO CARLOS DA SILVA"
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500 font-medium"
+                value={formUserNome}
+                onChange={(e) => setFormUserNome(e.target.value)}
+                placeholder="EX: JOÃO DA SILVA"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
               />
             </div>
 
-            {/* Campo 2: E-mail (único, formato livre) */}
             <div>
               <label className="text-xs font-bold text-neutral-300 block mb-1">
-                E-MAIL / LOGIN ÚNICO: *
+                E-MAIL / LOGIN: *
               </label>
               <input
                 type="email"
                 required
-                value={formEmail}
-                onChange={(e) => setFormEmail(e.target.value)}
-                placeholder="EX: joao@kaipira.com OU joao.silva@gmail.com"
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500 font-mono"
+                value={formUserEmail}
+                onChange={(e) => setFormUserEmail(e.target.value)}
+                placeholder="usuario@kaipira.com"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs font-mono"
               />
             </div>
 
-            {/* Campo 3: Telefone (com máscara obrigatória (99) 9-9999-9999) */}
             <div>
               <label className="text-xs font-bold text-neutral-300 block mb-1">
-                TELEFONE / WHATSAPP: *
+                TELEFONE: * (MÁSCARA OBRIGATÓRIA)
               </label>
               <input
-                type="text"
+                type="tel"
                 required
-                value={formTelefone}
-                onChange={(e) => handlePhoneChange(e.target.value)}
+                value={formUserTelefone}
+                onChange={(e) => setFormUserTelefone(formatPhone(e.target.value))}
                 placeholder="(19) 9-9999-9999"
-                maxLength={16}
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500 font-mono"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs font-mono"
               />
-              <span className="text-[10px] text-neutral-500 mt-1 block">
-                Máscara obrigatória aplicada: (99) 9-9999-9999
-              </span>
             </div>
 
-            {/* Campo 4: Cargo / Perfil de Acesso */}
             <div>
               <label className="text-xs font-bold text-neutral-300 block mb-1">
                 CARGO / PERFIL DE ACESSO: *
               </label>
               <select
-                value={formCargo}
-                onChange={(e) => setFormCargo(e.target.value as TipoUsuario)}
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500 uppercase"
+                value={formUserCargo}
+                onChange={(e) => setFormUserCargo(e.target.value as TipoUsuario)}
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs uppercase"
               >
-                <option value="master">MASTER (LIVRE ACESSO TOTAL & IRRESTRITO)</option>
-                <option value="admin">ADMIN (ADMINISTRADOR / GERENTE)</option>
-                <option value="atendente">ATENDENTE (BALCÃO & DELIVERY)</option>
-                <option value="cozinha">COZINHA (KDS & COZINHA)</option>
-                <option value="garcom">GARÇOM (SALÃO 20 MESAS)</option>
-                <option value="entregador">ENTREGADOR (DELIVERY PRÓPRIO)</option>
+                <option value="atendente">ATENDENTE (BALCÃO / TELEFONE / PDV)</option>
+                <option value="garcom">GARÇOM (SALÃO & 20 MESAS)</option>
+                <option value="cozinha">COZINHA (KDS)</option>
+                <option value="entregador">ENTREGADOR (MOTOBOYS & ROTAS)</option>
+                <option value="admin">ADMIN (GERENTE / CAIXA / RELATÓRIOS)</option>
+                <option value="master">MASTER (LIVRE ACESSO IRRESTRITO A TUDO)</option>
               </select>
-
-              {formCargo === 'master' && (
-                <div className="mt-1.5 p-2 rounded-lg bg-amber-500/15 border border-amber-500/40 text-[11px] text-amber-300 flex items-center gap-1.5 font-medium">
-                  <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>
-                    Atenção: Usuários com cargo <strong>MASTER</strong> têm bypass irrestrito a todas as áreas, relatórios e exclusões do sistema.
-                  </span>
-                </div>
-              )}
             </div>
 
-            {/* Campo 5: Senha de Acesso */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-neutral-300">
-                  SENHA DE ACESSO: *
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setFormSenha('DNDIGQOL')}
-                  className="text-amber-400 text-[10px] hover:underline font-bold"
-                >
-                  Usar Senha Padrão (DNDIGQOL)
-                </button>
-              </div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                SENHA DE ACESSO: *
+              </label>
               <div className="relative">
                 <input
                   type={showFormPassword ? 'text' : 'password'}
                   required
-                  value={formSenha}
-                  onChange={(e) => setFormSenha(e.target.value)}
-                  placeholder="DIGITE A SENHA DO USUÁRIO"
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono pr-10"
+                  value={formUserSenha}
+                  onChange={(e) => setFormUserSenha(e.target.value)}
+                  placeholder="SENHA"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs font-mono pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowFormPassword(!showFormPassword)}
-                  className="absolute right-3 top-2.5 text-neutral-400 hover:text-white"
+                  className="absolute right-3 top-2 text-neutral-400 hover:text-white cursor-pointer"
                 >
                   {showFormPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Campo 6: Status */}
             <div>
               <label className="text-xs font-bold text-neutral-300 block mb-1">
                 STATUS DA CONTA:
@@ -1376,22 +2509,21 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
                 <label className="flex items-center gap-2 cursor-pointer text-emerald-400">
                   <input
                     type="radio"
-                    name="formStatus"
+                    name="formUserStatus"
                     value="ativo"
-                    checked={formStatus === 'ativo'}
-                    onChange={() => setFormStatus('ativo')}
+                    checked={formUserStatus === 'ativo'}
+                    onChange={() => setFormUserStatus('ativo')}
                     className="accent-amber-500"
                   />
                   <span>Ativo</span>
                 </label>
-
                 <label className="flex items-center gap-2 cursor-pointer text-red-400">
                   <input
                     type="radio"
-                    name="formStatus"
+                    name="formUserStatus"
                     value="inativo"
-                    checked={formStatus === 'inativo'}
-                    onChange={() => setFormStatus('inativo')}
+                    checked={formUserStatus === 'inativo'}
+                    onChange={() => setFormUserStatus('inativo')}
                     className="accent-amber-500"
                   />
                   <span>Inativo</span>
@@ -1399,32 +2531,450 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
               </div>
             </div>
 
-            {/* Modal Actions */}
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
               <button
                 type="button"
                 onClick={() => setShowUserModal(false)}
-                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase"
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
               >
                 Cancelar
               </button>
-
               <button
                 type="submit"
                 disabled={isSaving}
-                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg transition-transform active:scale-95 disabled:opacity-50"
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
               >
                 <Cloud className="w-4 h-4" />
-                {isSaving ? 'Salvando na Nuvem...' : isEditingUser ? 'Atualizar no Supabase' : 'Salvar no Supabase'}
+                <span>{isSaving ? 'Gravando no Supabase...' : 'Salvar no Supabase'}</span>
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* =========================================================================
-          MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE USUÁRIO
-          ========================================================================= */}
+      {/* MODAL 2: CLIENTE */}
+      {showClientModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <form
+            onSubmit={handleSaveClientForm}
+            className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
+                <Users className="w-4 h-4 text-amber-500" />
+                <span>{isEditingClient ? 'Editar Cliente' : 'Novo Cliente'}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowClientModal(false)}
+                className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                NOME COMPLETO / RAZÃO SOCIAL: *
+              </label>
+              <UpperInput
+                required
+                value={formClientNome}
+                onChange={(e) => setFormClientNome(e.target.value)}
+                placeholder="EX: MARIA DA ROÇA"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  TELEFONE / WHATSAPP: *
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={formClientTelefone}
+                  onChange={(e) => setFormClientTelefone(formatPhone(e.target.value))}
+                  placeholder="(19) 9-9999-9999"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  CEP PIRACICABA:
+                </label>
+                <input
+                  type="text"
+                  value={formClientCep}
+                  onChange={(e) => setFormClientCep(e.target.value)}
+                  placeholder="13400-010"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  ENDEREÇO / RUA:
+                </label>
+                <UpperInput
+                  value={formClientEndereco}
+                  onChange={(e) => setFormClientEndereco(e.target.value)}
+                  placeholder="RUA DO ROSÁRIO"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  NÚMERO:
+                </label>
+                <UpperInput
+                  value={formClientNumero}
+                  onChange={(e) => setFormClientNumero(e.target.value)}
+                  placeholder="1240"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  BAIRRO:
+                </label>
+                <UpperInput
+                  value={formClientBairro}
+                  onChange={(e) => setFormClientBairro(e.target.value)}
+                  placeholder="CENTRO"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  COMPLEMENTO:
+                </label>
+                <UpperInput
+                  value={formClientComplemento}
+                  onChange={(e) => setFormClientComplemento(e.target.value)}
+                  placeholder="APTO 42"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-bold uppercase cursor-pointer text-purple-300">
+                <input
+                  type="checkbox"
+                  checked={formClientEhMensalista}
+                  onChange={(e) => setFormClientEhMensalista(e.target.checked)}
+                  className="accent-purple-500 w-4 h-4"
+                />
+                <span>Cliente Mensalista (Conta Mensal)</span>
+              </label>
+
+              {formClientEhMensalista && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-neutral-400">Saldo Inicial:</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formClientSaldoDevedor}
+                    onChange={(e) => setFormClientSaldoDevedor(e.target.value)}
+                    className="w-24 px-2 py-1 bg-neutral-800 border border-neutral-700 text-amber-400 font-mono rounded text-xs"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowClientModal(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>{isSaving ? 'Gravando...' : 'Salvar Cliente'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL 3: PRODUTO / PRATO */}
+      {showProductModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <form
+            onSubmit={handleSaveProductForm}
+            className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4 text-amber-500" />
+                <span>{isEditingProduct ? 'Editar Prato / Produto' : 'Novo Prato / Produto'}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowProductModal(false)}
+                className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                NOME DO PRATO / PRODUTO: *
+              </label>
+              <UpperInput
+                required
+                value={formProdNome}
+                onChange={(e) => setFormProdNome(e.target.value)}
+                placeholder="EX: FEIJOADA COMPLETA DA FAZENDA"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                CATEGORIA: *
+              </label>
+              <select
+                value={formProdCategoriaId}
+                onChange={(e) => setFormProdCategoriaId(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs uppercase"
+              >
+                {categorias.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                DESCRIÇÃO / INGREDIENTES:
+              </label>
+              <UpperTextarea
+                rows={2}
+                value={formProdDescricao}
+                onChange={(e) => setFormProdDescricao(e.target.value)}
+                placeholder="EX: FEIJÃO PRETO SELECIONADO COM CARNES NOBRES..."
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  PREÇO SALÃO (R$): *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formProdPrecoSalao}
+                  onChange={(e) => setFormProdPrecoSalao(e.target.value)}
+                  placeholder="49.90"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-amber-400 font-mono font-bold rounded-lg text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  PREÇO DELIVERY (R$):
+                </label>
+                <input
+                  type="text"
+                  value={formProdPrecoDelivery}
+                  onChange={(e) => setFormProdPrecoDelivery(e.target.value)}
+                  placeholder="44.90"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-cyan-400 font-mono font-bold rounded-lg text-xs"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                DIAS DE PROGRAMAÇÃO DA SEMANA:
+              </label>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase">
+                {[
+                  { dia: 1, label: 'Seg' },
+                  { dia: 2, label: 'Ter' },
+                  { dia: 3, label: 'Qua' },
+                  { dia: 4, label: 'Qui' },
+                  { dia: 5, label: 'Sex' },
+                  { dia: 6, label: 'Sáb' },
+                ].map(({ dia, label }) => {
+                  const isChecked = formProdDiasSemana.includes(dia);
+                  return (
+                    <button
+                      key={dia}
+                      type="button"
+                      onClick={() => {
+                        setFormProdDiasSemana((prev) =>
+                          isChecked ? prev.filter((d) => d !== dia) : [...prev, dia]
+                        );
+                      }}
+                      className={`px-3 py-1.5 rounded-lg border text-xs cursor-pointer ${
+                        isChecked
+                          ? 'bg-amber-600 text-white border-amber-500'
+                          : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-white'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-neutral-800">
+              <label className="flex items-center gap-2 text-xs font-bold uppercase cursor-pointer text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={formProdPausado}
+                  onChange={(e) => setFormProdPausado(e.target.checked)}
+                  className="accent-red-500 w-4 h-4"
+                />
+                <span>Pausar / Marcar como Esgotado</span>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowProductModal(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>{isSaving ? 'Gravando...' : 'Salvar Prato'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL 4: MESA */}
+      {showMesaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <form
+            onSubmit={handleSaveMesaForm}
+            className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
+                <Utensils className="w-4 h-4 text-amber-500" />
+                <span>{isEditingMesa ? 'Editar Mesa' : 'Nova Mesa'}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowMesaModal(false)}
+                className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                NÚMERO DA MESA: *
+              </label>
+              <input
+                type="number"
+                required
+                min={1}
+                value={formMesaNumero}
+                onChange={(e) => setFormMesaNumero(e.target.value)}
+                placeholder="EX: 21"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs font-mono font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                STATUS ATUAL:
+              </label>
+              <select
+                value={formMesaStatus}
+                onChange={(e) => setFormMesaStatus(e.target.value as Mesa['status'])}
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs uppercase"
+              >
+                <option value="livre">LIVRE</option>
+                <option value="ocupada">OCUPADA</option>
+                <option value="conta">CONTA SOLICITADA</option>
+                <option value="reservada">RESERVADA</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                CAPACIDADE DE PESSOAS:
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={formMesaPessoas}
+                onChange={(e) => setFormMesaPessoas(e.target.value)}
+                placeholder="4"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                NOME DO CLIENTE / COMANDA (SE OCUPADA/RESERVADA):
+              </label>
+              <UpperInput
+                value={formMesaCliente}
+                onChange={(e) => setFormMesaCliente(e.target.value)}
+                placeholder="EX: FAMÍLIA SILVA"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowMesaModal(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>{isSaving ? 'Gravando...' : 'Salvar Mesa'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO EXCLUSÃO: USUÁRIO */}
       {userToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
           <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
@@ -1433,36 +2983,373 @@ CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING 
                 <Trash2 className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-white uppercase">
-                  Confirmar Exclusão
-                </h3>
+                <h3 className="text-base font-extrabold text-white uppercase">Confirmar Exclusão</h3>
                 <span className="text-xs text-neutral-400">Operação irreversível no Supabase</span>
               </div>
             </div>
-
             <p className="text-xs text-neutral-300">
               Deseja realmente excluir permanentemente o funcionário{' '}
               <strong className="text-white uppercase font-black">{userToDelete.nome}</strong> (
               <span className="font-mono text-neutral-400">{userToDelete.email}</span>)?
             </p>
-
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
               <button
                 type="button"
                 onClick={() => setUserToDelete(null)}
-                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase"
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
               >
                 Cancelar
               </button>
-
               <button
                 type="button"
                 onClick={handleConfirmDeleteUser}
-                disabled={isDeleting}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg disabled:opacity-50"
+                disabled={isSaving}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-lg cursor-pointer disabled:opacity-50"
               >
                 <Trash2 className="w-4 h-4" />
-                {isDeleting ? 'Excluindo...' : 'Sim, Excluir do Banco'}
+                <span>{isSaving ? 'Excluindo...' : 'Sim, Excluir'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO EXCLUSÃO: CLIENTE */}
+      {clientToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-white uppercase">Confirmar Exclusão</h3>
+                <span className="text-xs text-neutral-400">Operação irreversível no Supabase</span>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-300">
+              Deseja realmente excluir o cadastro do cliente{' '}
+              <strong className="text-white uppercase font-black">{clientToDelete.nome}</strong>?
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setClientToDelete(null)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteClient}
+                disabled={isSaving}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isSaving ? 'Excluindo...' : 'Sim, Excluir'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO EXCLUSÃO: PRODUTO */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-white uppercase">Confirmar Exclusão</h3>
+                <span className="text-xs text-neutral-400">Remover prato do cardápio do sistema</span>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-300">
+              Deseja realmente excluir o produto{' '}
+              <strong className="text-white uppercase font-black">{productToDelete.nome}</strong> do cardápio?
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setProductToDelete(null)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteProduct}
+                disabled={isSaving}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isSaving ? 'Excluindo...' : 'Sim, Excluir'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO EXCLUSÃO: MESA */}
+      {mesaToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-white uppercase">Confirmar Exclusão</h3>
+                <span className="text-xs text-neutral-400">Remover mesa do salão</span>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-300">
+              Deseja realmente excluir a <strong className="text-white uppercase font-black">Mesa {mesaToDelete.numero}</strong> do salão?
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setMesaToDelete(null)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteMesa}
+                disabled={isSaving}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isSaving ? 'Excluindo...' : 'Sim, Excluir'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: CATEGORIA */}
+      {showCategoriaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <form
+            onSubmit={handleSaveCategoriaForm}
+            className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
+                <Tag className="w-4 h-4 text-amber-500" />
+                <span>{isEditingCategoria ? 'Editar Categoria do Cardápio' : 'Nova Categoria'}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowCategoriaModal(false)}
+                className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                NOME DA CATEGORIA: * (EM MAIÚSCULAS)
+              </label>
+              <UpperInput
+                required
+                value={formCategoriaNome}
+                onChange={(e) => setFormCategoriaNome(e.target.value)}
+                placeholder="EX: PRATOS EXECUTIVOS DA CASA"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                ORDEM DE EXIBIÇÃO NO CARDÁPIO:
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={formCategoriaOrdem}
+                onChange={(e) => setFormCategoriaOrdem(e.target.value)}
+                placeholder="1"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs font-mono font-bold"
+              />
+              <span className="text-[10px] text-neutral-500 mt-1 block">
+                Define a ordem sequencial em que a seção aparece no cardápio e nos pedidos.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowCategoriaModal(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>{isSaving ? 'Gravando...' : 'Salvar Categoria'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO EXCLUSÃO: CATEGORIA */}
+      {categoriaToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-white uppercase">Confirmar Exclusão</h3>
+                <span className="text-xs text-neutral-400">Remover categoria do sistema</span>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-300">
+              Deseja realmente excluir a categoria{' '}
+              <strong className="text-white uppercase font-black">{categoriaToDelete.nome}</strong>?
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setCategoriaToDelete(null)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteCategoria}
+                disabled={isSaving}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isSaving ? 'Excluindo...' : 'Sim, Excluir'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: BAIRRO & TAXA */}
+      {showBairroModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <form
+            onSubmit={handleSaveBairroForm}
+            className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-amber-500" />
+                <span>{isEditingBairro ? 'Editar Bairro / Taxa de Entrega' : 'Novo Bairro para Delivery'}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowBairroModal(false)}
+                className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                NOME DO BAIRRO (PIRACICABA): * (EM MAIÚSCULAS)
+              </label>
+              <UpperInput
+                required
+                value={formBairroNome}
+                onChange={(e) => setFormBairroNome(e.target.value)}
+                placeholder="EX: VILA REZENDE"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                TAXA DE ENTREGA (R$): *
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-2 text-neutral-500 text-xs font-bold">R$</span>
+                <input
+                  type="text"
+                  required
+                  value={formBairroTaxa}
+                  onChange={(e) => setFormBairroTaxa(e.target.value)}
+                  placeholder="8.00"
+                  className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 text-cyan-400 font-mono font-bold rounded-lg text-xs"
+                />
+              </div>
+              <span className="text-[10px] text-neutral-500 mt-1 block">
+                Valor cobrado automaticamente no cálculo de pedidos para este bairro.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowBairroModal(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>{isSaving ? 'Gravando...' : 'Salvar Bairro'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO EXCLUSÃO: BAIRRO */}
+      {bairroToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-white uppercase">Confirmar Exclusão</h3>
+                <span className="text-xs text-neutral-400">Remover bairro do delivery</span>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-300">
+              Deseja realmente excluir a rota de entrega do bairro{' '}
+              <strong className="text-white uppercase font-black">{bairroToDelete.bairro}</strong> (Taxa:{' '}
+              {formatBRL(bairroToDelete.taxa)})?
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setBairroToDelete(null)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteBairro}
+                disabled={isSaving}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isSaving ? 'Excluindo...' : 'Sim, Excluir'}</span>
               </button>
             </div>
           </div>

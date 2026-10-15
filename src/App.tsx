@@ -67,6 +67,12 @@ import {
   garantirMasterSupabase,
   salvarCardapioDiarioSupabase,
   fetchCardapioDiarioSupabase,
+  salvarClienteSupabase,
+  excluirClienteSupabase,
+  salvarProdutoSupabase,
+  excluirProdutoSupabase,
+  salvarMesaSupabase,
+  excluirMesaSupabase,
 } from './services/supabaseClient';
 
 export default function App() {
@@ -420,25 +426,131 @@ export default function App() {
   };
 
   const handleCadastrarCliente = async (clienteData: Partial<Cliente>) => {
-    const novo: Cliente = {
-      id: 'c-' + Date.now(),
-      nome: (clienteData.nome || '').toUpperCase(),
+    await handleSaveCliente(clienteData);
+  };
+
+  const handleSaveCliente = async (clienteData: Partial<Cliente>) => {
+    const res = await salvarClienteSupabase(clienteData);
+    const saved = res.data || {
+      id: clienteData.id || 'c-' + Date.now(),
+      nome: (clienteData.nome || '').toUpperCase().trim(),
       telefone: clienteData.telefone || '',
-      cep: clienteData.cep || '',
-      endereco: (clienteData.endereco || '').toUpperCase(),
-      numero: (clienteData.numero || '').toUpperCase(),
-      bairro: (clienteData.bairro || '').toUpperCase(),
-      complemento: (clienteData.complemento || '').toUpperCase(),
+      cep: clienteData.cep || '13400-010',
+      endereco: (clienteData.endereco || '').toUpperCase().trim(),
+      numero: (clienteData.numero || '').toUpperCase().trim(),
+      bairro: (clienteData.bairro || '').toUpperCase().trim(),
+      complemento: (clienteData.complemento || '').toUpperCase().trim(),
       eh_mensalista: !!clienteData.eh_mensalista,
-      saldo_devedor: 0,
-      criado_em: new Date().toISOString(),
+      saldo_devedor: Number(clienteData.saldo_devedor) || 0,
+      criado_em: clienteData.criado_em || new Date().toISOString(),
     };
-    setClientes((prev) => [novo, ...prev]);
-    try {
-      await supabase.from('clientes').insert(novo);
-    } catch (err) {
-      console.warn('Erro ao salvar cliente no Supabase:', err);
-    }
+
+    setClientes((prev) => {
+      const exists = prev.some((c) => c.id === saved.id);
+      if (exists) {
+        return prev.map((c) => (c.id === saved.id ? { ...c, ...saved } : c));
+      }
+      return [saved, ...prev];
+    });
+  };
+
+  const handleDeleteCliente = async (id: string) => {
+    await excluirClienteSupabase(id);
+    setClientes((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const handleSaveProduto = async (prodData: Partial<Produto>) => {
+    const res = await salvarProdutoSupabase(prodData);
+    const saved = res.data || {
+      id: prodData.id || Date.now(),
+      categoria_id: Number(prodData.categoria_id) || 1,
+      nome: (prodData.nome || '').toUpperCase().trim(),
+      descricao: (prodData.descricao || '').toUpperCase().trim(),
+      preco_salao: Number(prodData.preco_salao) || 0,
+      preco_delivery: Number(prodData.preco_delivery) || Number(prodData.preco_salao) || 0,
+      dia_semana: prodData.dia_semana || [1, 2, 3, 4, 5, 6],
+      pausado: !!prodData.pausado,
+      criado_em: prodData.criado_em || new Date().toISOString(),
+    };
+
+    setProdutos((prev) => {
+      const exists = prev.some((p) => p.id === saved.id);
+      if (exists) {
+        return prev.map((p) => (p.id === saved.id ? { ...p, ...saved } : p));
+      }
+      return [...prev, saved];
+    });
+  };
+
+  const handleDeleteProduto = async (id: number) => {
+    await excluirProdutoSupabase(id);
+    setProdutos((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const handleSaveMesa = async (mesaData: Partial<Mesa>) => {
+    const res = await salvarMesaSupabase(mesaData);
+    const saved = res.data || {
+      id: mesaData.id || Number(mesaData.numero),
+      numero: Number(mesaData.numero),
+      status: mesaData.status || 'livre',
+      cliente_nome: (mesaData.cliente_nome || '').toUpperCase().trim() || undefined,
+      pessoas: Number(mesaData.pessoas) || 2,
+    };
+
+    setMesas((prev) => {
+      const exists = prev.some((m) => m.numero === saved.numero);
+      if (exists) {
+        return prev.map((m) => (m.numero === saved.numero ? { ...m, ...saved } : m));
+      }
+      return [...prev, saved].sort((a, b) => a.numero - b.numero);
+    });
+  };
+
+  const handleDeleteMesa = async (numero: number) => {
+    await excluirMesaSupabase(numero);
+    setMesas((prev) => prev.filter((m) => m.numero !== numero));
+  };
+
+  // Categories CRUD
+  const handleSaveCategoria = async (catData: Partial<Categoria>) => {
+    setCategorias((prev) => {
+      if (catData.id) {
+        return prev.map((c) => (c.id === catData.id ? ({ ...c, ...catData } as Categoria) : c));
+      }
+      const nextId = prev.reduce((max, c) => Math.max(max, c.id), 0) + 1;
+      const nova: Categoria = {
+        id: nextId,
+        nome: (catData.nome || '').toUpperCase().trim(),
+        ordem: catData.ordem || nextId,
+      };
+      return [...prev, nova];
+    });
+  };
+
+  const handleDeleteCategoria = async (id: number) => {
+    setCategorias((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  // Bairros & Taxas CRUD
+  const handleSaveBairro = async (bairroData: Partial<BairroTaxa>, originalNome?: string) => {
+    setBairros((prev) => {
+      const nomeLimpo = (bairroData.bairro || '').toUpperCase().trim();
+      const taxaNum = Number(bairroData.taxa) || 0;
+      const novoBairro: BairroTaxa = { bairro: nomeLimpo, taxa: taxaNum };
+
+      if (originalNome) {
+        return prev.map((b) => (b.bairro.toUpperCase() === originalNome.toUpperCase() ? novoBairro : b));
+      }
+      const exists = prev.some((b) => b.bairro.toUpperCase() === nomeLimpo);
+      if (exists) {
+        return prev.map((b) => (b.bairro.toUpperCase() === nomeLimpo ? novoBairro : b));
+      }
+      return [...prev, novoBairro];
+    });
+  };
+
+  const handleDeleteBairro = async (bairroNome: string) => {
+    setBairros((prev) => prev.filter((b) => b.bairro.toUpperCase() !== bairroNome.toUpperCase()));
   };
 
   // Cash Register functional operations via Supabase
@@ -545,11 +657,22 @@ export default function App() {
             produtos={produtos}
             categorias={categorias}
             mesas={mesas}
+            bairros={bairros}
             onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
             onNavigateTab={(tab) => {
               setActiveTab(tab);
               if (tab !== 'pdv') setSelectedMesaNumber(undefined);
             }}
+            onSaveCliente={handleSaveCliente}
+            onDeleteCliente={handleDeleteCliente}
+            onSaveProduto={handleSaveProduto}
+            onDeleteProduto={handleDeleteProduto}
+            onSaveMesa={handleSaveMesa}
+            onDeleteMesa={handleDeleteMesa}
+            onSaveCategoria={handleSaveCategoria}
+            onDeleteCategoria={handleDeleteCategoria}
+            onSaveBairro={handleSaveBairro}
+            onDeleteBairro={handleDeleteBairro}
             onCadastrarCliente={handleCadastrarCliente}
             onTogglePauseProduto={handleTogglePauseProduto}
           />

@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS cardapio_diario (
     produto_id INT NOT NULL,
     canal VARCHAR(30) NOT NULL, -- 'delivery_balcao' ou 'mesas'
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CONSTRAINT uk_cardapio_data_produto UNIQUE (data, produto_id)
+    CONSTRAINT uk_cardapio_data_produto_canal UNIQUE (data, produto_id, canal)
 );
 
 ALTER TABLE cardapio_diario ENABLE ROW LEVEL SECURITY;

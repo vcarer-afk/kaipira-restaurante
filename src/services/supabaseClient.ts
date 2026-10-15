@@ -16,6 +16,7 @@ import {
   CardapioDiarioConfig,
   ItemCardapioDiario,
   CanalCardapio,
+  Produto,
 } from '../types';
 import { INITIAL_CONFIGURACOES, INITIAL_USUARIOS } from '../data/seedData';
 import { formatPhone } from '../utils/formatters';
@@ -646,8 +647,7 @@ export async function excluirUsuarioSupabase(
 
 /**
  * Salva a seleção do Cardápio Diário no Supabase:
- * Utiliza a tabela 'cardapio_diario' com campos: data, produto_id, canal ('delivery_balcao' | 'mesas')
- * Regra: Cada produto pertence exclusivamente a um único canal no dia.
+ * Permite que um produto esteja presente em 'delivery_balcao', em 'mesas' ou em AMBOS simultaneamente!
  */
 export async function salvarCardapioDiarioSupabase(
   cardapio: CardapioDiarioConfig
@@ -657,16 +657,29 @@ export async function salvarCardapioDiarioSupabase(
 
     // 1. Tabela 'cardapio_diario' (data, produto_id, canal)
     try {
-      // Remove registros anteriores do dia para salvar a nova seleção exclusiva
+      // Remove registros anteriores do dia para salvar a nova seleção completa
       await supabase.from('cardapio_diario').delete().eq('data', hoje);
 
-      if (cardapio.itens.length > 0) {
-        const rowsToInsert = cardapio.itens.map((it) => ({
-          data: hoje,
-          produto_id: it.produto_id,
-          canal: it.canal, // 'delivery_balcao' ou 'mesas'
-        }));
+      const rowsToInsert: { data: string; produto_id: number; canal: string }[] = [];
 
+      for (const it of cardapio.itens) {
+        if (it.disponivel_delivery) {
+          rowsToInsert.push({
+            data: hoje,
+            produto_id: it.produto_id,
+            canal: 'delivery_balcao',
+          });
+        }
+        if (it.disponivel_salao) {
+          rowsToInsert.push({
+            data: hoje,
+            produto_id: it.produto_id,
+            canal: 'mesas',
+          });
+        }
+      }
+
+      if (rowsToInsert.length > 0) {
         const { error: insertError } = await supabase
           .from('cardapio_diario')
           .insert(rowsToInsert);
@@ -676,7 +689,7 @@ export async function salvarCardapioDiarioSupabase(
         }
       }
     } catch (tblErr: any) {
-      console.warn('Aviso tabela cardapio_diario (campos: data, produto_id, canal):', tblErr?.message);
+      console.warn('Aviso tabela cardapio_diario:', tblErr?.message);
     }
 
     // 2. Redundância em 'configuracoes' (para sincronização Realtime e metadados de status)
@@ -725,7 +738,7 @@ export async function salvarCardapioDiarioSupabase(
 
 /**
  * Busca a configuração do Cardápio Diário para a data especificada (padrão hoje)
- * Lê da tabela 'cardapio_diario' (campos: data, produto_id, canal)
+ * Agrupa linhas por produto_id para suportar disponibilidade em delivery, mesas ou ambos!
  */
 export async function fetchCardapioDiarioSupabase(
   dataStr?: string
@@ -740,34 +753,45 @@ export async function fetchCardapioDiarioSupabase(
       .eq('data', hoje);
 
     if (!error && rows && Array.isArray(rows)) {
-      const itensMapeados: ItemCardapioDiario[] = [];
+      const itemMap = new Map<number, ItemCardapioDiario>();
 
       for (const r of rows) {
-        if (r.produto_id && r.canal) {
-          const canal: CanalCardapio =
-            r.canal === 'mesas' ? 'mesas' : 'delivery_balcao';
-          itensMapeados.push({
-            produto_id: Number(r.produto_id),
-            canal,
-            disponivel_delivery: canal === 'delivery_balcao',
-            disponivel_salao: canal === 'mesas',
-          });
+        if (r.produto_id) {
+          const prodId = Number(r.produto_id);
+          const current = itemMap.get(prodId) || {
+            produto_id: prodId,
+            disponivel_delivery: false,
+            disponivel_salao: false,
+          };
+
+          if (r.canal === 'delivery_balcao') {
+            current.disponivel_delivery = true;
+          } else if (r.canal === 'mesas') {
+            current.disponivel_salao = true;
+          }
+          itemMap.set(prodId, current);
         } else if (Array.isArray(r.itens)) {
-          // Retrocompatibilidade se a linha salva foi no formato jsonb
+          // Retrocompatibilidade formato JSONB antigo
           for (const it of r.itens) {
-            const canal: CanalCardapio =
-              it.canal || (it.disponivel_delivery ? 'delivery_balcao' : 'mesas');
-            itensMapeados.push({
-              produto_id: Number(it.produto_id),
-              canal,
-              disponivel_delivery: canal === 'delivery_balcao',
-              disponivel_salao: canal === 'mesas',
-            });
+            const prodId = Number(it.produto_id);
+            const current = itemMap.get(prodId) || {
+              produto_id: prodId,
+              disponivel_delivery: false,
+              disponivel_salao: false,
+            };
+            if (it.disponivel_delivery || it.canal === 'delivery_balcao') {
+              current.disponivel_delivery = true;
+            }
+            if (it.disponivel_salao || it.canal === 'mesas') {
+              current.disponivel_salao = true;
+            }
+            itemMap.set(prodId, current);
           }
         }
       }
 
-      // Obtém metadados adicionais de status e horário
+      const itensMapeados = Array.from(itemMap.values());
+
       let status: 'aguardando' | 'aberto' = itensMapeados.length > 0 ? 'aberto' : 'aguardando';
       let confirmado_em: string | undefined = undefined;
       let confirmado_por: string | undefined = undefined;
@@ -797,7 +821,7 @@ export async function fetchCardapioDiarioSupabase(
       };
     }
 
-    // 2. Fallback: verifica se há salvo em configuracoes.dados.cardapio_diario_atual
+    // 2. Fallback: configuracoes.dados.cardapio_diario_atual
     const { data: confData } = await supabase
       .from('configuracoes')
       .select('dados')
@@ -807,16 +831,11 @@ export async function fetchCardapioDiarioSupabase(
     if (confData?.dados?.cardapio_diario_atual) {
       const saved = confData.dados.cardapio_diario_atual;
       if (saved.data === hoje) {
-        const normalizedItens = (saved.itens || []).map((it: any) => {
-          const canal: CanalCardapio =
-            it.canal || (it.disponivel_delivery ? 'delivery_balcao' : 'mesas');
-          return {
-            produto_id: Number(it.produto_id),
-            canal,
-            disponivel_delivery: canal === 'delivery_balcao',
-            disponivel_salao: canal === 'mesas',
-          };
-        });
+        const normalizedItens: ItemCardapioDiario[] = (saved.itens || []).map((it: any) => ({
+          produto_id: Number(it.produto_id),
+          disponivel_delivery: !!it.disponivel_delivery || it.canal === 'delivery_balcao',
+          disponivel_salao: !!it.disponivel_salao || it.canal === 'mesas',
+        }));
 
         return {
           data: hoje,
@@ -832,6 +851,183 @@ export async function fetchCardapioDiarioSupabase(
   } catch (err) {
     console.warn('Erro ao carregar cardapio diario do Supabase:', err);
     return null;
+  }
+}
+
+/**
+ * =========================================================================
+ * CRUD COMPLETO: CLIENTES & MENSALISTAS NO SUPABASE
+ * =========================================================================
+ */
+export async function salvarClienteSupabase(
+  cliente: Partial<Cliente>
+): Promise<{ success: boolean; data?: Cliente; error?: string }> {
+  try {
+    const isNew = !cliente.id || cliente.id.startsWith('c-') || cliente.id.length < 10;
+    const payload: any = {
+      nome: (cliente.nome || '').toUpperCase().trim(),
+      telefone: cliente.telefone || '',
+      cep: cliente.cep || '13400-010',
+      endereco: (cliente.endereco || '').toUpperCase().trim(),
+      numero: (cliente.numero || '').toUpperCase().trim(),
+      bairro: (cliente.bairro || '').toUpperCase().trim(),
+      complemento: (cliente.complemento || '').toUpperCase().trim(),
+      eh_mensalista: !!cliente.eh_mensalista,
+      saldo_devedor: Number(cliente.saldo_devedor) || 0,
+    };
+
+    if (!isNew && cliente.id) {
+      payload.id = cliente.id;
+    }
+
+    const { data, error } = await supabase
+      .from('clientes')
+      .upsert(payload)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Aviso salvar cliente Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: true,
+      data: (data as Cliente) || (cliente as Cliente),
+    };
+  } catch (err: any) {
+    console.warn('Erro ao salvar cliente no Supabase:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function excluirClienteSupabase(
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase.from('clientes').delete().eq('id', id);
+    if (error) {
+      console.warn('Aviso ao excluir cliente do Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * =========================================================================
+ * CRUD COMPLETO: PRODUTOS & CARDÁPIO NO SUPABASE
+ * =========================================================================
+ */
+export async function salvarProdutoSupabase(
+  produto: Partial<Produto>
+): Promise<{ success: boolean; data?: Produto; error?: string }> {
+  try {
+    const payload: any = {
+      nome: (produto.nome || '').toUpperCase().trim(),
+      descricao: (produto.descricao || '').toUpperCase().trim(),
+      categoria_id: Number(produto.categoria_id) || 1,
+      preco_salao: Number(produto.preco_salao) || 0,
+      preco_delivery: Number(produto.preco_delivery) || Number(produto.preco_salao) || 0,
+      dia_semana: Array.isArray(produto.dia_semana) ? produto.dia_semana : [1, 2, 3, 4, 5, 6],
+      pausado: !!produto.pausado,
+    };
+
+    if (produto.id && produto.id > 0) {
+      payload.id = produto.id;
+    }
+
+    const { data, error } = await supabase
+      .from('produtos')
+      .upsert(payload)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Aviso salvar produto Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: true,
+      data: (data as Produto) || (produto as Produto),
+    };
+  } catch (err: any) {
+    console.warn('Erro ao salvar produto no Supabase:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function excluirProdutoSupabase(
+  id: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase.from('produtos').delete().eq('id', id);
+    if (error) {
+      console.warn('Aviso excluir produto Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * =========================================================================
+ * CRUD COMPLETO: MESAS DO SALÃO NO SUPABASE
+ * =========================================================================
+ */
+export async function salvarMesaSupabase(
+  mesa: Partial<Mesa>
+): Promise<{ success: boolean; data?: Mesa; error?: string }> {
+  try {
+    const payload: any = {
+      numero: Number(mesa.numero),
+      status: mesa.status || 'livre',
+      cliente_nome: (mesa.cliente_nome || '').toUpperCase().trim() || null,
+      pessoas: Number(mesa.pessoas) || 2,
+    };
+
+    if (mesa.id && mesa.id > 0) {
+      payload.id = mesa.id;
+    }
+
+    const { data, error } = await supabase
+      .from('mesas')
+      .upsert(payload, { onConflict: 'numero' })
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Aviso salvar mesa Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: true,
+      data: (data as Mesa) || (mesa as Mesa),
+    };
+  } catch (err: any) {
+    console.warn('Erro ao salvar mesa no Supabase:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function excluirMesaSupabase(
+  numero: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase.from('mesas').delete().eq('numero', numero);
+    if (error) {
+      console.warn('Aviso excluir mesa Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 }
 

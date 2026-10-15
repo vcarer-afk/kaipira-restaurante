@@ -69,9 +69,9 @@ export type CanalCardapio = 'delivery_balcao' | 'mesas';
 
 export interface ItemCardapioDiario {
   produto_id: number;
-  canal: CanalCardapio; // 'delivery_balcao' ou 'mesas' (exclusivo)
-  disponivel_delivery?: boolean;
-  disponivel_salao?: boolean;
+  canal?: CanalCardapio;
+  disponivel_delivery: boolean; // 📦 ENTREGA & BALCÃO (Marmitex / Delivery)
+  disponivel_salao: boolean;    // 🍽️ CONSUMO NO SALÃO (Pratos / Mesas)
 }
 
 export interface CardapioDiarioConfig {
