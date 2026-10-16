@@ -10,6 +10,7 @@ import {
   CaixaDiario,
   BairroTaxa,
   ConfiguracoesSistema,
+  FormaPagamentoConfig,
 } from '../types';
 
 export const INITIAL_CONFIGURACOES: ConfiguracoesSistema = {
@@ -351,4 +352,67 @@ export const INITIAL_CAIXA: CaixaDiario = {
 };
 
 export const INITIAL_PEDIDOS: Pedido[] = [];
+
+export const INITIAL_FORMAS_PAGAMENTO: FormaPagamentoConfig[] = [
+  {
+    id: 'dinheiro',
+    nome: 'DINHEIRO (ESPÉCIE)',
+    tipo: 'dinheiro',
+    taxa_operadora: 0,
+    permite_troco: true,
+    ativo: true,
+    ordem: 1,
+    descricao: 'PAGAMENTO FÍSICO EM NOTAS E MOEDAS NA GAVETA.',
+  },
+  {
+    id: 'pix',
+    nome: 'PIX (CHAVE / QR CODE)',
+    tipo: 'pix',
+    taxa_operadora: 0,
+    permite_troco: false,
+    ativo: true,
+    ordem: 2,
+    descricao: 'TRANSFERÊNCIA INSTANTÂNEA VIA BANCO OU QR CODE.',
+  },
+  {
+    id: 'cartao_debito',
+    nome: 'CARTÃO DE DÉBITO',
+    tipo: 'cartao_debito',
+    taxa_operadora: 1.5,
+    permite_troco: false,
+    ativo: true,
+    ordem: 3,
+    descricao: 'MAQUININHA DE CARTÃO À VISTA (VISA, MASTER, ELO).',
+  },
+  {
+    id: 'cartao_credito',
+    nome: 'CARTÃO DE CRÉDITO',
+    tipo: 'cartao_credito',
+    taxa_operadora: 2.8,
+    permite_troco: false,
+    ativo: true,
+    ordem: 4,
+    descricao: 'MAQUININHA DE CARTÃO A PRAZO (VISA, MASTER, ELO).',
+  },
+  {
+    id: 'vale_refeicao',
+    nome: 'VALE REFEIÇÃO / TICKET (VR/ALELO/SODEXO)',
+    tipo: 'vale_refeicao',
+    taxa_operadora: 4.5,
+    permite_troco: false,
+    ativo: true,
+    ordem: 5,
+    descricao: 'VOUCHERS CORPORATIVOS DE REFEIÇÃO E ALIMENTAÇÃO.',
+  },
+  {
+    id: 'mensalista',
+    nome: 'MENSALISTA (FATURADO EM CONTA)',
+    tipo: 'mensalista',
+    taxa_operadora: 0,
+    permite_troco: false,
+    ativo: true,
+    ordem: 6,
+    descricao: 'LANÇAMENTO EM CONTA CORRENTE DE CLIENTE CONVENIADO.',
+  },
+];
 

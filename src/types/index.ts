@@ -1,7 +1,20 @@
 export type TipoUsuario = 'master' | 'admin' | 'atendente' | 'cozinha' | 'garcom' | 'entregador';
 export type TipoPedido = 'salão' | 'retirada' | 'delivery';
 export type StatusPedido = 'pendente' | 'em_preparacao' | 'pronto' | 'a_caminho' | 'entregue' | 'cancelado';
-export type FormaPagamento = 'dinheiro' | 'pix' | 'cartao_credito' | 'cartao_debito' | 'mensalista' | 'multiplo';
+export type FormaPagamentoPadrao = 'dinheiro' | 'pix' | 'cartao_credito' | 'cartao_debito' | 'vale_refeicao' | 'mensalista' | 'multiplo';
+export type FormaPagamento = string;
+
+export interface FormaPagamentoConfig {
+  id: string; // ex: 'dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'vale_refeicao', 'mensalista'
+  nome: string; // UPPERCASE: 'DINHEIRO (ESPÉCIE)', 'PIX', etc.
+  tipo: 'dinheiro' | 'pix' | 'cartao_debito' | 'cartao_credito' | 'vale_refeicao' | 'mensalista' | 'outro';
+  taxa_operadora: number; // % (ex: 0, 1.5, 2.8)
+  permite_troco: boolean;
+  ativo: boolean;
+  ordem: number;
+  descricao?: string;
+  criado_em?: string;
+}
 
 export interface UsuarioSistema {
   id: string;

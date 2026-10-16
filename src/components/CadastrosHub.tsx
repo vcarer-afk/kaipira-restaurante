@@ -9,6 +9,7 @@ import {
   Perfil,
   BairroTaxa,
   ItemEstoque,
+  FormaPagamentoConfig,
 } from '../types';
 import { StockManager } from './StockManager';
 import { formatPhone, formatBRL } from '../utils/formatters';
@@ -65,6 +66,7 @@ import {
   DollarSign,
   ArrowUpDown,
   Boxes,
+  CreditCard,
 } from 'lucide-react';
 
 interface CadastrosHubProps {
@@ -77,6 +79,7 @@ interface CadastrosHubProps {
   mesas: Mesa[];
   bairros?: BairroTaxa[];
   estoque?: ItemEstoque[];
+  formasPagamento?: FormaPagamentoConfig[];
   onUpdateStockItem?: (id: number, data: Partial<ItemEstoque>) => void;
   onAddItemStock?: (item: Partial<ItemEstoque>) => void;
   onDeleteItemStock?: (id: number) => void;
@@ -92,6 +95,8 @@ interface CadastrosHubProps {
   onDeleteCategoria?: (id: number) => Promise<void>;
   onSaveBairro?: (b: Partial<BairroTaxa>, originalNome?: string) => Promise<void>;
   onDeleteBairro?: (bairro: string) => Promise<void>;
+  onSaveFormaPagamento?: (fp: Partial<FormaPagamentoConfig>) => Promise<void>;
+  onDeleteFormaPagamento?: (id: string) => Promise<void>;
   onCadastrarCliente?: (c: Partial<Cliente>) => void;
   onTogglePauseProduto?: (id: number) => void;
 }
@@ -104,6 +109,7 @@ export type CadastrosSubTab =
   | 'categorias'
   | 'bairros'
   | 'insumos'
+  | 'formas_pagamento'
   | 'sql';
 
 export const CadastrosHub: React.FC<CadastrosHubProps> = ({
@@ -116,6 +122,7 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   mesas,
   bairros = [],
   estoque = [],
+  formasPagamento = [],
   onUpdateStockItem,
   onAddItemStock,
   onDeleteItemStock,
@@ -131,6 +138,8 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   onDeleteCategoria,
   onSaveBairro,
   onDeleteBairro,
+  onSaveFormaPagamento,
+  onDeleteFormaPagamento,
   onTogglePauseProduto,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<CadastrosSubTab>('usuarios');
@@ -240,6 +249,25 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const [formBairroNome, setFormBairroNome] = useState('');
   const [formBairroTaxa, setFormBairroTaxa] = useState('7.00');
   const [bairroToDelete, setBairroToDelete] = useState<BairroTaxa | null>(null);
+
+  // =========================================================================
+  // 7. FORMAS DE PAGAMENTO STATE & MODAL
+  // =========================================================================
+  const [formasPagamentoViewMode, setFormasPagamentoViewMode] = useState<'bloco' | 'lista'>('bloco');
+  const [formasPagamentoSortMode, setFormasPagamentoSortMode] = useState<'ordem' | 'nome'>('ordem');
+  const [fpSearch, setFpSearch] = useState('');
+  const [fpFilterStatus, setFpFilterStatus] = useState<'todas' | 'ativas' | 'inativas'>('todas');
+  const [showFpModal, setShowFpModal] = useState(false);
+  const [isEditingFp, setIsEditingFp] = useState(false);
+  const [editingFpId, setEditingFpId] = useState<string | null>(null);
+  const [formFpNome, setFormFpNome] = useState('');
+  const [formFpTipo, setFormFpTipo] = useState<FormaPagamentoConfig['tipo']>('outro');
+  const [formFpTaxa, setFormFpTaxa] = useState('0.00');
+  const [formFpPermiteTroco, setFormFpPermiteTroco] = useState(false);
+  const [formFpAtivo, setFormFpAtivo] = useState(true);
+  const [formFpOrdem, setFormFpOrdem] = useState('1');
+  const [formFpDescricao, setFormFpDescricao] = useState('');
+  const [fpToDelete, setFpToDelete] = useState<FormaPagamentoConfig | null>(null);
 
   // SQL Copy state
   const [copiedSql, setCopiedSql] = useState(false);
@@ -788,6 +816,124 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
     setFeedbackMessage({ type: 'success', text: `BAIRRO ${bairroToDelete.bairro} EXCLUÍDO COM SUCESSO.` });
   };
 
+  // =========================================================================
+  // FORMAS DE PAGAMENTO HANDLERS
+  // =========================================================================
+  const filteredFormasPagamento = formasPagamento
+    .filter((fp) => {
+      if (fpFilterStatus === 'ativas' && !fp.ativo) return false;
+      if (fpFilterStatus === 'inativas' && fp.ativo) return false;
+      if (fpSearch) {
+        const s = fpSearch.toUpperCase();
+        return (
+          fp.nome.toUpperCase().includes(s) ||
+          fp.id.toUpperCase().includes(s) ||
+          fp.tipo.toUpperCase().includes(s) ||
+          (fp.descricao && fp.descricao.toUpperCase().includes(s))
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (formasPagamentoSortMode === 'nome') {
+        return a.nome.localeCompare(b.nome);
+      }
+      return (a.ordem || 99) - (b.ordem || 99);
+    });
+
+  const openAddFpModal = () => {
+    setIsEditingFp(false);
+    setEditingFpId(null);
+    setFormFpNome('');
+    setFormFpTipo('cartao_credito');
+    setFormFpTaxa('2.50');
+    setFormFpPermiteTroco(false);
+    setFormFpAtivo(true);
+    setFormFpOrdem(String(formasPagamento.length + 1));
+    setFormFpDescricao('');
+    setFeedbackMessage(null);
+    setShowFpModal(true);
+  };
+
+  const openEditFpModal = (fp: FormaPagamentoConfig) => {
+    setIsEditingFp(true);
+    setEditingFpId(fp.id);
+    setFormFpNome(fp.nome);
+    setFormFpTipo(fp.tipo);
+    setFormFpTaxa(String(fp.taxa_operadora || 0));
+    setFormFpPermiteTroco(!!fp.permite_troco);
+    setFormFpAtivo(fp.ativo !== false);
+    setFormFpOrdem(String(fp.ordem || 1));
+    setFormFpDescricao(fp.descricao || '');
+    setFeedbackMessage(null);
+    setShowFpModal(true);
+  };
+
+  const handleToggleStatusFp = async (fp: FormaPagamentoConfig) => {
+    setIsSaving(true);
+    if (onSaveFormaPagamento) {
+      await onSaveFormaPagamento({
+        ...fp,
+        ativo: !fp.ativo,
+      });
+    }
+    setIsSaving(false);
+    setFeedbackMessage({
+      type: 'success',
+      text: `FORMA DE PAGAMENTO "${fp.nome}" ${!fp.ativo ? 'ATIVADA' : 'INATIVADA'} COM SUCESSO!`,
+    });
+  };
+
+  const handleSaveFpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formFpNome.trim()) {
+      setFeedbackMessage({ type: 'error', text: 'O NOME DA FORMA DE PAGAMENTO É OBRIGATÓRIO.' });
+      return;
+    }
+
+    const taxaNum = parseFloat(formFpTaxa.replace(',', '.'));
+    const ordemNum = parseInt(formFpOrdem, 10) || 1;
+
+    setIsSaving(true);
+    const id = isEditingFp && editingFpId ? editingFpId : formFpNome.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const payload: Partial<FormaPagamentoConfig> = {
+      id,
+      nome: formFpNome.toUpperCase().trim(),
+      tipo: formFpTipo,
+      taxa_operadora: isNaN(taxaNum) ? 0 : taxaNum,
+      permite_troco: formFpPermiteTroco,
+      ativo: formFpAtivo,
+      ordem: ordemNum,
+      descricao: formFpDescricao ? formFpDescricao.toUpperCase().trim() : undefined,
+    };
+
+    if (onSaveFormaPagamento) {
+      await onSaveFormaPagamento(payload);
+    }
+    setIsSaving(false);
+    setShowFpModal(false);
+    setFeedbackMessage({
+      type: 'success',
+      text: isEditingFp
+        ? 'FORMA DE PAGAMENTO ATUALIZADA COM SUCESSO!'
+        : 'NOVA FORMA DE PAGAMENTO CADASTRADA COM SUCESSO!',
+    });
+  };
+
+  const handleConfirmDeleteFp = async () => {
+    if (!fpToDelete) return;
+    setIsSaving(true);
+    if (onDeleteFormaPagamento) {
+      await onDeleteFormaPagamento(fpToDelete.id);
+    }
+    setIsSaving(false);
+    setFpToDelete(null);
+    setFeedbackMessage({
+      type: 'success',
+      text: `FORMA DE PAGAMENTO "${fpToDelete.nome}" EXCLUÍDA COM SUCESSO.`,
+    });
+  };
+
   // Helper visual category icon for products
   const renderProductCategoryVisual = (catId: number) => {
     switch (catId) {
@@ -964,6 +1110,19 @@ CREATE TABLE IF NOT EXISTS categorias (
 CREATE TABLE IF NOT EXISTS bairros_taxas (
     bairro VARCHAR(100) PRIMARY KEY,
     taxa DECIMAL(10,2) NOT NULL DEFAULT 7.00
+);
+
+-- 8. TABELA DE FORMAS DE PAGAMENTO
+CREATE TABLE IF NOT EXISTS formas_pagamento (
+    id VARCHAR(50) PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    tipo VARCHAR(50) NOT NULL DEFAULT 'outro',
+    taxa_operadora DECIMAL(5,2) DEFAULT 0.00,
+    permite_troco BOOLEAN DEFAULT FALSE,
+    ativo BOOLEAN DEFAULT TRUE,
+    ordem INT DEFAULT 1,
+    descricao TEXT,
+    criado_em TIMESTAMPTZ DEFAULT NOW()
 );
 `;
 
@@ -1183,6 +1342,18 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
         </button>
 
         <button
+          onClick={() => setActiveSubTab('formas_pagamento')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'formas_pagamento'
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'bg-neutral-850 text-neutral-400 hover:text-white hover:bg-neutral-800'
+          }`}
+        >
+          <CreditCard className="w-4 h-4" />
+          <span>8. Formas de Pagamento ({formasPagamento.length})</span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab('sql')}
           className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
             activeSubTab === 'sql'
@@ -1191,7 +1362,7 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
           }`}
         >
           <FileCode className="w-4 h-4" />
-          <span>8. Esquema SQL Supabase</span>
+          <span>9. Esquema SQL Supabase</span>
         </button>
       </div>
 
@@ -2506,7 +2677,306 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
       )}
 
       {/* =========================================================================
-          ABA 8: SCRIPT SQL SUPABASE
+          ABA 8: FORMAS DE PAGAMENTO & RECEBIMENTOS
+          ========================================================================= */}
+      {activeSubTab === 'formas_pagamento' && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+            <div>
+              <h3 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-amber-500" />
+                <span>Cadastro de Formas de Pagamento & Recebimentos ({filteredFormasPagamento.length})</span>
+              </h3>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Utilizado no faturamento das mesas, fechamento de contas, balcão e delivery. Sincronizado 100% em nuvem.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={openAddFpModal}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nova Forma de Pagamento</span>
+            </button>
+          </div>
+
+          {/* Search, Filter & View Controls */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="flex flex-1 items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                <input
+                  type="text"
+                  placeholder="BUSCAR FORMA DE PAGAMENTO OU TIPO..."
+                  value={fpSearch}
+                  onChange={(e) => setFpSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-white rounded-xl text-xs uppercase placeholder:text-neutral-500 focus:outline-none focus:border-amber-500"
+                />
+                {fpSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setFpSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <select
+                value={fpFilterStatus}
+                onChange={(e) => setFpFilterStatus(e.target.value as any)}
+                aria-label="Filtrar formas de pagamento por status"
+                className="px-3 py-2 bg-neutral-850 border border-neutral-700 rounded-xl text-xs text-white uppercase font-bold focus:outline-none"
+              >
+                <option value="todas">TODAS</option>
+                <option value="ativas">ATIVAS</option>
+                <option value="inativas">INATIVAS</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() =>
+                  setFormasPagamentoSortMode((prev) => (prev === 'ordem' ? 'nome' : 'ordem'))
+                }
+                className="px-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-300 hover:text-white rounded-xl text-xs font-bold uppercase flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Alternar ordenação"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5 text-amber-500" />
+                <span>{formasPagamentoSortMode === 'ordem' ? 'Ordem' : 'Nome A-Z'}</span>
+              </button>
+
+              <div className="flex items-center bg-neutral-850 border border-neutral-700 rounded-xl p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setFormasPagamentoViewMode('bloco')}
+                  className={`p-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                    formasPagamentoViewMode === 'bloco'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Blocos"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormasPagamentoViewMode('lista')}
+                  className={`p-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                    formasPagamentoViewMode === 'lista'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Lista"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Cards (Blocos) View */}
+          {formasPagamentoViewMode === 'bloco' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredFormasPagamento.length === 0 ? (
+                <div className="col-span-full py-12 text-center text-xs text-neutral-500 bg-neutral-850/50 rounded-xl border border-neutral-800">
+                  NENHUMA FORMA DE PAGAMENTO ENCONTRADA.
+                </div>
+              ) : (
+                filteredFormasPagamento.map((fp) => (
+                  <div
+                    key={fp.id}
+                    className={`p-4 rounded-xl border flex flex-col justify-between gap-3 transition-all ${
+                      fp.ativo
+                        ? 'bg-neutral-850/90 border-neutral-750 hover:border-amber-600/60 shadow-sm'
+                        : 'bg-neutral-900/60 border-neutral-800/80 opacity-70'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 rounded-lg bg-amber-950/60 text-amber-400 border border-amber-800">
+                            <CreditCard className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="font-mono text-[10px] text-neutral-500 uppercase block">
+                              ORDEM #{fp.ordem || 1} · {fp.id}
+                            </span>
+                            <h4 className="text-sm font-black text-white uppercase leading-snug">
+                              {fp.nome}
+                            </h4>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                            fp.ativo
+                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                              : 'bg-neutral-800 text-neutral-500 border border-neutral-700'
+                          }`}
+                        >
+                          {fp.ativo ? 'ATIVO' : 'INATIVO'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 text-xs text-neutral-300 pt-2 border-t border-neutral-800">
+                        <div className="flex justify-between">
+                          <span className="text-neutral-500 text-[11px] uppercase">Tipo:</span>
+                          <span className="font-bold uppercase text-neutral-200">{fp.tipo}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-neutral-500 text-[11px] uppercase">Taxa Operadora:</span>
+                          <span className="font-bold text-amber-400 font-mono">
+                            {fp.taxa_operadora ? `${fp.taxa_operadora}%` : '0.0% (Isento)'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-neutral-500 text-[11px] uppercase">Permite Troco:</span>
+                          <span className="font-bold text-neutral-200">
+                            {fp.permite_troco ? 'SIM (ESPÉCIE)' : 'NÃO'}
+                          </span>
+                        </div>
+                        {fp.descricao && (
+                          <p className="text-[11px] text-neutral-400 italic pt-1 border-t border-neutral-800/60 uppercase">
+                            {fp.descricao}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-800 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatusFp(fp)}
+                        className={`text-[11px] font-bold uppercase px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+                          fp.ativo
+                            ? 'bg-neutral-800 hover:bg-neutral-750 text-neutral-300 border-neutral-700'
+                            : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-800'
+                        }`}
+                      >
+                        {fp.ativo ? 'Inativar' : 'Ativar'}
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openEditFpModal(fp)}
+                          className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer"
+                          title="Editar forma de pagamento"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFpToDelete(fp)}
+                          className="p-1.5 bg-neutral-800 hover:bg-red-950 text-neutral-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
+                          title="Excluir forma de pagamento"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            /* Table (Lista) View */
+            <div className="overflow-x-auto rounded-xl border border-neutral-800 bg-neutral-900">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-850 text-neutral-400 uppercase text-[10px] font-black tracking-wider border-b border-neutral-800">
+                  <tr>
+                    <th className="p-3">Ordem</th>
+                    <th className="p-3">Nome da Forma</th>
+                    <th className="p-3">Tipo</th>
+                    <th className="p-3">Taxa Operadora</th>
+                    <th className="p-3">Troco</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800 text-neutral-300">
+                  {filteredFormasPagamento.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-6 text-center text-neutral-500 italic">
+                        NENHUMA FORMA DE PAGAMENTO ENCONTRADA.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredFormasPagamento.map((fp) => (
+                      <tr key={fp.id} className="hover:bg-neutral-850/60 transition-colors">
+                        <td className="p-3 font-mono font-bold text-neutral-400">#{fp.ordem || 1}</td>
+                        <td className="p-3 font-extrabold text-white uppercase">
+                          <div className="flex items-center gap-2">
+                            <CreditCard className="w-4 h-4 text-amber-500 shrink-0" />
+                            <span>{fp.nome}</span>
+                          </div>
+                        </td>
+                        <td className="p-3 uppercase font-semibold text-neutral-400">{fp.tipo}</td>
+                        <td className="p-3 font-mono font-bold text-amber-400">
+                          {fp.taxa_operadora ? `${fp.taxa_operadora}%` : '0%'}
+                        </td>
+                        <td className="p-3 font-medium">
+                          {fp.permite_troco ? (
+                            <span className="text-emerald-400 font-bold">SIM</span>
+                          ) : (
+                            <span className="text-neutral-500">NÃO</span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                              fp.ativo
+                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                : 'bg-neutral-800 text-neutral-500 border border-neutral-700'
+                            }`}
+                          >
+                            {fp.ativo ? 'ATIVO' : 'INATIVO'}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleStatusFp(fp)}
+                              className="px-2 py-1 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded text-[10px] font-bold uppercase transition-colors cursor-pointer"
+                            >
+                              {fp.ativo ? 'Inativar' : 'Ativar'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditFpModal(fp)}
+                              className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer"
+                              title="Editar forma de pagamento"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFpToDelete(fp)}
+                              className="p-1.5 bg-neutral-800 hover:bg-red-950 text-neutral-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
+                              title="Excluir forma de pagamento"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =========================================================================
+          ABA 9: SCRIPT SQL SUPABASE
           ========================================================================= */}
       {activeSubTab === 'sql' && (
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
@@ -3502,6 +3972,183 @@ CREATE TABLE IF NOT EXISTS bairros_taxas (
               <button
                 type="button"
                 onClick={handleConfirmDeleteBairro}
+                disabled={isSaving}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isSaving ? 'Excluindo...' : 'Sim, Excluir'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL: FORMA DE PAGAMENTO (INCLUSÃO / EDIÇÃO)
+          ========================================================================= */}
+      {showFpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <form
+            onSubmit={handleSaveFpSubmit}
+            className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2 text-amber-500">
+                <CreditCard className="w-5 h-5" />
+                <h3 className="text-base font-black text-white uppercase">
+                  {isEditingFp ? 'Editar Forma de Pagamento' : 'Nova Forma de Pagamento'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFpModal(false)}
+                className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <UpperInput
+              label="Nome da Forma de Pagamento: *"
+              value={formFpNome}
+              onChange={setFormFpNome}
+              placeholder="EX: CARTÃO ELO CRÉDITO, TICKET REFEIÇÃO, PIX BRADESCO..."
+              required
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1 uppercase">
+                  Categoria / Tipo: *
+                </label>
+                <select
+                  value={formFpTipo}
+                  onChange={(e) => setFormFpTipo(e.target.value as any)}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-xl text-xs uppercase font-bold focus:outline-none"
+                >
+                  <option value="dinheiro">DINHEIRO (ESPÉCIE)</option>
+                  <option value="pix">PIX (TRANSFERÊNCIA)</option>
+                  <option value="cartao_debito">CARTÃO DE DÉBITO</option>
+                  <option value="cartao_credito">CARTÃO DE CRÉDITO</option>
+                  <option value="vale_refeicao">VALE REFEIÇÃO / TICKET</option>
+                  <option value="mensalista">MENSALISTA (FATURADO)</option>
+                  <option value="outro">OUTRO / VOUCHER</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1 uppercase">
+                  Taxa da Operadora (%):
+                </label>
+                <input
+                  type="text"
+                  value={formFpTaxa}
+                  onChange={(e) => setFormFpTaxa(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-xl text-xs font-mono font-bold focus:outline-none"
+                />
+                <span className="text-[10px] text-neutral-500 mt-0.5 block">
+                  Ex: 1.99 para 1.99% descontado na maquininha
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1 uppercase">
+                  Ordem de Exibição:
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={formFpOrdem}
+                  onChange={(e) => setFormFpOrdem(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-xl text-xs font-mono font-bold focus:outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col justify-center gap-2 pt-2">
+                <label className="flex items-center gap-2 text-xs font-bold text-neutral-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formFpPermiteTroco}
+                    onChange={(e) => setFormFpPermiteTroco(e.target.checked)}
+                    className="rounded text-amber-500 focus:ring-0"
+                  />
+                  <span>Permite Troco em Dinheiro</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-bold text-neutral-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formFpAtivo}
+                    onChange={(e) => setFormFpAtivo(e.target.checked)}
+                    className="rounded text-emerald-500 focus:ring-0"
+                  />
+                  <span className={formFpAtivo ? 'text-emerald-400' : 'text-neutral-400'}>
+                    Forma de Pagamento Ativa
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <UpperInput
+              label="Descrição / Detalhes (Opcional):"
+              value={formFpDescricao}
+              onChange={setFormFpDescricao}
+              placeholder="EX: TAXA APLICADA DIRETO PELA OPERADORA STONE / CIELO..."
+            />
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowFpModal(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>{isSaving ? 'Gravando em Nuvem...' : 'Salvar Forma de Pagamento'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO EXCLUSÃO: FORMA DE PAGAMENTO */}
+      {fpToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-white uppercase">Confirmar Exclusão</h3>
+                <span className="text-xs text-neutral-400">Remover forma de pagamento</span>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-300">
+              Deseja realmente excluir a forma de pagamento{' '}
+              <strong className="text-white uppercase font-black">{fpToDelete.nome}</strong>?
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setFpToDelete(null)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteFp}
                 disabled={isSaving}
                 className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-lg cursor-pointer disabled:opacity-50"
               >

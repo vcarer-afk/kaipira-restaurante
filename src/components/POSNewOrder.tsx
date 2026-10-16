@@ -8,7 +8,9 @@ import {
   BairroTaxa,
   Pedido,
   CardapioDiarioConfig,
+  FormaPagamentoConfig,
 } from '../types';
+import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { UpperInput, UpperTextarea } from './UpperInput';
 import { formatBRL, consultarViaCep, cleanDigits, playAlertChime } from '../utils/formatters';
 import { salvarPedidoSupabase } from '../services/supabaseClient';
@@ -52,6 +54,7 @@ interface POSNewOrderProps {
   mesas: Mesa[];
   bairros: BairroTaxa[];
   selectedMesaNumber?: number;
+  formasPagamento?: FormaPagamentoConfig[];
   onOrderCreated: (pedido: Pedido) => void;
   onPrintReceipt: (pedido: Pedido) => void;
   onTogglePauseProduto: (id: number) => void;
@@ -65,6 +68,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   mesas,
   bairros,
   selectedMesaNumber,
+  formasPagamento = INITIAL_FORMAS_PAGAMENTO,
   onOrderCreated,
   onPrintReceipt,
   onTogglePauseProduto,
@@ -293,7 +297,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       }
     }
 
-    if (formaPagamento === 'multiplo') {
+    if (tipoPedido !== 'salão' && formaPagamento === 'multiplo') {
       if (totalPagoMultiplo < total - 0.05) {
         alert(
           `O VALOR PAGO (${formatBRL(totalPagoMultiplo)}) É INFERIOR AO TOTAL DO PEDIDO (${formatBRL(
@@ -329,11 +333,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
             : undefined,
         itens: cart,
         taxa_entrega: finalTaxa,
-        precisa_troco: precisaTroco,
-        troco_para: precisaTroco && trocoPara ? Number(trocoPara) : undefined,
+        precisa_troco: tipoPedido !== 'salão' ? precisaTroco : false,
+        troco_para: tipoPedido !== 'salão' && precisaTroco && trocoPara ? Number(trocoPara) : undefined,
         motoboy_tipo: tipoPedido === 'delivery' ? motoboyTipo : undefined,
         pagamento_imediato:
-          tipoPedido !== 'salão' || formaPagamento === 'mensalista' || formaPagamento === 'multiplo'
+          tipoPedido !== 'salão'
             ? {
                 forma: formaPagamento,
                 valor: total,
@@ -341,8 +345,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
             : undefined,
       };
 
+      // Quando pedido for para mesas, o pagamento será feito SOMENTE no fechamento da mesa
       const pagamentosArray =
-        formaPagamento === 'multiplo'
+        tipoPedido === 'salão'
+          ? []
+          : formaPagamento === 'multiplo'
           ? pagamentosMultiplos.map((p, idx) => ({
               id: Date.now() + idx,
               pedido_id: 0,
@@ -350,8 +357,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
               valor: p.valor,
               criado_em: new Date().toISOString(),
             }))
-          : tipoPedido !== 'salão' || formaPagamento === 'mensalista'
-          ? [
+          : [
               {
                 id: Date.now(),
                 pedido_id: 0,
@@ -359,8 +365,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                 valor: total,
                 criado_em: new Date().toISOString(),
               },
-            ]
-          : [];
+            ];
 
       const novoPedido = await salvarPedidoSupabase({
         ...payload,
@@ -1135,35 +1140,54 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                 <span className="tabular-nums text-base">{formatBRL(total)}</span>
               </div>
 
-              {/* Payment selector */}
-              <div className="pt-2">
-                <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
-                  Forma de Pagamento:
-                </label>
-                <div className="grid grid-cols-3 gap-1 text-[11px]">
-                  {[
-                    { id: 'pix', label: 'PIX' },
-                    { id: 'dinheiro', label: 'DINHEIRO' },
-                    { id: 'cartao_debito', label: 'DÉBITO' },
-                    { id: 'cartao_credito', label: 'CRÉDITO' },
-                    { id: 'multiplo', label: 'MÚLTIPLOS' },
-                    { id: 'mensalista', label: 'MENSALISTA' },
-                  ].map((p) => (
+              {/* Payment selector or Table Notice */}
+              {tipoPedido === 'salão' ? (
+                <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-800/80 text-amber-200 text-xs space-y-1.5 animate-in fade-in">
+                  <div className="font-black uppercase flex items-center gap-2 text-amber-400">
+                    <Utensils className="w-4 h-4" />
+                    <span>MESA #{mesaId} ABERTA · COMANDA EM CONSUMO</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-300 leading-relaxed">
+                    Os itens serão adicionados à comanda da mesa. O pagamento é realizado <strong>somente no final, ao solicitar o fechamento da mesa</strong>, somando todos os itens com possibilidade de divisão por pessoas.
+                  </p>
+                </div>
+              ) : (
+                <div className="pt-2">
+                  <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
+                    Forma de Pagamento:
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-[11px]">
+                    {formasPagamento
+                      .filter((p) => p.ativo !== false)
+                      .map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setFormaPagamento(p.id as FormaPagamento)}
+                          className={`py-1.5 px-1 rounded text-center font-bold transition-colors cursor-pointer truncate ${
+                            formaPagamento === p.id
+                              ? 'bg-amber-600 text-white'
+                              : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-750'
+                          }`}
+                          title={p.nome}
+                        >
+                          {p.nome.replace(' (ESPÉCIE)', '').replace(' (CHAVE / QR CODE)', '').replace(' (FATURADO EM CONTA)', '')}
+                        </button>
+                      ))}
                     <button
-                      key={p.id}
                       type="button"
-                      onClick={() => setFormaPagamento(p.id as FormaPagamento)}
+                      onClick={() => setFormaPagamento('multiplo')}
                       className={`py-1.5 px-1 rounded text-center font-bold transition-colors cursor-pointer ${
-                        formaPagamento === p.id
-                          ? 'bg-amber-600 text-white'
+                        formaPagamento === 'multiplo'
+                          ? 'bg-purple-600 text-white'
                           : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-750'
                       }`}
                     >
-                      {p.label}
+                      MÚLTIPLOS
                     </button>
-                  ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Múltiplos Pagamentos (Combinação de Pagamentos) */}
               {formaPagamento === 'multiplo' && (
@@ -1190,10 +1214,13 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                       onChange={(e) => setNovaFormaMultiplo(e.target.value as FormaPagamento)}
                       className="px-2 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-lg text-xs font-bold"
                     >
-                      <option value="pix">PIX</option>
-                      <option value="cartao_debito">Débito</option>
-                      <option value="cartao_credito">Crédito</option>
-                      <option value="dinheiro">Dinheiro</option>
+                      {formasPagamento
+                        .filter((fp) => fp.ativo !== false && fp.id !== 'multiplo')
+                        .map((fp) => (
+                          <option key={fp.id} value={fp.id}>
+                            {fp.nome}
+                          </option>
+                        ))}
                     </select>
 
                     <div className="relative flex-1">
@@ -1292,10 +1319,31 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
               <button
                 onClick={handleSubmitOrder}
                 disabled={isSubmitting}
-                className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-colors mt-2"
+                className={`w-full py-3 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-colors mt-2 cursor-pointer ${
+                  tipoPedido === 'salão'
+                    ? 'bg-amber-600 hover:bg-amber-500'
+                    : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
               >
-                <CheckCircle2 className="w-5 h-5" />
-                {isSubmitting ? 'ENVIANDO PEDIDO...' : `LANÇAR PEDIDO (${formatBRL(total)})`}
+                {tipoPedido === 'salão' ? (
+                  <>
+                    <Utensils className="w-5 h-5" />
+                    <span>
+                      {isSubmitting
+                        ? 'ENVIANDO COMANDA...'
+                        : `LANÇAR COMANDA NA MESA #${mesaId} (${formatBRL(total)})`}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span>
+                      {isSubmitting
+                        ? 'FINALIZANDO PEDIDO...'
+                        : `FINALIZAR E RECEBER (${formatBRL(total)})`}
+                    </span>
+                  </>
+                )}
               </button>
             </div>
           )}

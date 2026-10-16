@@ -16,6 +16,7 @@ import {
   ConfiguracoesSistema,
   CardapioDiarioConfig,
   FormaPagamento,
+  FormaPagamentoConfig,
   Pagamento,
 } from './types';
 import { Header, ActiveTab } from './components/Header';
@@ -51,6 +52,7 @@ import {
   INITIAL_PEDIDOS,
   BAIRROS_PIRACICABA,
   INITIAL_CONFIGURACOES,
+  INITIAL_FORMAS_PAGAMENTO,
 } from './data/seedData';
 import { supabase } from './lib/supabase';
 import {
@@ -84,6 +86,9 @@ import {
   fetchBairrosSupabase,
   salvarBairrosSupabase,
   resetarMesasVaziasSupabase,
+  fetchFormasPagamentoSupabase,
+  salvarFormaPagamentoSupabase,
+  excluirFormaPagamentoSupabase,
 } from './services/supabaseClient';
 
 export default function App() {
@@ -117,6 +122,7 @@ export default function App() {
     status: 'aguardando',
     itens: [],
   });
+  const [formasPagamento, setFormasPagamento] = useState<FormaPagamentoConfig[]>(INITIAL_FORMAS_PAGAMENTO);
 
   // Modals
   const [printReceiptPedido, setPrintReceiptPedido] = useState<Pedido | null>(null);
@@ -311,6 +317,16 @@ export default function App() {
         }
       } catch (err) {
         console.warn('Conectando ao cardápio diário no Supabase...', err);
+      }
+
+      // Carrega formas de pagamento da nuvem Supabase (100% cloud)
+      try {
+        const fps = await fetchFormasPagamentoSupabase();
+        if (fps && fps.length > 0) {
+          setFormasPagamento(fps);
+        }
+      } catch (err) {
+        console.warn('Conectando a formas de pagamento no Supabase...', err);
       }
     } catch (err) {
       console.warn('Conectando às tabelas em nuvem do Supabase...', err);
@@ -545,15 +561,15 @@ export default function App() {
       }
     }
 
-    // 4. Registra movimentação no caixa se caixa estiver aberto
+    // 4. Registra movimentação no faturamento do caixa se caixa estiver aberto
     if (caixa && caixa.status === 'aberto' && pagamentos) {
       for (const pg of pagamentos) {
-        if (pg.valor > 0 && pg.forma !== 'mensalista') {
+        if (pg.valor > 0) {
           await handleMovimentacaoCaixa(
-            'suprimento',
+            'entrada_pedido',
             pg.forma,
             pg.valor,
-            `RECEBIMENTO CONTA MESA #${numero}`
+            `FECHAMENTO MESA #${numero}`
           );
         }
       }
@@ -603,6 +619,15 @@ export default function App() {
       )
     );
     await abaterSaldoMensalistaSupabase(clienteId, valor);
+    if (caixa && caixa.status === 'aberto' && valor > 0) {
+      const cli = clientes.find((c) => c.id === clienteId);
+      await handleMovimentacaoCaixa(
+        'entrada_pedido',
+        _forma,
+        valor,
+        `ABATIMENTO MENSALISTA: ${cli?.nome || 'CLIENTE'}`
+      );
+    }
   };
 
   const handleCadastrarCliente = async (clienteData: Partial<Cliente>) => {
@@ -768,7 +793,7 @@ export default function App() {
   };
 
   const handleMovimentacaoCaixa = async (
-    tipo: 'suprimento' | 'sangria',
+    tipo: 'entrada_pedido' | 'suprimento' | 'sangria',
     forma: any,
     valor: number,
     descricao: string
@@ -781,6 +806,17 @@ export default function App() {
       descricao
     );
     setCaixa(atualizado);
+  };
+
+  // Formas de Pagamento operations via Supabase (100% Nuvem)
+  const handleSaveFormaPagamento = async (item: Partial<FormaPagamentoConfig>) => {
+    const atualizado = await salvarFormaPagamentoSupabase(item, formasPagamento);
+    setFormasPagamento(atualizado);
+  };
+
+  const handleDeleteFormaPagamento = async (id: string) => {
+    const atualizado = await excluirFormaPagamentoSupabase(id, formasPagamento);
+    setFormasPagamento(atualizado);
   };
 
   // Reservations via Supabase
@@ -865,6 +901,9 @@ export default function App() {
             mesas={mesas}
             bairros={bairros}
             estoque={estoque}
+            formasPagamento={formasPagamento}
+            onSaveFormaPagamento={handleSaveFormaPagamento}
+            onDeleteFormaPagamento={handleDeleteFormaPagamento}
             onUpdateStockItem={handleUpdateStockItem}
             onAddItemStock={handleAddStockItem}
             onDeleteItemStock={handleDeleteStockItem}
@@ -924,8 +963,22 @@ export default function App() {
             mesas={mesas}
             bairros={bairros}
             selectedMesaNumber={selectedMesaNumber}
-            onOrderCreated={(novo) => {
+            formasPagamento={formasPagamento}
+            onOrderCreated={async (novo) => {
               setPedidos((prev) => [novo, ...prev]);
+              // Quando pedido tiver pagamentos imediatos (balcão ou delivery) e o caixa estiver aberto, lança no faturamento do dia
+              if (caixa && caixa.status === 'aberto' && novo.pagamentos && novo.pagamentos.length > 0) {
+                for (const pg of novo.pagamentos) {
+                  if (pg.valor > 0) {
+                    await handleMovimentacaoCaixa(
+                      'entrada_pedido',
+                      pg.forma,
+                      pg.valor,
+                      `PEDIDO #${novo.id} (${novo.tipo.toUpperCase()})`
+                    );
+                  }
+                }
+              }
             }}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}
             onTogglePauseProduto={handleTogglePauseProduto}
@@ -954,6 +1007,7 @@ export default function App() {
             reservas={reservas}
             clientes={clientes}
             configuracoes={configuracoes}
+            formasPagamento={formasPagamento}
             onOpenOrderForMesa={(num) => {
               setSelectedMesaNumber(num);
               setActiveTab('pdv');
@@ -998,6 +1052,9 @@ export default function App() {
         {activeTab === 'caixa' && (
           <CashRegister
             caixa={caixa}
+            formasPagamento={formasPagamento}
+            pedidos={pedidos}
+            configuracoes={configuracoes}
             onAbrirCaixa={handleAbrirCaixa}
             onFecharCaixa={handleFecharCaixa}
             onMovimentacao={handleMovimentacaoCaixa}

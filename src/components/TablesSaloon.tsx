@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Mesa, Pedido, Reserva, FormaPagamento, Cliente, ConfiguracoesSistema } from '../types';
+import { Mesa, Pedido, Reserva, FormaPagamento, Cliente, ConfiguracoesSistema, FormaPagamentoConfig } from '../types';
+import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { formatBRL, formatDateTime } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
 import {
@@ -34,6 +35,7 @@ interface TablesSaloonProps {
   reservas: Reserva[];
   clientes?: Cliente[];
   configuracoes?: ConfiguracoesSistema;
+  formasPagamento?: FormaPagamentoConfig[];
   onOpenOrderForMesa: (mesaNum: number) => void;
   onUpdateMesaStatus: (mesaNum: number, status: Mesa['status'], cliente_nome?: string, pessoas?: number) => void;
   onFecharMesa: (
@@ -60,6 +62,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   reservas,
   clientes = [],
   configuracoes,
+  formasPagamento = INITIAL_FORMAS_PAGAMENTO,
   onOpenOrderForMesa,
   onUpdateMesaStatus,
   onFecharMesa,
@@ -100,9 +103,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   const [incluirTaxaServico, setIncluirTaxaServico] = useState(false);
 
   // Payment form state
-  const [paymentMode, setPaymentMode] = useState<
-    'cartao_credito' | 'cartao_debito' | 'pix' | 'dinheiro' | 'multiplo' | 'mensalista'
-  >('pix');
+  const [paymentMode, setPaymentMode] = useState<string>('pix');
   const [valorRecebidoDinheiro, setValorRecebidoDinheiro] = useState('');
   const [selectedMensalistaId, setSelectedMensalistaId] = useState<string>('');
   const [pagamentosMultiplos, setPagamentosMultiplos] = useState<PagamentoParcial[]>([]);
@@ -1075,57 +1076,40 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                 </span>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('cartao_credito')}
-                    className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                      paymentMode === 'cartao_credito'
-                        ? 'bg-amber-600 text-white border-amber-500 shadow-md'
-                        : 'bg-neutral-850 text-neutral-300 border-neutral-800 hover:border-neutral-700'
-                    }`}
-                  >
-                    <CreditCard className="w-5 h-5 text-amber-300" />
-                    <span className="text-xs font-black uppercase">Cartão Crédito</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('cartao_debito')}
-                    className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                      paymentMode === 'cartao_debito'
-                        ? 'bg-amber-600 text-white border-amber-500 shadow-md'
-                        : 'bg-neutral-850 text-neutral-300 border-neutral-800 hover:border-neutral-700'
-                    }`}
-                  >
-                    <CreditCard className="w-5 h-5 text-cyan-300" />
-                    <span className="text-xs font-black uppercase">Cartão Débito</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('pix')}
-                    className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                      paymentMode === 'pix'
-                        ? 'bg-amber-600 text-white border-amber-500 shadow-md'
-                        : 'bg-neutral-850 text-neutral-300 border-neutral-800 hover:border-neutral-700'
-                    }`}
-                  >
-                    <QrCode className="w-5 h-5 text-emerald-400" />
-                    <span className="text-xs font-black uppercase">PIX</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('dinheiro')}
-                    className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                      paymentMode === 'dinheiro'
-                        ? 'bg-amber-600 text-white border-amber-500 shadow-md'
-                        : 'bg-neutral-850 text-neutral-300 border-neutral-800 hover:border-neutral-700'
-                    }`}
-                  >
-                    <DollarSign className="w-5 h-5 text-emerald-300" />
-                    <span className="text-xs font-black uppercase">Dinheiro (Espécie)</span>
-                  </button>
+                  {formasPagamento
+                    .filter((fp) => fp.ativo !== false)
+                    .map((fp) => {
+                      const isSelected = paymentMode === fp.id;
+                      return (
+                        <button
+                          key={fp.id}
+                          type="button"
+                          onClick={() => setPaymentMode(fp.id)}
+                          className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-600 text-white border-amber-500 shadow-md'
+                              : 'bg-neutral-850 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                          }`}
+                        >
+                          {fp.tipo === 'pix' ? (
+                            <QrCode className="w-5 h-5 text-emerald-400" />
+                          ) : fp.tipo === 'dinheiro' ? (
+                            <DollarSign className="w-5 h-5 text-emerald-300" />
+                          ) : fp.tipo === 'cartao_debito' ? (
+                            <CreditCard className="w-5 h-5 text-cyan-300" />
+                          ) : fp.tipo === 'cartao_credito' ? (
+                            <CreditCard className="w-5 h-5 text-amber-300" />
+                          ) : fp.tipo === 'mensalista' ? (
+                            <UserCheck className="w-5 h-5 text-blue-400" />
+                          ) : (
+                            <Receipt className="w-5 h-5 text-purple-300" />
+                          )}
+                          <span className="text-xs font-black uppercase text-center leading-tight">
+                            {fp.nome.replace(' (ESPÉCIE)', '').replace(' (CHAVE / QR CODE)', '').replace(' (FATURADO EM CONTA)', '')}
+                          </span>
+                        </button>
+                      );
+                    })}
 
                   <button
                     type="button"
@@ -1137,20 +1121,9 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                     }`}
                   >
                     <Layers className="w-5 h-5 text-purple-300" />
-                    <span className="text-xs font-black uppercase">Múltiplos / Combinação</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('mensalista')}
-                    className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                      paymentMode === 'mensalista'
-                        ? 'bg-amber-600 text-white border-amber-500 shadow-md'
-                        : 'bg-neutral-850 text-neutral-300 border-neutral-800 hover:border-neutral-700'
-                    }`}
-                  >
-                    <UserCheck className="w-5 h-5 text-blue-400" />
-                    <span className="text-xs font-black uppercase">Mensalista (Conta)</span>
+                    <span className="text-xs font-black uppercase text-center leading-tight">
+                      Múltiplos / Combinação
+                    </span>
                   </button>
                 </div>
 

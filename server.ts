@@ -14,8 +14,9 @@ import {
   INITIAL_PEDIDOS,
   BAIRROS_PIRACICABA,
   INITIAL_CONFIGURACOES,
+  INITIAL_FORMAS_PAGAMENTO,
 } from './src/data/seedData.ts';
-import { Pedido, Mesa, Cliente, Produto, ItemEstoque, CaixaDiario, Reserva, FormaPagamento, ConfiguracoesSistema } from './src/types/index.ts';
+import { Pedido, Mesa, Cliente, Produto, ItemEstoque, CaixaDiario, Reserva, FormaPagamento, ConfiguracoesSistema, FormaPagamentoConfig } from './src/types/index.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,6 +42,7 @@ interface AppState {
   reservas: Reserva[];
   bairros: typeof BAIRROS_PIRACICABA;
   configuracoes: ConfiguracoesSistema;
+  formasPagamento: FormaPagamentoConfig[];
   proximoCodigoSenha: number;
 }
 
@@ -56,6 +58,9 @@ function loadState(): AppState {
           ...INITIAL_CONFIGURACOES,
           ...data.configuracoes,
         };
+      }
+      if (!data.formasPagamento || data.formasPagamento.length === 0) {
+        data.formasPagamento = INITIAL_FORMAS_PAGAMENTO;
       }
       return data;
     }
@@ -85,6 +90,7 @@ function loadState(): AppState {
     ],
     bairros: BAIRROS_PIRACICABA,
     configuracoes: INITIAL_CONFIGURACOES,
+    formasPagamento: INITIAL_FORMAS_PAGAMENTO,
     proximoCodigoSenha: 46,
   };
 
@@ -668,7 +674,7 @@ async function startServer() {
 
     const mov = {
       id: Date.now(),
-      tipo: tipo as 'suprimento' | 'sangria',
+      tipo: tipo as 'entrada_pedido' | 'suprimento' | 'sangria',
       forma: forma as FormaPagamento,
       valor: Number(valor),
       descricao: (descricao || '').toUpperCase(),
@@ -676,8 +682,55 @@ async function startServer() {
     };
 
     state.caixa.movimentacoes.push(mov);
+    saveState(state);
     broadcast('CASH_MOVEMENT', { caixa: state.caixa, mov });
     res.json(state.caixa);
+  });
+
+  // Formas de Pagamento CRUD
+  app.get('/api/formas-pagamento', (_req, res) => {
+    res.json(state.formasPagamento || INITIAL_FORMAS_PAGAMENTO);
+  });
+
+  app.post('/api/formas-pagamento', (req, res) => {
+    const payload = req.body as Partial<FormaPagamentoConfig>;
+    if (!payload.id && !payload.nome) {
+      return res.status(400).json({ erro: true, mensagem: 'Nome da forma de pagamento é obrigatório' });
+    }
+
+    const id = payload.id || 'fp_' + Date.now();
+    const nome = (payload.nome || '').toUpperCase().trim();
+    const existingIndex = state.formasPagamento.findIndex((fp) => fp.id === id);
+
+    const updatedItem: FormaPagamentoConfig = {
+      id,
+      nome,
+      tipo: payload.tipo || 'outro',
+      taxa_operadora: Number(payload.taxa_operadora || 0),
+      permite_troco: payload.permite_troco !== undefined ? !!payload.permite_troco : false,
+      ativo: payload.ativo !== undefined ? !!payload.ativo : true,
+      ordem: Number(payload.ordem || state.formasPagamento.length + 1),
+      descricao: payload.descricao ? payload.descricao.toUpperCase().trim() : '',
+      criado_em: payload.criado_em || new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      state.formasPagamento[existingIndex] = updatedItem;
+    } else {
+      state.formasPagamento.push(updatedItem);
+    }
+
+    saveState(state);
+    broadcast('PAYMENT_METHOD_SAVED', state.formasPagamento);
+    res.json(state.formasPagamento);
+  });
+
+  app.delete('/api/formas-pagamento/:id', (req, res) => {
+    const id = req.params.id;
+    state.formasPagamento = state.formasPagamento.filter((fp) => fp.id !== id);
+    saveState(state);
+    broadcast('PAYMENT_METHOD_DELETED', state.formasPagamento);
+    res.json({ success: true, formasPagamento: state.formasPagamento });
   });
 
   // Reservas

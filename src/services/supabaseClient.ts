@@ -19,6 +19,7 @@ import {
   Produto,
   Categoria,
   BairroTaxa,
+  FormaPagamentoConfig,
 } from '../types';
 import {
   INITIAL_CONFIGURACOES,
@@ -26,6 +27,7 @@ import {
   INITIAL_CATEGORIAS,
   INITIAL_PRODUTOS,
   BAIRROS_PIRACICABA,
+  INITIAL_FORMAS_PAGAMENTO,
 } from '../data/seedData';
 import { formatPhone, formatBRL } from '../utils/formatters';
 
@@ -647,7 +649,7 @@ export async function fecharCaixaSupabase(
 
 export async function registrarMovimentacaoCaixaSupabase(
   caixaAtual: CaixaDiario,
-  tipo: 'suprimento' | 'sangria',
+  tipo: 'entrada_pedido' | 'suprimento' | 'sangria',
   forma: FormaPagamento,
   valor: number,
   descricao: string
@@ -1647,5 +1649,163 @@ export async function salvarBairrosSupabase(
   }
 }
 
+/**
+ * ============================================================================
+ * FORMAS DE PAGAMENTO: 100% Nuvem (Supabase + Cloud Backend)
+ * ============================================================================
+ */
+export async function fetchFormasPagamentoSupabase(): Promise<FormaPagamentoConfig[]> {
+  // 1. Tenta carregar da tabela dedicada 'formas_pagamento' no Supabase
+  try {
+    const { data, error } = await supabase
+      .from('formas_pagamento')
+      .select('*')
+      .order('ordem', { ascending: true });
 
+    if (!error && data && data.length > 0) {
+      return data as FormaPagamentoConfig[];
+    }
+  } catch (err) {
+    console.warn('Tabela formas_pagamento não acessível diretamente:', err);
+  }
 
+  // 2. Fallback: carregar de configuracoes.dados.formas_pagamento no Supabase
+  try {
+    const { data: conf } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (conf?.dados?.formas_pagamento && Array.isArray(conf.dados.formas_pagamento) && conf.dados.formas_pagamento.length > 0) {
+      return conf.dados.formas_pagamento as FormaPagamentoConfig[];
+    }
+  } catch (err) {
+    console.warn('Erro ao buscar formas_pagamento de configuracoes:', err);
+  }
+
+  // 3. Fallback: carregar da rota do backend local (/api/formas-pagamento)
+  try {
+    const res = await fetch('/api/formas-pagamento');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+  } catch {
+    // offline
+  }
+
+  return INITIAL_FORMAS_PAGAMENTO;
+}
+
+export async function salvarFormaPagamentoSupabase(
+  item: Partial<FormaPagamentoConfig>,
+  currentList: FormaPagamentoConfig[]
+): Promise<FormaPagamentoConfig[]> {
+  const id = item.id || 'fp_' + Date.now();
+  const nome = (item.nome || '').toUpperCase().trim();
+
+  const formatted: FormaPagamentoConfig = {
+    id,
+    nome,
+    tipo: item.tipo || 'outro',
+    taxa_operadora: Number(item.taxa_operadora || 0),
+    permite_troco: item.permite_troco !== undefined ? !!item.permite_troco : false,
+    ativo: item.ativo !== undefined ? !!item.ativo : true,
+    ordem: item.ordem !== undefined ? Number(item.ordem) : currentList.length + 1,
+    descricao: item.descricao ? item.descricao.toUpperCase().trim() : '',
+    criado_em: item.criado_em || new Date().toISOString(),
+  };
+
+  const existingIndex = currentList.findIndex((fp) => fp.id === id);
+  let updatedList: FormaPagamentoConfig[];
+  if (existingIndex >= 0) {
+    updatedList = [...currentList];
+    updatedList[existingIndex] = formatted;
+  } else {
+    updatedList = [...currentList, formatted];
+  }
+
+  // A. Salva na tabela 'formas_pagamento' se existir
+  try {
+    await supabase.from('formas_pagamento').upsert(formatted, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('Aviso: upsert na tabela formas_pagamento falhou, salvando em configuracoes:', err);
+  }
+
+  // B. Salva em configuracoes.dados.formas_pagamento para garantia de persistência
+  try {
+    const { data: conf } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    const existingDados = conf?.dados || {};
+    await supabase.from('configuracoes').upsert({
+      id: 1,
+      dados: {
+        ...existingDados,
+        formas_pagamento: updatedList,
+      },
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('Erro ao salvar formas_pagamento em configuracoes:', err);
+  }
+
+  // C. Notifica backend /api/formas-pagamento
+  try {
+    fetch('/api/formas-pagamento', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formatted),
+    }).catch(() => {});
+  } catch {}
+
+  return updatedList;
+}
+
+export async function excluirFormaPagamentoSupabase(
+  id: string,
+  currentList: FormaPagamentoConfig[]
+): Promise<FormaPagamentoConfig[]> {
+  const updatedList = currentList.filter((fp) => fp.id !== id);
+
+  // A. Deleta da tabela 'formas_pagamento' se existir
+  try {
+    await supabase.from('formas_pagamento').delete().eq('id', id);
+  } catch (err) {
+    console.warn('Aviso ao deletar de formas_pagamento no Supabase:', err);
+  }
+
+  // B. Atualiza em configuracoes.dados.formas_pagamento
+  try {
+    const { data: conf } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    const existingDados = conf?.dados || {};
+    await supabase.from('configuracoes').upsert({
+      id: 1,
+      dados: {
+        ...existingDados,
+        formas_pagamento: updatedList,
+      },
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('Erro ao atualizar formas_pagamento após exclusão:', err);
+  }
+
+  // C. Notifica backend /api/formas-pagamento/:id
+  try {
+    fetch(`/api/formas-pagamento/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+  } catch {}
+
+  return updatedList;
+}
