@@ -387,15 +387,6 @@ export async function atualizarItemEstoqueSupabase(
     if (data.estoque_minimo !== undefined) updatePayload.estoque_minimo = Number(data.estoque_minimo);
     if (data.fornecedor_info !== undefined) updatePayload.fornecedor_info = data.fornecedor_info ? data.fornecedor_info.toUpperCase().trim() : null;
 
-    // Dual Cloud Persistence: Sync with Express persistent cloud backend
-    try {
-      fetch(`/api/estoque/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatePayload),
-      }).catch(() => {});
-    } catch {}
-
     const { error } = await supabase.from('estoque').update(updatePayload).eq('id', id);
     if (error) {
       console.warn('Aviso atualizar estoque Supabase:', error.message);
@@ -428,7 +419,7 @@ export async function adicionarItemEstoqueSupabase(
       .single();
 
     if (!error && inserted) {
-      const resultItem: ItemEstoque = {
+      return {
         id: Number(inserted.id),
         item_nome: inserted.item_nome,
         quantidade_atual: Number(inserted.quantidade_atual) || 0,
@@ -437,17 +428,6 @@ export async function adicionarItemEstoqueSupabase(
         fornecedor_info: inserted.fornecedor_info || undefined,
         atualizado_em: inserted.atualizado_em,
       };
-
-      // Dual Cloud Persistence: Sync with Express persistent cloud backend
-      try {
-        fetch('/api/estoque', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(resultItem),
-        }).catch(() => {});
-      } catch {}
-
-      return resultItem;
     }
     if (error) {
       console.warn('Aviso insert estoque Supabase:', error.message);
@@ -456,34 +436,16 @@ export async function adicionarItemEstoqueSupabase(
     console.warn('Erro ao inserir item de estoque no Supabase:', err);
   }
 
-  const fallbackItem: ItemEstoque = {
+  return {
     id: Date.now(),
     ...payload,
     fornecedor_info: payload.fornecedor_info || undefined,
   };
-
-  // Dual Cloud Persistence: Sync with Express persistent cloud backend
-  try {
-    fetch('/api/estoque', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fallbackItem),
-    }).catch(() => {});
-  } catch {}
-
-  return fallbackItem;
 }
 
 export async function excluirItemEstoqueSupabase(
   id: number
 ): Promise<{ success: boolean; error?: string }> {
-  // Dual Cloud Persistence: Sync with Express persistent cloud backend
-  try {
-    fetch(`/api/estoque/${id}`, {
-      method: 'DELETE',
-    }).catch(() => {});
-  } catch {}
-
   try {
     const { error } = await supabase.from('estoque').delete().eq('id', id);
     if (error) {

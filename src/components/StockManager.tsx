@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
 import { ItemEstoque } from '../types';
 import { UpperInput } from './UpperInput';
 import {
@@ -15,65 +16,130 @@ import {
   ArrowUpDown,
   Cloud,
   CheckCircle,
+  RefreshCw,
 } from 'lucide-react';
 
 interface StockManagerProps {
-  estoque: ItemEstoque[];
-  onUpdateItem: (id: number, data: Partial<ItemEstoque>) => void;
-  onAddItem: (item: Partial<ItemEstoque>) => void;
-  onDeleteItem: (id: number) => void;
+  estoque?: ItemEstoque[];
+  onUpdateItem?: (id: number, data: Partial<ItemEstoque>) => void;
+  onAddItem?: (item: Partial<ItemEstoque>) => void;
+  onDeleteItem?: (id: number) => void;
 }
 
 export type EstoqueSortMode = 'nome' | 'cadastro' | 'critico';
 
 export const StockManager: React.FC<StockManagerProps> = ({
-  estoque,
+  estoque: initialEstoque,
   onUpdateItem,
   onAddItem,
   onDeleteItem,
 }) => {
-  const [search, setSearch] = useState('');
-  const [apenasAlerta, setApenasAlerta] = useState(false);
+  // State for inventory items directly from Supabase
+  const [items, setItems] = useState<ItemEstoque[]>(initialEstoque || []);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [search, setSearch] = useState<string>('');
+  const [apenasAlerta, setApenasAlerta] = useState<boolean>(false);
   const [sortMode, setSortMode] = useState<EstoqueSortMode>('nome');
   const [cloudNotification, setCloudNotification] = useState<string | null>(null);
 
   // New Item Modal
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [novoNome, setNovoNome] = useState('');
-  const [novaQty, setNovaQty] = useState('10');
-  const [novaUnidade, setNovaUnidade] = useState('kg');
-  const [novoMinimo, setNovoMinimo] = useState('5');
-  const [novoFornecedor, setNovoFornecedor] = useState('');
+  const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [novoNome, setNovoNome] = useState<string>('');
+  const [novaQty, setNovaQty] = useState<string>('10');
+  const [novaUnidade, setNovaUnidade] = useState<string>('kg');
+  const [novoMinimo, setNovoMinimo] = useState<string>('5');
+  const [novoFornecedor, setNovoFornecedor] = useState<string>('');
 
-  // Quick Adjust Modal (Ajuste Rápido de Estoque)
+  // Quick Adjust Modal
   const [adjustingItem, setAdjustingItem] = useState<ItemEstoque | null>(null);
-  const [adjustQty, setAdjustQty] = useState('');
-  const [adjustMin, setAdjustMin] = useState('');
+  const [adjustQty, setAdjustQty] = useState<string>('');
+  const [adjustMin, setAdjustMin] = useState<string>('');
 
-  // Complete Edit Modal (Alteração Completa de Insumo)
+  // Complete Edit Modal
   const [editingItem, setEditingItem] = useState<ItemEstoque | null>(null);
-  const [editNome, setEditNome] = useState('');
-  const [editQty, setEditQty] = useState('');
-  const [editUnidade, setEditUnidade] = useState('kg');
-  const [editMin, setEditMin] = useState('');
-  const [editFornecedor, setEditFornecedor] = useState('');
+  const [editNome, setEditNome] = useState<string>('');
+  const [editQty, setEditQty] = useState<string>('');
+  const [editUnidade, setEditUnidade] = useState<string>('kg');
+  const [editMin, setEditMin] = useState<string>('');
+  const [editFornecedor, setEditFornecedor] = useState<string>('');
 
   // Confirm Delete Modal
   const [deletingItem, setDeletingItem] = useState<ItemEstoque | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const showNotification = (msg: string) => {
     setCloudNotification(msg);
     setTimeout(() => setCloudNotification(null), 3000);
   };
 
+  /**
+   * 1. Listar itens diretamente da tabela 'estoque' no Supabase
+   */
+  const fetchEstoqueFromSupabase = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('estoque')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (error) {
+        console.warn('Aviso ao consultar estoque no Supabase:', error.message);
+      } else if (data && data.length > 0) {
+        const mapped: ItemEstoque[] = data.map((d: any) => ({
+          id: Number(d.id),
+          item_nome: (d.item_nome || '').toUpperCase().trim(),
+          quantidade_atual: Number(d.quantidade_atual) || 0,
+          unidade_medida: (d.unidade_medida || 'un').toLowerCase().trim(),
+          estoque_minimo: Number(d.estoque_minimo) || 0,
+          fornecedor_info: d.fornecedor_info ? d.fornecedor_info.toUpperCase().trim() : '',
+          atualizado_em: d.atualizado_em,
+        }));
+        setItems(mapped);
+      }
+    } catch (err) {
+      console.warn('Erro ao conectar ao Supabase para listar estoque:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Fetch on mount and subscribe to realtime changes on 'estoque'
+  useEffect(() => {
+    fetchEstoqueFromSupabase();
+
+    const channel = supabase
+      .channel('realtime_estoque_stockmanager')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'estoque' },
+        () => {
+          fetchEstoqueFromSupabase();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchEstoqueFromSupabase]);
+
+  // Sync if parent updates initialEstoque
+  useEffect(() => {
+    if (initialEstoque && initialEstoque.length > 0 && items.length === 0) {
+      setItems(initialEstoque);
+    }
+  }, [initialEstoque, items.length]);
+
+  // Alert counter
   const alertItemsCount = useMemo(
-    () => estoque.filter((it) => it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo).length,
-    [estoque]
+    () => items.filter((it) => it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo).length,
+    [items]
   );
 
-  // Filtered & Sorted Estoque
+  // Filtered & Sorted items
   const filteredAndSortedEstoque = useMemo(() => {
-    let result = estoque.filter((it) => {
+    let result = items.filter((it) => {
       if (apenasAlerta && (it.estoque_minimo <= 0 || it.quantidade_atual > it.estoque_minimo)) return false;
       if (search) {
         const query = search.toLowerCase();
@@ -99,105 +165,274 @@ export const StockManager: React.FC<StockManagerProps> = ({
     }
 
     return result;
-  }, [estoque, apenasAlerta, search, sortMode]);
+  }, [items, apenasAlerta, search, sortMode]);
 
-  // Handlers
+  /**
+   * 2. Inserir novo insumo diretamente no Supabase (.insert())
+   */
+  const handleConfirmAddItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanNome = novoNome.toUpperCase().trim();
+    if (!cleanNome) return;
+
+    setIsSubmitting(true);
+    const qty = parseFloat(novaQty.replace(',', '.'));
+    const min = parseFloat(novoMinimo.replace(',', '.'));
+
+    const payload = {
+      item_nome: cleanNome,
+      quantidade_atual: !isNaN(qty) ? Math.max(0, qty) : 0,
+      unidade_medida: novaUnidade.toLowerCase().trim(),
+      estoque_minimo: !isNaN(min) ? Math.max(0, min) : 5,
+      fornecedor_info: novoFornecedor ? novoFornecedor.toUpperCase().trim() : null,
+      atualizado_em: new Date().toISOString(),
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('estoque')
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) {
+        console.warn('Erro ao inserir insumo no Supabase:', error.message);
+      }
+
+      const createdItem: ItemEstoque = data
+        ? {
+            id: Number(data.id),
+            item_nome: data.item_nome,
+            quantidade_atual: Number(data.quantidade_atual) || 0,
+            unidade_medida: data.unidade_medida || 'un',
+            estoque_minimo: Number(data.estoque_minimo) || 5,
+            fornecedor_info: data.fornecedor_info || undefined,
+            atualizado_em: data.atualizado_em,
+          }
+        : {
+            id: Date.now(),
+            ...payload,
+            fornecedor_info: payload.fornecedor_info || undefined,
+          };
+
+      setItems((prev) => [...prev, createdItem]);
+      onAddItem?.(createdItem);
+
+      setShowAddModal(false);
+      setNovoNome('');
+      setNovaQty('10');
+      setNovaUnidade('kg');
+      setNovoMinimo('5');
+      setNovoFornecedor('');
+      showNotification(`"${cleanNome}" cadastrado e salvo na nuvem com sucesso!`);
+    } catch (err) {
+      console.error('Erro de rede ao salvar insumo:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * 3. Atualizar insumo diretamente no Supabase (.update())
+   */
+  const handleConfirmFullEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+
+    setIsSubmitting(true);
+    const cleanNome = editNome.toUpperCase().trim();
+    const qty = parseFloat(editQty.replace(',', '.'));
+    const min = parseFloat(editMin.replace(',', '.'));
+
+    const updatePayload = {
+      item_nome: cleanNome || editingItem.item_nome,
+      quantidade_atual: !isNaN(qty) ? Math.max(0, qty) : editingItem.quantidade_atual,
+      unidade_medida: editUnidade.toLowerCase().trim(),
+      estoque_minimo: !isNaN(min) ? Math.max(0, min) : editingItem.estoque_minimo,
+      fornecedor_info: editFornecedor ? editFornecedor.toUpperCase().trim() : null,
+      atualizado_em: new Date().toISOString(),
+    };
+
+    try {
+      const { error } = await supabase
+        .from('estoque')
+        .update(updatePayload)
+        .eq('id', editingItem.id);
+
+      if (error) {
+        console.warn('Erro ao atualizar insumo no Supabase:', error.message);
+      }
+
+      const localUpdated: Partial<ItemEstoque> = {
+        item_nome: updatePayload.item_nome,
+        quantidade_atual: updatePayload.quantidade_atual,
+        unidade_medida: updatePayload.unidade_medida,
+        estoque_minimo: updatePayload.estoque_minimo,
+        fornecedor_info: editFornecedor ? editFornecedor.toUpperCase().trim() : undefined,
+        atualizado_em: updatePayload.atualizado_em,
+      };
+
+      setItems((prev) =>
+        prev.map((it) => (it.id === editingItem.id ? { ...it, ...localUpdated } : it))
+      );
+      onUpdateItem?.(editingItem.id, localUpdated);
+
+      setEditingItem(null);
+      showNotification(`Insumo "${cleanNome}" atualizado na nuvem!`);
+    } catch (err) {
+      console.error('Erro ao atualizar insumo no Supabase:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * 4. Ajuste rápido de quantidade e mínimo no Supabase (.update())
+   */
+  const handleConfirmAdjust = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustingItem) return;
+
+    setIsSubmitting(true);
+    const qty = parseFloat(adjustQty.replace(',', '.'));
+    const min = parseFloat(adjustMin.replace(',', '.'));
+
+    const updatePayload = {
+      quantidade_atual: !isNaN(qty) ? Math.max(0, qty) : adjustingItem.quantidade_atual,
+      estoque_minimo: !isNaN(min) ? Math.max(0, min) : adjustingItem.estoque_minimo,
+      atualizado_em: new Date().toISOString(),
+    };
+
+    try {
+      const { error } = await supabase
+        .from('estoque')
+        .update(updatePayload)
+        .eq('id', adjustingItem.id);
+
+      if (error) {
+        console.warn('Erro ao ajustar estoque no Supabase:', error.message);
+      }
+
+      setItems((prev) =>
+        prev.map((it) => (it.id === adjustingItem.id ? { ...it, ...updatePayload } : it))
+      );
+      onUpdateItem?.(adjustingItem.id, updatePayload);
+
+      setAdjustingItem(null);
+      showNotification(`Ajuste de "${adjustingItem.item_nome}" salvo na nuvem!`);
+    } catch (err) {
+      console.error('Erro ao salvar ajuste no Supabase:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * 5. Excluir alerta (define estoque_minimo = 0 no Supabase)
+   */
+  const handleExcluirAlerta = async (it: ItemEstoque) => {
+    try {
+      const updatePayload = {
+        estoque_minimo: 0,
+        atualizado_em: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('estoque')
+        .update(updatePayload)
+        .eq('id', it.id);
+
+      if (error) {
+        console.warn('Erro ao excluir alerta no Supabase:', error.message);
+      }
+
+      setItems((prev) =>
+        prev.map((item) => (item.id === it.id ? { ...item, estoque_minimo: 0 } : item))
+      );
+      onUpdateItem?.(it.id, updatePayload);
+
+      showNotification(`Alerta de "${it.item_nome}" excluído na nuvem.`);
+    } catch (err) {
+      console.error('Erro ao excluir alerta:', err);
+    }
+  };
+
+  /**
+   * 6. Ajuste rápido +/- direto no Supabase
+   */
+  const handleQuickDelta = async (it: ItemEstoque, delta: number) => {
+    const nextVal = Math.max(0, Number((it.quantidade_atual + delta).toFixed(2)));
+    setItems((prev) =>
+      prev.map((item) => (item.id === it.id ? { ...item, quantidade_atual: nextVal } : item))
+    );
+    onUpdateItem?.(it.id, { quantidade_atual: nextVal });
+
+    try {
+      await supabase
+        .from('estoque')
+        .update({
+          quantidade_atual: nextVal,
+          atualizado_em: new Date().toISOString(),
+        })
+        .eq('id', it.id);
+
+      showNotification(`"${it.item_nome}": ${nextVal} ${it.unidade_medida} (salvo na nuvem)`);
+    } catch (err) {
+      console.warn('Erro ao atualizar saldo no Supabase:', err);
+    }
+  };
+
+  /**
+   * 7. Excluir insumo diretamente no Supabase (.delete())
+   */
+  const handleConfirmDelete = async () => {
+    if (!deletingItem) return;
+    setIsSubmitting(true);
+    const targetId = deletingItem.id;
+    const nome = deletingItem.item_nome;
+
+    try {
+      const { error } = await supabase
+        .from('estoque')
+        .delete()
+        .eq('id', targetId);
+
+      if (error) {
+        console.warn('Erro ao excluir insumo no Supabase:', error.message);
+      }
+
+      setItems((prev) => prev.filter((it) => it.id !== targetId));
+      onDeleteItem?.(targetId);
+
+      setDeletingItem(null);
+      showNotification(`Insumo "${nome}" excluído permanentemente da nuvem.`);
+    } catch (err) {
+      console.error('Erro ao excluir insumo:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleOpenAdjust = (it: ItemEstoque) => {
     setAdjustingItem(it);
     setAdjustQty(String(it.quantidade_atual));
     setAdjustMin(String(it.estoque_minimo));
   };
 
-  const handleConfirmAdjust = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adjustingItem) return;
-    const qty = parseFloat(adjustQty.replace(',', '.'));
-    const min = parseFloat(adjustMin.replace(',', '.'));
-    const payload = {
-      quantidade_atual: !isNaN(qty) ? qty : adjustingItem.quantidade_atual,
-      estoque_minimo: !isNaN(min) ? min : adjustingItem.estoque_minimo,
-    };
-    onUpdateItem(adjustingItem.id, payload);
-    setAdjustingItem(null);
-    showNotification(`Ajuste de "${adjustingItem.item_nome}" gravado na nuvem!`);
-  };
-
-  const handleExcluirAlerta = (it: ItemEstoque) => {
-    onUpdateItem(it.id, { estoque_minimo: 0 });
-    showNotification(`Alerta de "${it.item_nome}" removido na nuvem!`);
-  };
-
   const handleOpenFullEdit = (it: ItemEstoque) => {
     setEditingItem(it);
-    setEditNome(it.item_nome);
+    setEditNome(it.item_nome.toUpperCase());
     setEditQty(String(it.quantidade_atual));
     setEditUnidade(it.unidade_medida || 'kg');
     setEditMin(String(it.estoque_minimo));
-    setEditFornecedor(it.fornecedor_info || '');
-  };
-
-  const handleConfirmFullEdit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingItem) return;
-    const qty = parseFloat(editQty.replace(',', '.'));
-    const min = parseFloat(editMin.replace(',', '.'));
-
-    const updatedData: Partial<ItemEstoque> = {
-      item_nome: editNome.toUpperCase().trim(),
-      quantidade_atual: !isNaN(qty) ? Math.max(0, qty) : editingItem.quantidade_atual,
-      unidade_medida: editUnidade.toLowerCase().trim(),
-      estoque_minimo: !isNaN(min) ? Math.max(0, min) : editingItem.estoque_minimo,
-      fornecedor_info: editFornecedor ? editFornecedor.toUpperCase().trim() : '',
-    };
-
-    onUpdateItem(editingItem.id, updatedData);
-    setEditingItem(null);
-    showNotification(`Alteração de "${updatedData.item_nome}" gravada na nuvem!`);
-  };
-
-  const handleQuickDelta = (it: ItemEstoque, delta: number) => {
-    const nextVal = Math.max(0, Number((it.quantidade_atual + delta).toFixed(2)));
-    onUpdateItem(it.id, { quantidade_atual: nextVal });
-    showNotification(`Estoque de "${it.item_nome}": ${nextVal} ${it.unidade_medida} (salvo na nuvem)`);
-  };
-
-  const handleConfirmAddItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!novoNome.trim()) return;
-
-    const qty = parseFloat(novaQty.replace(',', '.'));
-    const min = parseFloat(novoMinimo.replace(',', '.'));
-
-    onAddItem({
-      item_nome: novoNome.toUpperCase().trim(),
-      quantidade_atual: !isNaN(qty) ? Math.max(0, qty) : 0,
-      unidade_medida: novaUnidade.toLowerCase().trim(),
-      estoque_minimo: !isNaN(min) ? Math.max(0, min) : 5,
-      fornecedor_info: novoFornecedor ? novoFornecedor.toUpperCase().trim() : '',
-    });
-
-    setShowAddModal(false);
-    setNovoNome('');
-    setNovaQty('10');
-    setNovaUnidade('kg');
-    setNovoMinimo('5');
-    setNovoFornecedor('');
-    showNotification('Novo insumo cadastrado e gravado na nuvem com sucesso!');
-  };
-
-  const handleConfirmDelete = () => {
-    if (!deletingItem) return;
-    const nome = deletingItem.item_nome;
-    onDeleteItem(deletingItem.id);
-    setDeletingItem(null);
-    showNotification(`Insumo "${nome}" excluído da nuvem.`);
+    setEditFornecedor(it.fornecedor_info ? it.fornecedor_info.toUpperCase() : '');
   };
 
   return (
     <div className="flex flex-col gap-4 max-w-7xl mx-auto w-full">
       {/* Cloud Toast Notification */}
       {cloudNotification && (
-        <div className="fixed top-20 right-4 z-50 bg-emerald-950 border border-emerald-600 text-emerald-200 px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold animate-in fade-in slide-in-from-top-4 duration-200">
+        <div className="fixed top-20 right-4 z-50 bg-emerald-950 border border-emerald-600 text-emerald-200 px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-bold animate-in fade-in slide-in-from-top-4 duration-200">
           <Cloud className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{cloudNotification}</span>
         </div>
@@ -213,20 +448,31 @@ export const StockManager: React.FC<StockManagerProps> = ({
             <div>
               <h1 className="text-base sm:text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
                 <span>Cadastro & Controle de Insumos</span>
-                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono text-cyan-400 font-bold px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800">
-                  <Cloud className="w-3 h-3" /> Nuvem 100%
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono text-cyan-400 font-bold px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800">
+                  <Cloud className="w-3 h-3" /> Supabase Nuvem
                 </span>
               </h1>
               <p className="text-xs text-neutral-400 mt-0.5">
-                Gestão completa de ingredientes, carnes, grãos e descartáveis gravada sempre em nuvem
+                Ingredientes, carnes, grãos e descartáveis gravados diretamente no banco de dados Supabase
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          <button
+            type="button"
+            onClick={fetchEstoqueFromSupabase}
+            disabled={isLoading}
+            className="p-2.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 hover:text-white border border-neutral-700 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+            title="Atualizar dados da nuvem"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-amber-400' : ''}`} />
+          </button>
+
           {alertItemsCount > 0 && (
             <button
+              type="button"
               onClick={() => setApenasAlerta(!apenasAlerta)}
               className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 apenasAlerta
@@ -242,6 +488,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
           )}
 
           <button
+            type="button"
             onClick={() => setShowAddModal(true)}
             className="flex-1 md:flex-none px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
           >
@@ -267,7 +514,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {estoque
+            {items
               .filter((it) => it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo)
               .map((it) => (
                 <div
@@ -279,10 +526,10 @@ export const StockManager: React.FC<StockManagerProps> = ({
                       {it.item_nome}
                     </span>
                     <span className="text-[11px] text-red-300 font-mono">
-                      Atual: <strong>{it.quantidade_atual} {it.unidade_medida}</strong> (Mínimo: {it.estoque_minimo} {it.unidade_medida})
+                      Atual: <strong>{it.quantidade_atual} {it.unidade_medida.toUpperCase()}</strong> (Mín: {it.estoque_minimo} {it.unidade_medida.toUpperCase()})
                     </span>
                     {it.fornecedor_info && (
-                      <span className="text-[10px] text-neutral-400 block truncate">
+                      <span className="text-[10px] text-neutral-400 block truncate uppercase">
                         Origem: {it.fornecedor_info}
                       </span>
                     )}
@@ -301,7 +548,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                       type="button"
                       onClick={() => handleExcluirAlerta(it)}
                       className="px-2.5 py-1.5 bg-neutral-800 hover:bg-red-900/60 text-neutral-300 hover:text-red-200 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 transition-colors cursor-pointer"
-                      title="Excluir alerta deste insumo (define estoque mínimo como zero na nuvem)"
+                      title="Excluir alerta deste insumo (define estoque mínimo como zero no Supabase)"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-red-400" />
                       <span>Excluir Alerta</span>
@@ -319,7 +566,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
           <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
           <input
             type="text"
-            placeholder="BUSCAR INSUMO (EX: ARROZ, COSTELA, FEIJÃO, EMBALAGEM)..."
+            placeholder="BUSCAR INSUMO (EX: ARROZ, COSTELA, EMBALAGEM)..."
             value={search}
             onChange={(e) => setSearch(e.target.value.toUpperCase())}
             className="w-full pl-9 pr-3 py-2 bg-neutral-900 border border-neutral-700 rounded-xl text-xs uppercase text-white placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -358,8 +605,12 @@ export const StockManager: React.FC<StockManagerProps> = ({
       {filteredAndSortedEstoque.length === 0 ? (
         <div className="bg-neutral-850 p-8 rounded-2xl border border-neutral-800 text-center text-neutral-400 space-y-2">
           <Boxes className="w-8 h-8 text-neutral-600 mx-auto" />
-          <p className="text-xs font-bold uppercase">Nenhum insumo encontrado</p>
-          <p className="text-[11px] text-neutral-500">Tente ajustar a busca ou cadastre um novo item acima.</p>
+          <p className="text-xs font-bold uppercase">
+            {isLoading ? 'Carregando insumos do Supabase...' : 'Nenhum insumo encontrado'}
+          </p>
+          <p className="text-[11px] text-neutral-500">
+            {isLoading ? 'Por favor aguarde um instante.' : 'Tente ajustar a busca ou cadastre um novo item acima.'}
+          </p>
         </div>
       ) : (
         <>
@@ -403,14 +654,14 @@ export const StockManager: React.FC<StockManagerProps> = ({
                     <div>
                       <span className="text-[10px] text-neutral-400 uppercase block font-bold">Qtd Atual</span>
                       <span className={`text-sm font-black font-mono ${isAlert ? 'text-red-400' : 'text-white'}`}>
-                        {it.quantidade_atual} {it.unidade_medida}
+                        {it.quantidade_atual} {it.unidade_medida.toUpperCase()}
                       </span>
                     </div>
 
                     <div className="text-right">
                       <span className="text-[10px] text-neutral-400 uppercase block font-bold">Estoque Mínimo</span>
                       <span className="text-xs font-bold font-mono text-neutral-300">
-                        {it.estoque_minimo} {it.unidade_medida}
+                        {it.estoque_minimo} {it.unidade_medida.toUpperCase()}
                       </span>
                     </div>
                   </div>
@@ -460,7 +711,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                         type="button"
                         onClick={() => setDeletingItem(it)}
                         className="p-1.5 bg-neutral-800 hover:bg-red-950/80 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800 rounded-lg"
-                        title="Excluir insumo da nuvem"
+                        title="Excluir insumo do Supabase"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -509,14 +760,14 @@ export const StockManager: React.FC<StockManagerProps> = ({
                         {/* Current Quantity */}
                         <td className="p-3.5 text-right tabular-nums">
                           <span className={`text-sm font-black font-mono ${isAlert ? 'text-red-400' : 'text-white'}`}>
-                            {it.quantidade_atual} {it.unidade_medida}
+                            {it.quantidade_atual} {it.unidade_medida.toUpperCase()}
                           </span>
                         </td>
 
                         {/* Min threshold */}
                         <td className="p-3.5 text-right tabular-nums text-neutral-400 font-mono">
                           <span>
-                            {it.estoque_minimo} {it.unidade_medida}
+                            {it.estoque_minimo} {it.unidade_medida.toUpperCase()}
                           </span>
                         </td>
 
@@ -547,7 +798,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                             <button
                               type="button"
                               onClick={() => handleQuickDelta(it, -1)}
-                              className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-700 active:scale-95 flex items-center justify-center text-neutral-300 font-bold border border-neutral-700 cursor-pointer"
+                              className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-750 active:scale-95 flex items-center justify-center text-neutral-300 font-bold border border-neutral-700 cursor-pointer"
                               title="-1 no estoque"
                             >
                               <Minus className="w-3 h-3" />
@@ -555,7 +806,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                             <button
                               type="button"
                               onClick={() => handleQuickDelta(it, 1)}
-                              className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-700 active:scale-95 flex items-center justify-center text-neutral-300 font-bold border border-neutral-700 cursor-pointer"
+                              className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-750 active:scale-95 flex items-center justify-center text-neutral-300 font-bold border border-neutral-700 cursor-pointer"
                               title="+1 no estoque"
                             >
                               <Plus className="w-3 h-3" />
@@ -586,7 +837,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                               type="button"
                               onClick={() => setDeletingItem(it)}
                               className="p-1.5 bg-neutral-800 hover:bg-red-950/80 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800 rounded-lg cursor-pointer"
-                              title="Excluir insumo na nuvem"
+                              title="Excluir insumo do Supabase"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -616,10 +867,10 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-white uppercase">
-                    Cadastrar Novo Insumo na Nuvem
+                    Cadastrar Insumo no Supabase
                   </h3>
-                  <span className="text-[10px] text-neutral-400 font-mono">
-                    PERSISTÊNCIA AUTOMÁTICA EM NUVEM
+                  <span className="text-[10px] text-cyan-400 font-mono">
+                    PERSISTÊNCIA 100% NUVEM DIRETA
                   </span>
                 </div>
               </div>
@@ -632,13 +883,19 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </button>
             </div>
 
-            <UpperInput
-              label="NOME DO INSUMO: *"
-              value={novoNome}
-              onChange={setNovoNome}
-              placeholder="EX: LINGUIÇA CAIPIRA ARTESANAL (KG)"
-              required
-            />
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                NOME DO INSUMO: * (EM MAIÚSCULAS)
+              </label>
+              <input
+                type="text"
+                required
+                value={novoNome}
+                onChange={(e) => setNovoNome(e.target.value.toUpperCase())}
+                placeholder="EX: LINGUIÇA CAIPIRA ARTESANAL (KG)"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
@@ -661,8 +918,8 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </label>
                 <select
                   value={novaUnidade}
-                  onChange={(e) => setNovaUnidade(e.target.value)}
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  onChange={(e) => setNovaUnidade(e.target.value.toLowerCase())}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
                 >
                   <option value="kg">KG (QUILOGRAMA)</option>
                   <option value="un">UN (UNIDADE)</option>
@@ -691,12 +948,18 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </div>
             </div>
 
-            <UpperInput
-              label="FORNECEDOR / ORIGEM (OPCIONAL):"
-              value={novoFornecedor}
-              onChange={setNovoFornecedor}
-              placeholder="EX: CEASA PIRACICABA / FRIGORÍFICO REGIONAL"
-            />
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                FORNECEDOR / ORIGEM (OPCIONAL): (EM MAIÚSCULAS)
+              </label>
+              <input
+                type="text"
+                value={novoFornecedor}
+                onChange={(e) => setNovoFornecedor(e.target.value.toUpperCase())}
+                placeholder="EX: CEASA PIRACICABA / FRIGORÍFICO REGIONAL"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
               <button
@@ -708,10 +971,11 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-md cursor-pointer"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
               >
                 <Cloud className="w-4 h-4" />
-                <span>Gravar Insumo na Nuvem</span>
+                <span>{isSubmitting ? 'Gravando no Supabase...' : 'Gravar no Supabase'}</span>
               </button>
             </div>
           </form>
@@ -732,10 +996,10 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-white uppercase">
-                    Alterar Cadastro de Insumo
+                    Alterar Insumo no Supabase
                   </h3>
                   <span className="text-[10px] text-cyan-400 font-mono">
-                    ID #{editingItem.id} · ATUALIZAÇÃO EM NUVEM
+                    ID #{editingItem.id} · ATUALIZAÇÃO DIRETA NO BANCO
                   </span>
                 </div>
               </div>
@@ -748,13 +1012,19 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </button>
             </div>
 
-            <UpperInput
-              label="NOME DO INSUMO: *"
-              value={editNome}
-              onChange={setEditNome}
-              placeholder="NOME DO INSUMO"
-              required
-            />
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                NOME DO INSUMO: * (EM MAIÚSCULAS)
+              </label>
+              <input
+                type="text"
+                required
+                value={editNome}
+                onChange={(e) => setEditNome(e.target.value.toUpperCase())}
+                placeholder="NOME DO INSUMO"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
@@ -777,8 +1047,8 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </label>
                 <select
                   value={editUnidade}
-                  onChange={(e) => setEditUnidade(e.target.value)}
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  onChange={(e) => setEditUnidade(e.target.value.toLowerCase())}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
                 >
                   <option value="kg">KG (QUILOGRAMA)</option>
                   <option value="un">UN (UNIDADE)</option>
@@ -807,12 +1077,18 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </div>
             </div>
 
-            <UpperInput
-              label="FORNECEDOR / ORIGEM (OPCIONAL):"
-              value={editFornecedor}
-              onChange={setEditFornecedor}
-              placeholder="EX: CEASA PIRACICABA"
-            />
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                FORNECEDOR / ORIGEM (OPCIONAL): (EM MAIÚSCULAS)
+              </label>
+              <input
+                type="text"
+                value={editFornecedor}
+                onChange={(e) => setEditFornecedor(e.target.value.toUpperCase())}
+                placeholder="EX: CEASA PIRACICABA"
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
               <button
@@ -824,10 +1100,11 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-md cursor-pointer transition-colors"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-md cursor-pointer transition-colors disabled:opacity-50"
               >
                 <CheckCircle className="w-4 h-4" />
-                <span>Salvar Alterações na Nuvem</span>
+                <span>{isSubmitting ? 'Salvando...' : 'Salvar no Supabase'}</span>
               </button>
             </div>
           </form>
@@ -844,10 +1121,10 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-black text-white uppercase">
-                  Excluir Insumo da Nuvem?
+                  Excluir Insumo do Supabase?
                 </h3>
                 <span className="text-[10px] text-red-400 font-mono">
-                  AÇÃO PERMANENTE NO BANCO DE DADOS
+                  EXCLUSÃO DIRETA NA TABELA REMOTA
                 </span>
               </div>
             </div>
@@ -857,12 +1134,12 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 {deletingItem.item_nome}
               </span>
               <span className="text-[11px] text-neutral-400 font-mono block">
-                Saldo atual: {deletingItem.quantidade_atual} {deletingItem.unidade_medida} · Mínimo: {deletingItem.estoque_minimo} {deletingItem.unidade_medida}
+                Saldo atual: {deletingItem.quantidade_atual} {deletingItem.unidade_medida.toUpperCase()} · Mínimo: {deletingItem.estoque_minimo} {deletingItem.unidade_medida.toUpperCase()}
               </span>
             </div>
 
             <p className="text-xs text-neutral-300">
-              Tem certeza que deseja excluir este insumo? Ele será removido permanentemente do banco em nuvem e de todas as telas.
+              Deseja realmente excluir este insumo? A linha correspondente na tabela <code className="text-amber-400">estoque</code> do Supabase será removida permanentemente.
             </p>
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
@@ -876,10 +1153,11 @@ export const StockManager: React.FC<StockManagerProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-md cursor-pointer transition-colors"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-md cursor-pointer transition-colors disabled:opacity-50"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>Sim, Excluir da Nuvem</span>
+                <span>{isSubmitting ? 'Excluindo...' : 'Sim, Excluir no Supabase'}</span>
               </button>
             </div>
           </div>
@@ -897,7 +1175,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
               <div className="flex items-center gap-2">
                 <Sliders className="w-5 h-5 text-amber-500" />
                 <h3 className="text-sm font-black text-white uppercase">
-                  Ajuste Rápido de Estoque
+                  Ajuste Rápido de Saldo (Supabase)
                 </h3>
               </div>
               <button
@@ -914,14 +1192,14 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 {adjustingItem.item_nome}
               </span>
               <span className="text-[11px] text-neutral-400 block font-mono">
-                Unidade: {adjustingItem.unidade_medida.toUpperCase()} · Mínimo Cadastrado: {adjustingItem.estoque_minimo} {adjustingItem.unidade_medida}
+                Unidade: {adjustingItem.unidade_medida.toUpperCase()} · Mínimo Cadastrado: {adjustingItem.estoque_minimo} {adjustingItem.unidade_medida.toUpperCase()}
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-bold text-neutral-300 block mb-1">
-                  NOVA QUANTIDADE ({adjustingItem.unidade_medida}): *
+                  NOVA QUANTIDADE ({adjustingItem.unidade_medida.toUpperCase()}): *
                 </label>
                 <input
                   type="number"
@@ -980,10 +1258,11 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold uppercase transition-colors cursor-pointer flex items-center gap-1.5"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold uppercase transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               >
                 <Cloud className="w-3.5 h-3.5" />
-                <span>Salvar Ajuste na Nuvem</span>
+                <span>{isSubmitting ? 'Salvando...' : 'Salvar no Supabase'}</span>
               </button>
             </div>
           </form>
