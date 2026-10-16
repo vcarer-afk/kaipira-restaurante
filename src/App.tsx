@@ -17,6 +17,7 @@ import {
   CardapioDiarioConfig,
   FormaPagamento,
   FormaPagamentoConfig,
+  MovimentacaoCaixa,
   Pagamento,
 } from './types';
 import { Header, ActiveTab } from './components/Header';
@@ -89,6 +90,9 @@ import {
   fetchFormasPagamentoSupabase,
   salvarFormaPagamentoSupabase,
   excluirFormaPagamentoSupabase,
+  fetchPedidosSupabase,
+  registrarMultiplasMovimentacoesCaixaSupabase,
+  registrarPagamentosMesaSupabase,
 } from './services/supabaseClient';
 
 export default function App() {
@@ -173,8 +177,8 @@ export default function App() {
       await fetchCloudConfiguracoes();
 
       // Query Supabase tables directly (100% cloud, no static /api 405 error)
-      const [pedidosRes, mesasRes, estoqueRes, caixaRes, reservasRes, clientesRes] = await Promise.allSettled([
-        supabase.from('pedidos').select('*').order('criado_em', { ascending: false }),
+      const [pedidosData, mesasRes, estoqueRes, caixaRes, reservasRes, clientesRes] = await Promise.allSettled([
+        fetchPedidosSupabase(),
         supabase.from('mesas').select('*'),
         supabase.from('estoque').select('*').order('id', { ascending: true }),
         supabase.from('caixa_diario').select('*').order('id', { ascending: false }).limit(1),
@@ -182,10 +186,8 @@ export default function App() {
         supabase.from('clientes').select('*').order('nome', { ascending: true }),
       ]);
 
-      if (pedidosRes.status === 'fulfilled') {
-        const cloudPeds = (pedidosRes.value.data as Pedido[]) || [];
-        setPedidos(cloudPeds);
-      }
+      const cloudPeds = pedidosData.status === 'fulfilled' && pedidosData.value ? pedidosData.value : [];
+      setPedidos(cloudPeds);
 
       if (mesasRes.status === 'fulfilled' && mesasRes.value.data && mesasRes.value.data.length > 0) {
         const rawMesas = mesasRes.value.data as any[];
@@ -561,18 +563,24 @@ export default function App() {
       }
     }
 
-    // 4. Registra movimentação no faturamento do caixa se caixa estiver aberto
-    if (caixa && caixa.status === 'aberto' && pagamentos) {
-      for (const pg of pagamentos) {
-        if (pg.valor > 0) {
-          await handleMovimentacaoCaixa(
-            'entrada_pedido',
-            pg.forma,
-            pg.valor,
-            `FECHAMENTO MESA #${numero}`
-          );
-        }
+    // 4. Registra movimentações no faturamento do caixa se caixa estiver aberto (Dinheiro, PIX, etc.)
+    if (caixa && caixa.status === 'aberto' && pagamentos && pagamentos.length > 0) {
+      const validPgs = pagamentos.filter((pg) => pg.valor > 0);
+      if (validPgs.length > 0) {
+        await handleRegistrarMultiplasMovimentacoesCaixa(
+          validPgs.map((pg) => ({
+            tipo: 'entrada_pedido' as const,
+            forma: pg.forma,
+            valor: pg.valor,
+            descricao: `FECHAMENTO MESA #${numero}`,
+          }))
+        );
       }
+    }
+
+    // Persiste pagamentos da mesa no banco de dados Supabase
+    if (pedidosIds && pedidosIds.length > 0 && pagamentos && pagamentos.length > 0) {
+      await registrarPagamentosMesaSupabase(pedidosIds, pagamentos);
     }
   };
 
@@ -792,20 +800,46 @@ export default function App() {
     setCaixa(fechado);
   };
 
+  const handleRegistrarMultiplasMovimentacoesCaixa = async (
+    movsParaRegistrar: Array<{
+      tipo: 'entrada_pedido' | 'suprimento' | 'sangria';
+      forma: FormaPagamento;
+      valor: number;
+      descricao: string;
+    }>
+  ) => {
+    if (!movsParaRegistrar || movsParaRegistrar.length === 0) return;
+
+    const baseTimestamp = Date.now();
+    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const novasMovs: MovimentacaoCaixa[] = movsParaRegistrar.map((m, idx) => ({
+      id: baseTimestamp + idx,
+      tipo: m.tipo,
+      forma: String(m.forma || 'outro').toLowerCase().trim(),
+      valor: Number(m.valor) || 0,
+      descricao: m.descricao.toUpperCase().trim(),
+      hora,
+    }));
+
+    // Atualização atômica do estado React para garantir que todas as formas (dinheiro, pix, etc.) fiquem salvas
+    setCaixa((prevCaixa) => ({
+      ...prevCaixa,
+      movimentacoes: [...(prevCaixa.movimentacoes || []), ...novasMovs],
+    }));
+
+    // Sincroniza em nuvem no Supabase
+    await registrarMultiplasMovimentacoesCaixaSupabase(caixa, movsParaRegistrar);
+  };
+
   const handleMovimentacaoCaixa = async (
     tipo: 'entrada_pedido' | 'suprimento' | 'sangria',
     forma: any,
     valor: number,
     descricao: string
   ) => {
-    const atualizado = await registrarMovimentacaoCaixaSupabase(
-      caixa,
-      tipo,
-      forma,
-      valor,
-      descricao
-    );
-    setCaixa(atualizado);
+    await handleRegistrarMultiplasMovimentacoesCaixa([
+      { tipo, forma, valor, descricao },
+    ]);
   };
 
   // Formas de Pagamento operations via Supabase (100% Nuvem)
@@ -968,15 +1002,16 @@ export default function App() {
               setPedidos((prev) => [novo, ...prev]);
               // Quando pedido tiver pagamentos imediatos (balcão ou delivery) e o caixa estiver aberto, lança no faturamento do dia
               if (caixa && caixa.status === 'aberto' && novo.pagamentos && novo.pagamentos.length > 0) {
-                for (const pg of novo.pagamentos) {
-                  if (pg.valor > 0) {
-                    await handleMovimentacaoCaixa(
-                      'entrada_pedido',
-                      pg.forma,
-                      pg.valor,
-                      `PEDIDO #${novo.id} (${novo.tipo.toUpperCase()})`
-                    );
-                  }
+                const validPgs = novo.pagamentos.filter((pg) => pg.valor > 0);
+                if (validPgs.length > 0) {
+                  await handleRegistrarMultiplasMovimentacoesCaixa(
+                    validPgs.map((pg) => ({
+                      tipo: 'entrada_pedido' as const,
+                      forma: pg.forma,
+                      valor: pg.valor,
+                      descricao: `PEDIDO #${novo.id} (${novo.tipo.toUpperCase()})`,
+                    }))
+                  );
                 }
               }
             }}

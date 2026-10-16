@@ -239,8 +239,22 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
         setIsProcessingClose(false);
         return;
       }
-      pagamentosFinal = pagamentosMultiplos.map((p) => ({ forma: p.forma, valor: p.valor }));
+      pagamentosFinal = pagamentosMultiplos.map((p) => ({
+        forma: String(p.forma).toLowerCase().trim(),
+        valor: Number(p.valor) || 0,
+      }));
     } else if (paymentMode === 'dinheiro') {
+      if (dinheiroEntregueNum > 0 && dinheiroEntregueNum < mesaConsumoTotal - 0.05) {
+        alert(
+          `O VALOR RECEBIDO EM DINHEIRO (${formatBRL(
+            dinheiroEntregueNum
+          )}) É INFERIOR AO TOTAL DA CONTA (${formatBRL(
+            mesaConsumoTotal
+          )}). CLIQUE EM "COMPLETAR NO PIX" OU USE "MÚLTIPLOS / COMBINAÇÃO" PARA DIVIDIR A FORMA DE PAGAMENTO.`
+        );
+        setIsProcessingClose(false);
+        return;
+      }
       pagamentosFinal = [{ forma: 'dinheiro', valor: mesaConsumoTotal }];
     } else if (paymentMode === 'mensalista') {
       if (!selectedMensalistaId) {
@@ -250,7 +264,9 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
       }
       pagamentosFinal = [{ forma: 'mensalista', valor: mesaConsumoTotal }];
     } else {
-      pagamentosFinal = [{ forma: paymentMode, valor: mesaConsumoTotal }];
+      pagamentosFinal = [
+        { forma: String(paymentMode).toLowerCase().trim(), valor: mesaConsumoTotal },
+      ];
     }
 
     const pedidosIds = ordersToPay.map((o) => o.id);
@@ -1165,6 +1181,36 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                       </div>
                     </div>
 
+                    {/* Alerta inteligente caso o valor em dinheiro seja parcial */}
+                    {dinheiroEntregueNum > 0 && dinheiroEntregueNum < mesaConsumoTotal && (
+                      <div className="p-3 rounded-xl bg-amber-950/70 border border-amber-800/80 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+                        <div>
+                          <span className="font-black text-amber-300 uppercase block">
+                            Valor Parcial em Dinheiro: {formatBRL(dinheiroEntregueNum)}
+                          </span>
+                          <span className="text-[11px] text-neutral-300">
+                            Falta pagar <strong>{formatBRL(mesaConsumoTotal - dinheiroEntregueNum)}</strong>. Deseja pagar o restante em PIX?
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const resto = Math.round((mesaConsumoTotal - dinheiroEntregueNum) * 100) / 100;
+                              setPaymentMode('multiplo');
+                              setPagamentosMultiplos([
+                                { id: 'pg-' + Date.now(), forma: 'dinheiro', valor: dinheiroEntregueNum },
+                                { id: 'pg-' + (Date.now() + 1), forma: 'pix', valor: resto },
+                              ]);
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black uppercase transition-all shadow-sm cursor-pointer"
+                          >
+                            Dividir: Dinheiro + PIX
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Quick suggestion buttons for cash */}
                     <div className="flex items-center gap-1.5 pt-1">
                       <span className="text-[11px] text-neutral-500 font-bold">Valores rápidos:</span>
@@ -1237,12 +1283,15 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                       <select
                         value={novaFormaMultiplo}
                         onChange={(e) => setNovaFormaMultiplo(e.target.value as FormaPagamento)}
-                        className="px-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-200 rounded-lg text-xs font-bold"
+                        className="px-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-200 rounded-lg text-xs font-bold uppercase"
                       >
-                        <option value="pix">PIX</option>
-                        <option value="cartao_credito">Cartão Crédito</option>
-                        <option value="cartao_debito">Cartão Débito</option>
-                        <option value="dinheiro">Dinheiro</option>
+                        {formasPagamento
+                          .filter((fp) => fp.ativo !== false && fp.id !== 'multiplo')
+                          .map((fp) => (
+                            <option key={fp.id} value={fp.id}>
+                              {fp.nome}
+                            </option>
+                          ))}
                       </select>
 
                       <div className="relative flex-1">

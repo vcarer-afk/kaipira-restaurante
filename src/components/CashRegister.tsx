@@ -123,7 +123,21 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     let suprimentosDinheiro = 0;
 
     movs.forEach((m) => {
-      const formaKey = (m.forma || 'outro').toLowerCase();
+      const rawForma = String(m.forma || 'outro').toLowerCase().trim();
+      const formaKey =
+        rawForma === 'pix' || rawForma.includes('pix')
+          ? 'pix'
+          : rawForma === 'dinheiro' || rawForma.includes('dinheiro') || rawForma.includes('espécie') || rawForma.includes('especie')
+          ? 'dinheiro'
+          : rawForma === 'cartao_debito' || rawForma.includes('debito') || rawForma.includes('débito')
+          ? 'cartao_debito'
+          : rawForma === 'cartao_credito' || rawForma.includes('credito') || rawForma.includes('crédito')
+          ? 'cartao_credito'
+          : rawForma === 'vale_refeicao' || rawForma.includes('vale') || rawForma.includes('vr')
+          ? 'vale_refeicao'
+          : rawForma === 'mensalista' || rawForma.includes('mensalista')
+          ? 'mensalista'
+          : rawForma;
 
       if (m.tipo === 'entrada_pedido') {
         totalEntradasGerais += m.valor;
@@ -133,7 +147,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
             formaKey === 'dinheiro'
               ? 'DINHEIRO (ESPÉCIE)'
               : formaKey === 'pix'
-              ? 'PIX (BANCO)'
+              ? 'PIX (CHAVE / QR CODE)'
               : formaKey === 'cartao_debito'
               ? 'CARTÃO DE DÉBITO'
               : formaKey === 'cartao_credito'

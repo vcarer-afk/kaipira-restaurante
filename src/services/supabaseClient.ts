@@ -20,6 +20,8 @@ import {
   Categoria,
   BairroTaxa,
   FormaPagamentoConfig,
+  ItemPedido,
+  Pagamento,
 } from '../types';
 import {
   INITIAL_CONFIGURACOES,
@@ -188,63 +190,229 @@ export async function testarConexaoSupabase(
 }
 
 /**
- * Pedidos operations via Supabase
+ * Pedidos operations via Supabase (Estrutura Relacional estrita: 'pedidos' -> 'itens_pedido' -> 'pagamentos')
  */
-export async function salvarPedidoSupabase(
-  pedido: any
-): Promise<Pedido> {
-  const idGerado = pedido.id || Date.now();
-  const codigoSenha = pedido.codigo_senha || Math.floor(100 + Math.random() * 900);
+export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
+  const idGeradoFallback = pedido.id || Date.now();
+  const codigoSenhaFallback = pedido.codigo_senha || Math.floor(100 + Math.random() * 900);
   const now = new Date().toISOString();
 
-  const novoPedidoCompleto: Pedido = {
-    id: idGerado,
-    codigo_senha: codigoSenha,
+  // Validador de UUID para cliente_id (evita erro de sintaxe UUID no PostgreSQL caso venha string customizada)
+  const isValidUUID = (id?: string) =>
+    typeof id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+
+  const clienteIdVal = isValidUUID(pedido.cliente_id) ? pedido.cliente_id : null;
+
+  // 1. Inserir o pedido: dados gerais na tabela 'pedidos' estritamente SEM coluna 'itens' nem 'pagamentos'
+  const pedidoPayload: Record<string, any> = {
     tipo: pedido.tipo,
     status: pedido.status || 'pendente',
-    cliente_id: pedido.cliente_id,
-    cliente: pedido.cliente,
-    mesa_id: pedido.mesa_id,
+    mesa_id: pedido.mesa_id ? Number(pedido.mesa_id) : null,
+    cliente_id: clienteIdVal,
     precisa_troco: !!pedido.precisa_troco,
-    troco_para: pedido.troco_para,
-    motoboy_tipo: pedido.motoboy_tipo,
-    entregador_nome: pedido.entregador_nome,
-    valor_total: pedido.valor_total,
-    taxa_entrega: pedido.taxa_entrega || 0,
-    itens: pedido.itens || [],
-    pagamentos: pedido.pagamentos || [],
+    troco_para: pedido.troco_para ? Number(pedido.troco_para) : null,
+    motoboy_tipo: pedido.motoboy_tipo || null,
+    valor_total: Number(pedido.valor_total) || 0,
+    taxa_entrega: Number(pedido.taxa_entrega) || 0,
     criado_em: pedido.criado_em || now,
     atualizado_em: now,
   };
 
-  try {
-    const payload = {
-      id: idGerado,
-      codigo_senha: codigoSenha,
-      tipo: pedido.tipo,
-      status: novoPedidoCompleto.status,
-      cliente_id: pedido.cliente_id || null,
-      mesa_id: pedido.mesa_id || null,
-      precisa_troco: !!pedido.precisa_troco,
-      troco_para: pedido.troco_para || null,
-      motoboy_tipo: pedido.motoboy_tipo || null,
-      valor_total: pedido.valor_total,
-      taxa_entrega: pedido.taxa_entrega || 0,
-      itens: pedido.itens,
-      pagamentos: pedido.pagamentos,
-      criado_em: novoPedidoCompleto.criado_em,
-      atualizado_em: now,
-    };
-
-    const { error } = await supabase.from('pedidos').insert(payload);
-    if (error) {
-      console.warn('Erro ao inserir pedido no Supabase (operando com fallback em nuvem):', error.message);
-    }
-  } catch (err) {
-    console.warn('Exceção ao salvar pedido no Supabase:', err);
+  if (pedido.codigo_senha) {
+    pedidoPayload.codigo_senha = Number(pedido.codigo_senha);
   }
 
+  let pedidoIdGerado = idGeradoFallback;
+  let codigoSenhaGerado = codigoSenhaFallback;
+
+  try {
+    let { data, error } = await supabase
+      .from('pedidos')
+      .insert(pedidoPayload)
+      .select();
+
+    if (error) {
+      console.warn('Tentativa 1 de insert em pedidos falhou:', error.message);
+      // Se falhou por causa de codigo_senha
+      if (error.message?.includes('codigo_senha')) {
+        delete pedidoPayload.codigo_senha;
+        const retry = await supabase.from('pedidos').insert(pedidoPayload).select();
+        data = retry.data;
+        error = retry.error;
+      }
+    }
+
+    if (!error && data && data.length > 0) {
+      pedidoIdGerado = Number(data[0].id) || idGeradoFallback;
+      codigoSenhaGerado = Number(data[0].codigo_senha) || codigoSenhaFallback;
+    }
+  } catch (err) {
+    console.warn('Exceção ao inserir pedido no Supabase:', err);
+  }
+
+  // 2. Inserir os itens: insert em lote na tabela 'itens_pedido' com pedido_id
+  const itensFormatados: ItemPedido[] = [];
+  if (pedido.itens && pedido.itens.length > 0) {
+    const itensPayload = pedido.itens.map((it: any, index: number) => ({
+      pedido_id: pedidoIdGerado,
+      produto_id: it.produto_id ? Number(it.produto_id) : null,
+      quantidade: Number(it.quantidade) || 1,
+      preco_unitario: Number(it.preco_unitario) || 0,
+      observacao: it.observacao ? String(it.observacao).toUpperCase().trim() : null,
+      opcionais_selecionados: it.opcionais_selecionados || null,
+    }));
+
+    try {
+      const { data: itensInserted, error: itensError } = await supabase
+        .from('itens_pedido')
+        .insert(itensPayload)
+        .select();
+
+      if (itensError) {
+        console.warn('Insert em lote na tabela itens_pedido falhou, tentando sequencial:', itensError.message);
+        for (const itemP of itensPayload) {
+          try {
+            const { data: singleItem } = await supabase.from('itens_pedido').insert(itemP).select();
+            if (singleItem && singleItem[0]) {
+              itensFormatados.push(singleItem[0] as ItemPedido);
+            }
+          } catch {}
+        }
+      } else if (itensInserted && itensInserted.length > 0) {
+        itensFormatados.push(...(itensInserted as ItemPedido[]));
+      }
+    } catch (err) {
+      console.warn('Erro ao inserir itens_pedido no Supabase:', err);
+    }
+  }
+
+  // 3. Inserir pagamentos se houver na tabela 'pagamentos'
+  const pagamentosFormatados: Pagamento[] = [];
+  if (pedido.pagamentos && pedido.pagamentos.length > 0) {
+    const pagsPayload = pedido.pagamentos.map((pg: any) => ({
+      pedido_id: pedidoIdGerado,
+      forma: String(pg.forma || 'dinheiro').toLowerCase().trim(),
+      valor: Number(pg.valor) || 0,
+    }));
+
+    try {
+      const { data: pagsInserted } = await supabase
+        .from('pagamentos')
+        .insert(pagsPayload)
+        .select();
+
+      if (pagsInserted && pagsInserted.length > 0) {
+        pagamentosFormatados.push(...(pagsInserted as Pagamento[]));
+      }
+    } catch (pgErr) {
+      console.warn('Aviso ao registrar pagamento na tabela pagamentos:', pgErr);
+    }
+  }
+
+  const novoPedidoCompleto: Pedido = {
+    id: pedidoIdGerado,
+    codigo_senha: codigoSenhaGerado,
+    tipo: pedido.tipo,
+    status: pedido.status || 'pendente',
+    cliente_id: pedido.cliente_id,
+    cliente: pedido.cliente,
+    mesa_id: pedido.mesa_id ? Number(pedido.mesa_id) : undefined,
+    precisa_troco: !!pedido.precisa_troco,
+    troco_para: pedido.troco_para,
+    motoboy_tipo: pedido.motoboy_tipo,
+    entregador_nome: pedido.entregador_nome,
+    valor_total: Number(pedido.valor_total) || 0,
+    taxa_entrega: Number(pedido.taxa_entrega) || 0,
+    itens: itensFormatados.length > 0 ? itensFormatados : (pedido.itens || []),
+    pagamentos: pagamentosFormatados.length > 0 ? pagamentosFormatados : (pedido.pagamentos || []),
+    criado_em: pedidoPayload.criado_em,
+    atualizado_em: now,
+  };
+
   return novoPedidoCompleto;
+}
+
+export async function fetchPedidosSupabase(): Promise<Pedido[]> {
+  try {
+    // 1. Tenta carregar pedidos com relacionamento dos itens e pagamentos
+    const { data: pedidosData, error } = await supabase
+      .from('pedidos')
+      .select('*, itens:itens_pedido(*), pagamentos:pagamentos(*)')
+      .order('criado_em', { ascending: false });
+
+    if (!error && pedidosData && pedidosData.length > 0) {
+      return pedidosData.map((p: any) => ({
+        id: Number(p.id),
+        codigo_senha: Number(p.codigo_senha || p.id),
+        tipo: p.tipo,
+        status: p.status,
+        cliente_id: p.cliente_id,
+        cliente: p.cliente,
+        mesa_id: p.mesa_id ? Number(p.mesa_id) : undefined,
+        precisa_troco: !!p.precisa_troco,
+        troco_para: p.troco_para ? Number(p.troco_para) : undefined,
+        motoboy_tipo: p.motoboy_tipo,
+        entregador_nome: p.entregador_nome,
+        valor_total: Number(p.valor_total) || 0,
+        taxa_entrega: Number(p.taxa_entrega) || 0,
+        itens: Array.isArray(p.itens) ? p.itens : [],
+        pagamentos: Array.isArray(p.pagamentos) ? p.pagamentos : [],
+        criado_em: p.criado_em || new Date().toISOString(),
+        atualizado_em: p.atualizado_em || new Date().toISOString(),
+      }));
+    }
+
+    // 2. Fallback: buscar pedidos e itens_pedido separadamente
+    const { data: simplePeds, error: simpleError } = await supabase
+      .from('pedidos')
+      .select('*')
+      .order('criado_em', { ascending: false });
+
+    if (!simpleError && simplePeds && simplePeds.length > 0) {
+      let allItens: any[] = [];
+      let allPagamentos: any[] = [];
+      try {
+        const [itensRes, pagRes] = await Promise.allSettled([
+          supabase.from('itens_pedido').select('*'),
+          supabase.from('pagamentos').select('*'),
+        ]);
+        if (itensRes.status === 'fulfilled' && itensRes.value.data) {
+          allItens = itensRes.value.data;
+        }
+        if (pagRes.status === 'fulfilled' && pagRes.value.data) {
+          allPagamentos = pagRes.value.data;
+        }
+      } catch {}
+
+      return simplePeds.map((p: any) => {
+        const pedItens = allItens.filter((it: any) => it.pedido_id === p.id);
+        const pedPags = allPagamentos.filter((pg: any) => pg.pedido_id === p.id);
+        return {
+          id: Number(p.id),
+          codigo_senha: Number(p.codigo_senha || p.id),
+          tipo: p.tipo,
+          status: p.status,
+          cliente_id: p.cliente_id,
+          cliente: p.cliente,
+          mesa_id: p.mesa_id ? Number(p.mesa_id) : undefined,
+          precisa_troco: !!p.precisa_troco,
+          troco_para: p.troco_para ? Number(p.troco_para) : undefined,
+          motoboy_tipo: p.motoboy_tipo,
+          entregador_nome: p.entregador_nome,
+          valor_total: Number(p.valor_total) || 0,
+          taxa_entrega: Number(p.taxa_entrega) || 0,
+          itens: pedItens.length > 0 ? pedItens : (Array.isArray(p.itens) ? p.itens : []),
+          pagamentos: pedPags.length > 0 ? pedPags : (Array.isArray(p.pagamentos) ? p.pagamentos : []),
+          criado_em: p.criado_em || new Date().toISOString(),
+          atualizado_em: p.atualizado_em || new Date().toISOString(),
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('Erro ao buscar pedidos no Supabase:', err);
+  }
+  return [];
 }
 
 export async function atualizarStatusPedidoSupabase(
@@ -647,25 +815,32 @@ export async function fecharCaixaSupabase(
   return fechado;
 }
 
-export async function registrarMovimentacaoCaixaSupabase(
+export async function registrarMultiplasMovimentacoesCaixaSupabase(
   caixaAtual: CaixaDiario,
-  tipo: 'entrada_pedido' | 'suprimento' | 'sangria',
-  forma: FormaPagamento,
-  valor: number,
-  descricao: string
+  movsNovas: Array<{
+    tipo: 'entrada_pedido' | 'suprimento' | 'sangria';
+    forma: FormaPagamento;
+    valor: number;
+    descricao: string;
+  }>
 ): Promise<CaixaDiario> {
-  const novaMov: MovimentacaoCaixa = {
-    id: Date.now(),
-    tipo,
-    forma,
-    valor,
-    descricao: descricao.toUpperCase(),
-    hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-  };
+  if (!movsNovas || movsNovas.length === 0) return caixaAtual;
+
+  const baseTimestamp = Date.now();
+  const horaAtual = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const formatadas: MovimentacaoCaixa[] = movsNovas.map((m, idx) => ({
+    id: baseTimestamp + idx,
+    tipo: m.tipo,
+    forma: String(m.forma || 'outro').toLowerCase().trim(),
+    valor: Number(m.valor) || 0,
+    descricao: m.descricao.toUpperCase().trim(),
+    hora: horaAtual,
+  }));
 
   const caixaAtualizado: CaixaDiario = {
     ...caixaAtual,
-    movimentacoes: [...caixaAtual.movimentacoes, novaMov],
+    movimentacoes: [...(caixaAtual.movimentacoes || []), ...formatadas],
   };
 
   try {
@@ -677,12 +852,15 @@ export async function registrarMovimentacaoCaixaSupabase(
 
     const existingRow = rows && rows.length > 0 ? rows[0] : null;
     const baseObs = existingRow?.observacoes || caixaAtual.observacoes || '';
-    const obsAtualizada = `${baseObs ? baseObs + ' | ' : ''}${tipo.toUpperCase()}: ${formatBRL(valor)} (${forma.toUpperCase()})`;
+    const resumoNovas = formatadas
+      .map((n) => `${n.tipo.toUpperCase()}: ${n.valor.toFixed(2)} (${n.forma.toUpperCase()})`)
+      .join(' | ');
+    const obsAtualizada = `${baseObs ? baseObs + ' | ' : ''}${resumoNovas}`.slice(0, 500);
 
     const payload: Record<string, any> = {
       data_caixa: existingRow?.data_caixa || caixaAtual.data_caixa || new Date().toISOString().split('T')[0],
       status: caixaAtual.status || 'aberto',
-      observacoes: obsAtualizada.slice(0, 500),
+      observacoes: obsAtualizada,
     };
 
     if (existingRow && existingRow.id) {
@@ -691,7 +869,6 @@ export async function registrarMovimentacaoCaixaSupabase(
       payload.id = caixaAtual.id;
     }
 
-    // Usa upsert seguro
     const { error } = await supabase
       .from('caixa_diario')
       .upsert(payload, payload.id ? { onConflict: 'id' } : undefined);
@@ -701,10 +878,41 @@ export async function registrarMovimentacaoCaixaSupabase(
       await supabase.from('caixa_diario').upsert(payload, { onConflict: 'data_caixa' });
     }
   } catch (err) {
-    console.warn('Erro ao sincronizar movimentação de caixa no Supabase:', err);
+    console.warn('Erro ao sincronizar múltiplas movimentações de caixa no Supabase:', err);
   }
 
   return caixaAtualizado;
+}
+
+export async function registrarMovimentacaoCaixaSupabase(
+  caixaAtual: CaixaDiario,
+  tipo: 'entrada_pedido' | 'suprimento' | 'sangria',
+  forma: FormaPagamento,
+  valor: number,
+  descricao: string
+): Promise<CaixaDiario> {
+  return registrarMultiplasMovimentacoesCaixaSupabase(caixaAtual, [
+    { tipo, forma, valor, descricao },
+  ]);
+}
+
+export async function registrarPagamentosMesaSupabase(
+  pedidosIds: number[],
+  pagamentos: Array<{ forma: FormaPagamento; valor: number }>
+): Promise<void> {
+  if (!pagamentos || pagamentos.length === 0) return;
+  const primaryPedidoId = pedidosIds && pedidosIds.length > 0 ? pedidosIds[0] : null;
+
+  try {
+    const payload = pagamentos.map((pg) => ({
+      pedido_id: primaryPedidoId,
+      forma: String(pg.forma || 'dinheiro').toLowerCase().trim(),
+      valor: Number(pg.valor) || 0,
+    }));
+    await supabase.from('pagamentos').insert(payload);
+  } catch (err) {
+    console.warn('Aviso ao persistir pagamentos de fechamento de mesa na tabela pagamentos:', err);
+  }
 }
 
 /**
