@@ -172,6 +172,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
    */
   const handleConfirmAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     const cleanNome = novoNome.toUpperCase().trim();
     if (!cleanNome) return;
 
@@ -216,7 +217,10 @@ export const StockManager: React.FC<StockManagerProps> = ({
         atualizado_em: data.atualizado_em,
       };
 
-      setItems((prev) => [...prev, createdItem]);
+      setItems((prev) => {
+        if (prev.some((it) => it.id === createdItem.id)) return prev;
+        return [...prev, createdItem];
+      });
       onAddItem?.(createdItem);
 
       setShowAddModal(false);
@@ -239,6 +243,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
    */
   const handleConfirmFullEdit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!editingItem) return;
 
     setIsSubmitting(true);
@@ -296,6 +301,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
    */
   const handleConfirmAdjust = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!adjustingItem) return;
 
     setIsSubmitting(true);
@@ -405,6 +411,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
    * 7. Excluir insumo diretamente no Supabase (.delete()) - 100% Nuvem
    */
   const handleConfirmDelete = async () => {
+    if (isSubmitting) return;
     if (!deletingItem) return;
     setIsSubmitting(true);
     const targetId = deletingItem.id;

@@ -647,25 +647,41 @@ export default function App() {
   };
 
   // Stock & Insumos operations via Supabase (100% Nuvem - Sem registros locais)
-  const handleUpdateStockItem = async (id: number, data: Partial<ItemEstoque>) => {
-    const res = await atualizarItemEstoqueSupabase(id, data);
-    if (res.success) {
-      setEstoque((prev) => prev.map((it) => (it.id === id ? { ...it, ...data } : it)));
+  const handleUpdateStockItem = async (
+    id: number,
+    data: Partial<ItemEstoque>,
+    fromStockManager = false
+  ) => {
+    setEstoque((prev) => prev.map((it) => (it.id === id ? { ...it, ...data } : it)));
+    // Se a chamada veio do StockManager (que já executou o .update() no Supabase),
+    // não precisamos executar uma segunda query de update no banco.
+    if (!fromStockManager) {
+      await atualizarItemEstoqueSupabase(id, data);
     }
   };
 
   const handleAddStockItem = async (data: Partial<ItemEstoque>) => {
+    // Se o item já foi persistido no Supabase pelo StockManager (já possui ID gerado pela nuvem),
+    // NÃO executamos um segundo insert no banco de dados. Apenas sincronizamos o estado se necessário.
+    if (data.id) {
+      setEstoque((prev) => {
+        if (prev.some((it) => it.id === data.id)) return prev;
+        return [...prev, data as ItemEstoque];
+      });
+      return;
+    }
+
     const res = await adicionarItemEstoqueSupabase(data);
     if (res.success && res.data) {
-      setEstoque((prev) => [...prev, res.data!]);
+      setEstoque((prev) => {
+        if (prev.some((it) => it.id === res.data!.id)) return prev;
+        return [...prev, res.data!];
+      });
     }
   };
 
   const handleDeleteStockItem = async (id: number) => {
-    const res = await excluirItemEstoqueSupabase(id);
-    if (res.success) {
-      setEstoque((prev) => prev.filter((it) => it.id !== id));
-    }
+    setEstoque((prev) => prev.filter((it) => it.id !== id));
   };
 
   // Mensalistas operations via Supabase

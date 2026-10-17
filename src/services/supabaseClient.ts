@@ -619,6 +619,14 @@ export async function atualizarItemEstoqueSupabase(
 export async function adicionarItemEstoqueSupabase(
   data: Partial<ItemEstoque>
 ): Promise<{ success: boolean; data?: ItemEstoque; error?: string }> {
+  // Se o item já possui id (já persistido no Supabase), evita duplicação no banco de dados
+  if (data.id && typeof data.id === 'number' && data.id > 0) {
+    return {
+      success: true,
+      data: data as ItemEstoque,
+    };
+  }
+
   const cleanNome = (data.item_nome || '').toUpperCase().trim();
   if (!cleanNome) {
     return { success: false, error: 'Nome do insumo é obrigatório' };
