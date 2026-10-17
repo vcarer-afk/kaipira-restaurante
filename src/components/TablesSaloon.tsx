@@ -92,8 +92,20 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   // =========================================================================
   const [showPreContaModal, setShowPreContaModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showLancamentosModal, setShowLancamentosModal] = useState(false);
+  const [mesaForLancamentos, setMesaForLancamentos] = useState<Mesa | null>(null);
   const [isProcessingClose, setIsProcessingClose] = useState(false);
   const [closeSuccessMessage, setCloseSuccessMessage] = useState<string | null>(null);
+
+  // Helper para buscar comandas ativas e pratos lançados em qualquer mesa
+  const getOrdersForMesa = (mesaNum: number) => {
+    return pedidos.filter(
+      (p) =>
+        p.mesa_id === mesaNum &&
+        p.status !== 'cancelado' &&
+        (!p.pagamentos || p.pagamentos.length === 0)
+    );
+  };
 
   // Split bill state
   const [dividirConta, setDividirConta] = useState(false);
@@ -114,12 +126,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
 
   // Filter orders for the selected table - se mesa estiver livre ou pedidos já pagos, NÃO carrega
   const currentMesaOrders = selectedMesa && selectedMesa.status !== 'livre'
-    ? pedidos.filter(
-        (p) =>
-          p.mesa_id === selectedMesa.numero &&
-          p.status !== 'cancelado' &&
-          (!p.pagamentos || p.pagamentos.length === 0)
-      )
+    ? getOrdersForMesa(selectedMesa.numero)
     : [];
 
   // Active uncompleted orders
@@ -167,33 +174,50 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
     setAbrirClienteNome('');
   };
 
-  // 1. SOLICITAR FECHAMENTO (PEDIR CONTA -> STATUS 'CONTA', AGUARDAR CLIENTE)
+  // 1. EXIBIR LANÇAMENTOS DA MESA OCUPADA
+  const handleExibirLancamentos = (m: Mesa) => {
+    setSelectedMesa(m);
+    setMesaForLancamentos(m);
+    setShowLancamentosModal(true);
+  };
+
+  // 2. SOLICITAR CONTA (PEDIR CONTA -> STATUS 'CONTA', AGUARDAR CLIENTE)
+  const handleSolicitarConta = (m: Mesa) => {
+    onUpdateMesaStatus(m.numero, 'conta', m.cliente_nome, m.pessoas);
+    if (selectedMesa?.numero === m.numero) {
+      setSelectedMesa({ ...selectedMesa, status: 'conta' });
+    }
+    setCloseSuccessMessage(`MESA #${m.numero}: CONTA SOLICITADA! STATUS ALTERADO PARA AGUARDANDO CLIENTE.`);
+    setTimeout(() => setCloseSuccessMessage(null), 4000);
+  };
+
   const handleRequestBill = () => {
     if (!selectedMesa) return;
-    onUpdateMesaStatus(selectedMesa.numero, 'conta');
-    setSelectedMesa({ ...selectedMesa, status: 'conta' });
+    handleSolicitarConta(selectedMesa);
   };
 
   // REABRIR MESA (RETORNAR PARA 'OCUPADA')
   const handleReopenTable = () => {
     if (!selectedMesa) return;
-    onUpdateMesaStatus(selectedMesa.numero, 'ocupada');
+    onUpdateMesaStatus(selectedMesa.numero, 'ocupada', selectedMesa.cliente_nome, selectedMesa.pessoas);
     setSelectedMesa({ ...selectedMesa, status: 'ocupada' });
   };
 
-  // ABRIR TELA DE PAGAMENTOS
-  const handleOpenPaymentScreen = () => {
-    if (!selectedMesa) return;
-    // Pre-populate split with table's people count
-    if (selectedMesa.pessoas && selectedMesa.pessoas > 1) {
-      setDividirPessoas(selectedMesa.pessoas);
+  // 3. FAZER FECHAMENTO & PAGAMENTO DA MESA
+  const handleFazerFechamento = (m: Mesa) => {
+    setSelectedMesa(m);
+    // Pre-popula divisão com o número de pessoas da mesa
+    if (m.pessoas && m.pessoas > 1) {
+      setDividirPessoas(m.pessoas);
     }
-    // Pre-populate multi-payment if needed
     setPagamentosMultiplos([]);
     setValorRecebidoDinheiro('');
-    // Pre-select mensalista if table client is mensalista
+    setValorDinheiroDuplo('');
+    setValorPixDuplo('');
+
+    // Pre-seleciona mensalista se aplicável
     const matchedMensalista = mensalistasDisponiveis.find(
-      (m) => m.nome.toUpperCase() === (selectedMesa.cliente_nome || '').toUpperCase()
+      (men) => men.nome.toUpperCase() === (m.cliente_nome || '').toUpperCase()
     );
     if (matchedMensalista) {
       setSelectedMensalistaId(matchedMensalista.id);
@@ -204,6 +228,46 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
     }
 
     setShowPaymentModal(true);
+  };
+
+  const handleOpenPaymentScreen = () => {
+    if (!selectedMesa) return;
+    handleFazerFechamento(selectedMesa);
+  };
+
+  // ADICIONAR 1 QUOTA DIVIDIDA NO PAGAMENTO MÚLTIPLO
+  const handleAddQuotaAoMultiplo = () => {
+    if (valorPorPessoa <= 0) return;
+    const quotaVal = Math.round(valorPorPessoa * 100) / 100;
+    setPaymentMode('multiplo');
+    setPagamentosMultiplos((prev) => [
+      ...prev,
+      {
+        id: 'pg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
+        forma: novaFormaMultiplo,
+        valor: quotaVal,
+      },
+    ]);
+  };
+
+  // DISTRIBUIR TODAS AS QUOTAS DIVIDIDAS EM PAGAMENTO MÚLTIPLO AUTOMATICAMENTE
+  const handleDistribuirTodasQuotas = () => {
+    if (valorPorPessoa <= 0 || !dividirPessoas) return;
+    setPaymentMode('multiplo');
+    const quotas: PagamentoParcial[] = [];
+    const baseQuota = Math.round(valorPorPessoa * 100) / 100;
+    let acum = 0;
+    for (let i = 0; i < dividirPessoas; i++) {
+      const isLast = i === dividirPessoas - 1;
+      const v = isLast ? Math.round((mesaConsumoTotal - acum) * 100) / 100 : baseQuota;
+      acum += v;
+      quotas.push({
+        id: 'pg-' + Date.now() + '-' + i,
+        forma: i === 0 ? 'pix' : i === 1 ? 'cartao_debito' : 'dinheiro',
+        valor: Math.max(0, v),
+      });
+    }
+    setPagamentosMultiplos(quotas);
   };
 
   // ADICIONAR FORMA NO PAGAMENTO MÚLTIPLO
@@ -448,12 +512,13 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                 }
 
                 const isSelected = selectedMesa?.numero === m.numero;
+                const isOcupada = m.status === 'ocupada' || m.status === 'conta';
 
                 return (
-                  <button
+                  <div
                     key={m.numero}
                     onClick={() => setSelectedMesa(m)}
-                    className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative cursor-pointer ${statusStyle} ${
+                    className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative cursor-pointer select-none ${statusStyle} ${
                       isSelected ? 'ring-2 ring-amber-400 scale-[1.02]' : ''
                     }`}
                   >
@@ -464,7 +529,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                       </span>
                     </div>
 
-                    <div className="my-2 text-[11px] truncate uppercase">
+                    <div className="my-1.5 text-[11px] truncate uppercase">
                       {m.cliente_nome ? (
                         <span className="font-bold text-neutral-200">{m.cliente_nome}</span>
                       ) : (
@@ -472,7 +537,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                       )}
                     </div>
 
-                    <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[10px] w-full">
+                    <div className="pt-1.5 border-t border-neutral-800/80 flex items-center justify-between text-[10px] w-full mb-1">
                       {m.pessoas ? (
                         <span className="flex items-center gap-1 text-neutral-400">
                           <Users className="w-3 h-3" />
@@ -488,7 +553,74 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                         </span>
                       )}
                     </div>
-                  </button>
+
+                    {/* Botões de Ação na Mesa Ocupada */}
+                    {isOcupada ? (
+                      <div className="pt-2 border-t border-neutral-800/90 flex flex-col gap-1 w-full mt-1">
+                        {/* 1. Botão Exibir Lançamentos */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExibirLancamentos(m);
+                          }}
+                          title="Exibir todos os pratos e comandas lançadas nesta mesa"
+                          className="w-full py-1.5 px-1.5 bg-neutral-800 hover:bg-neutral-700 text-cyan-300 border border-cyan-800/60 rounded-lg text-[9.5px] font-black uppercase flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs active:scale-98"
+                        >
+                          <FileText className="w-3 h-3 text-cyan-400 shrink-0" />
+                          <span>Exibir Lançamentos</span>
+                        </button>
+
+                        <div className="grid grid-cols-2 gap-1 w-full">
+                          {/* 2. Botão Solicitar Conta */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSolicitarConta(m);
+                            }}
+                            title="Marcar mesa como Aguardando Conta / Pedir Conta"
+                            className={`py-1.5 px-1 rounded-lg text-[9px] font-black uppercase flex items-center justify-center gap-0.5 transition-all cursor-pointer shadow-xs active:scale-98 ${
+                              m.status === 'conta'
+                                ? 'bg-amber-500 text-black font-black animate-pulse'
+                                : 'bg-amber-950/70 hover:bg-amber-900 text-amber-300 border border-amber-800/80'
+                            }`}
+                          >
+                            <Clock className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                            <span className="truncate">{m.status === 'conta' ? 'Em Conta' : 'Pedir Conta'}</span>
+                          </button>
+
+                          {/* 3. Botão Fazer Fechamento */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFazerFechamento(m);
+                            }}
+                            title="Fazer fechamento, dividir conta e registrar faturamento"
+                            className="py-1.5 px-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[9px] font-black uppercase flex items-center justify-center gap-0.5 transition-all cursor-pointer shadow-xs active:scale-98"
+                          >
+                            <CreditCard className="w-2.5 h-2.5 text-white shrink-0" />
+                            <span className="truncate">Fechamento</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="pt-2 border-t border-neutral-800/60 flex items-center justify-between w-full mt-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenOrderForMesa(m.numero);
+                          }}
+                          className="w-full py-1.5 px-2 bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-lg text-[10px] font-bold uppercase flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3 text-amber-400" />
+                          <span>Lançar Prato</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -697,34 +829,63 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                       )}
                     </div>
 
-                    {/* Actions Workflow: Fechamento, Imprimir Pré-conta e Pagar */}
+                    {/* Actions Workflow: Exibir Lançamentos, Solicitar Conta e Fazer Fechamento */}
                     <div className="flex flex-col gap-2 pt-1">
-                      {selectedMesa.status === 'ocupada' && (
-                        <button
-                          onClick={handleRequestBill}
-                          className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase transition-colors shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Clock className="w-4 h-4" />
-                          <span>Solicitar Fechamento (Pedir Conta)</span>
-                        </button>
-                      )}
+                      {/* 1. Botão Exibir Lançamentos */}
+                      <button
+                        type="button"
+                        onClick={() => handleExibirLancamentos(selectedMesa)}
+                        className="w-full py-2.5 px-3 bg-neutral-800 hover:bg-neutral-750 text-cyan-300 border border-cyan-800/80 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer hover:border-cyan-500 active:scale-98"
+                      >
+                        <FileText className="w-4 h-4 text-cyan-400" />
+                        <span>Exibir Lançamentos da Mesa #{selectedMesa.numero}</span>
+                      </button>
 
                       <div className="grid grid-cols-2 gap-2">
+                        {/* 2. Botão Solicitar Conta */}
                         <button
-                          onClick={() => setShowPreContaModal(true)}
-                          className="py-2.5 px-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 rounded-xl text-xs font-bold uppercase transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                          title="Imprime a conferência da mesa para levar ao cliente"
+                          type="button"
+                          onClick={() => handleSolicitarConta(selectedMesa)}
+                          className={`py-2.5 px-2 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer active:scale-98 ${
+                            selectedMesa.status === 'conta'
+                              ? 'bg-amber-500 text-black font-black animate-pulse'
+                              : 'bg-amber-600 hover:bg-amber-500 text-white'
+                          }`}
                         >
-                          <Printer className="w-4 h-4 text-cyan-400" />
-                          <span>Imprimir Conta</span>
+                          <Clock className="w-4 h-4" />
+                          <span>{selectedMesa.status === 'conta' ? 'Conta Solicitada' : 'Solicitar Conta'}</span>
+                        </button>
+
+                        {/* 3. Botão Fazer Fechamento */}
+                        <button
+                          type="button"
+                          onClick={() => handleFazerFechamento(selectedMesa)}
+                          className="py-2.5 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer active:scale-98"
+                        >
+                          <CreditCard className="w-4 h-4" />
+                          <span>Fazer Fechamento</span>
+                        </button>
+                      </div>
+
+                      {/* Ações Auxiliares: Imprimir Pré-conta e Lançar Mais Pratos */}
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-800/70">
+                        <button
+                          type="button"
+                          onClick={() => setShowPreContaModal(true)}
+                          className="py-2 px-2 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 border border-neutral-700/80 rounded-lg text-[11px] font-bold uppercase transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                          title="Imprime a pré-conta/conferência da mesa"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Imprimir Pré-Conta</span>
                         </button>
 
                         <button
-                          onClick={handleOpenPaymentScreen}
-                          className="py-2.5 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase transition-colors flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+                          type="button"
+                          onClick={() => onOpenOrderForMesa(selectedMesa.numero)}
+                          className="py-2 px-2 bg-neutral-850 hover:bg-neutral-800 text-amber-400 border border-amber-800/60 rounded-lg text-[11px] font-bold uppercase transition-colors flex items-center justify-center gap-1 cursor-pointer"
                         >
-                          <CreditCard className="w-4 h-4" />
-                          <span>Pagar & Fechar</span>
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ Lançar Prato</span>
                         </button>
                       </div>
                     </div>
@@ -967,6 +1128,229 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
       )}
 
       {/* =========================================================================
+          MODAL: EXIBIR LANÇAMENTOS E COMANDAS DA MESA OCUPADA
+          ========================================================================= */}
+      {showLancamentosModal && (mesaForLancamentos || selectedMesa) && (() => {
+        const targetMesa = mesaForLancamentos || selectedMesa!;
+        const targetOrders = getOrdersForMesa(targetMesa.numero);
+        const targetTotal = targetOrders.reduce((sum, p) => sum + p.valor_total, 0);
+        const targetItemsCount = targetOrders.reduce((sum, p) => sum + p.itens.reduce((iSum, it) => iSum + it.quantidade, 0), 0);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+            <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800 bg-neutral-855">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-cyan-600/20 text-cyan-400 border border-cyan-500/40">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-white uppercase font-mono">
+                        Lançamentos da Mesa #{targetMesa.numero}
+                      </h3>
+                      <span
+                        className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+                          targetMesa.status === 'conta'
+                            ? 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                            : 'bg-red-950 text-red-300 border border-red-800'
+                        }`}
+                      >
+                        {targetMesa.status === 'conta' ? 'AGUARDANDO CONTA' : 'OCUPADA'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      Cliente: <strong className="text-white uppercase">{targetMesa.cliente_nome || 'SALÃO'}</strong> ·{' '}
+                      {targetMesa.pessoas || 2} Ocupantes
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLancamentosModal(false);
+                    setMesaForLancamentos(null);
+                  }}
+                  className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* KPI Bar */}
+              <div className="grid grid-cols-3 gap-3 p-4 bg-neutral-950 border-b border-neutral-800 text-xs">
+                <div className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800">
+                  <span className="text-[10px] text-neutral-400 uppercase font-bold block">Consumo Total:</span>
+                  <span className="text-lg font-black text-amber-400 font-mono tabular-nums">
+                    {formatBRL(targetTotal)}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800">
+                  <span className="text-[10px] text-neutral-400 uppercase font-bold block">Comandas / Pedidos:</span>
+                  <span className="text-lg font-black text-cyan-400 font-mono">
+                    {targetOrders.length} {targetOrders.length === 1 ? 'pedido' : 'pedidos'}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800">
+                  <span className="text-[10px] text-neutral-400 uppercase font-bold block">Total de Pratos/Itens:</span>
+                  <span className="text-lg font-black text-emerald-400 font-mono">
+                    {targetItemsCount} itens
+                  </span>
+                </div>
+              </div>
+
+              {/* Orders Listing */}
+              <div className="overflow-y-auto p-5 space-y-4 flex-1">
+                {targetOrders.length === 0 ? (
+                  <div className="py-12 text-center space-y-3">
+                    <p className="text-neutral-500 text-xs italic">
+                      Nenhum prato lançado ainda nesta mesa.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowLancamentosModal(false);
+                        onOpenOrderForMesa(targetMesa.numero);
+                      }}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold uppercase inline-flex items-center gap-1.5 shadow-md cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Lançar Primeiro Prato no PDV</span>
+                    </button>
+                  </div>
+                ) : (
+                  targetOrders.map((ord, idx) => (
+                    <div
+                      key={ord.id || idx}
+                      className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-3"
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-neutral-850">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-black text-sm text-white">
+                            Comanda / Senha #{ord.codigo_senha}
+                          </span>
+                          <span
+                            className={`text-[9.5px] px-2 py-0.5 rounded font-black uppercase ${
+                              ord.status === 'entregue'
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                : ord.status === 'pronto'
+                                ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
+                                : ord.status === 'em_preparacao'
+                                ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                                : 'bg-amber-950 text-amber-300 border border-amber-800'
+                            }`}
+                          >
+                            {ord.status}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-black text-amber-400 font-mono tabular-nums">
+                            {formatBRL(ord.valor_total)}
+                          </span>
+                          {ord.criado_em && (
+                            <span className="text-[10px] text-neutral-500 block">
+                              {formatDateTime(ord.criado_em)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Itens da comanda */}
+                      <div className="space-y-1.5">
+                        {ord.itens.map((it, iIdx) => (
+                          <div
+                            key={iIdx}
+                            className="flex items-start justify-between text-xs py-1 px-2 rounded-lg bg-neutral-900/60 border border-neutral-850"
+                          >
+                            <div className="space-y-0.5">
+                              <span className="font-bold text-neutral-200">
+                                <strong className="text-amber-400 font-mono">{it.quantidade}x</strong> {it.produto_nome}
+                              </span>
+                              {it.observacao && (
+                                <p className="text-[10px] text-amber-300 italic">
+                                  Obs: {it.observacao}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right shrink-0 ml-2">
+                              <span className="font-mono font-bold text-neutral-200">
+                                {formatBRL(it.preco_unitario * it.quantidade)}
+                              </span>
+                              <span className="text-[9.5px] text-neutral-500 block">
+                                {formatBRL(it.preco_unitario)} un
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={() => onPrintReceipt(ord)}
+                          className="text-[10px] text-neutral-400 hover:text-amber-400 flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Printer className="w-3 h-3" />
+                          <span>Reimprimir Comanda de Cozinha</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-4 border-t border-neutral-800 bg-neutral-855 flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLancamentosModal(false);
+                    onOpenOrderForMesa(targetMesa.numero);
+                  }}
+                  className="px-3.5 py-2.5 bg-neutral-800 hover:bg-neutral-750 text-amber-400 border border-amber-800/60 rounded-xl text-xs font-bold uppercase flex items-center gap-1.5 cursor-pointer transition-all active:scale-98"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Lançar Mais Pratos</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLancamentosModal(false);
+                      handleSolicitarConta(targetMesa);
+                    }}
+                    className={`px-3.5 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all cursor-pointer active:scale-98 ${
+                      targetMesa.status === 'conta'
+                        ? 'bg-amber-500 text-black font-black animate-pulse'
+                        : 'bg-amber-600 hover:bg-amber-500 text-white'
+                    }`}
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span>{targetMesa.status === 'conta' ? 'Conta Solicitada' : 'Solicitar Conta'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLancamentosModal(false);
+                      handleFazerFechamento(targetMesa);
+                    }}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-md transition-all cursor-pointer active:scale-98"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Fazer Fechamento</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* =========================================================================
           MODAL 2: TELA COMPLETA DE PAGAMENTO, DIVISÃO E FECHAMENTO DE MESA
           ========================================================================= */}
       {showPaymentModal && selectedMesa && (
@@ -1060,45 +1444,69 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                 </div>
 
                 {dividirConta && (
-                  <div className="pt-2 border-t border-neutral-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 animate-in fade-in">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-neutral-300 font-medium">Dividir em:</span>
-                      <div className="flex items-center gap-1">
-                        {[2, 3, 4, 5, 6].map((num) => (
-                          <button
-                            key={num}
-                            type="button"
-                            onClick={() => setDividirPessoas(num)}
-                            className={`w-8 h-8 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                              dividirPessoas === num
-                                ? 'bg-purple-600 text-white shadow-xs'
-                                : 'bg-neutral-800 text-neutral-400 hover:text-white'
-                            }`}
-                          >
-                            {num}
-                          </button>
-                        ))}
+                  <div className="space-y-3 pt-2 border-t border-neutral-800 animate-in fade-in">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-neutral-300 font-medium">Dividir em:</span>
+                        <div className="flex items-center gap-1">
+                          {[2, 3, 4, 5, 6].map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => setDividirPessoas(num)}
+                              className={`w-8 h-8 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                                dividirPessoas === num
+                                  ? 'bg-purple-600 text-white shadow-xs'
+                                  : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                              }`}
+                            >
+                              {num}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-1 ml-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={99}
+                            value={dividirPessoas}
+                            onChange={(e) => setDividirPessoas(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                            className="w-12 px-2 py-1 bg-neutral-900 border border-neutral-700 text-center text-xs font-mono font-bold text-white rounded-lg"
+                          />
+                          <span className="text-xs text-neutral-400">pessoas</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 ml-2">
-                        <input
-                          type="number"
-                          min={1}
-                          max={99}
-                          value={dividirPessoas}
-                          onChange={(e) => setDividirPessoas(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                          className="w-12 px-2 py-1 bg-neutral-900 border border-neutral-700 text-center text-xs font-mono font-bold text-white rounded-lg"
-                        />
-                        <span className="text-xs text-neutral-400">pessoas</span>
+
+                      <div className="p-2.5 bg-purple-950/40 border border-purple-800/60 rounded-xl text-right">
+                        <span className="text-[10px] text-purple-300 font-bold block uppercase">
+                          Valor por Pessoa:
+                        </span>
+                        <span className="text-base font-black text-purple-200 tabular-nums">
+                          {formatBRL(valorPorPessoa)}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="p-2.5 bg-purple-950/40 border border-purple-800/60 rounded-xl text-right">
-                      <span className="text-[10px] text-purple-300 font-bold block uppercase">
-                        Valor por Pessoa:
-                      </span>
-                      <span className="text-base font-black text-purple-200 tabular-nums">
-                        {formatBRL(valorPorPessoa)}
-                      </span>
+                    <div className="pt-2 flex flex-wrap items-center gap-2 border-t border-purple-900/50">
+                      <button
+                        type="button"
+                        onClick={handleAddQuotaAoMultiplo}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-black uppercase flex items-center gap-1 shadow-sm transition-all cursor-pointer active:scale-98"
+                        title="Adiciona 1 quota calculada na lista de múltiplos pagamentos"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Adicionar 1 Quota ({formatBRL(valorPorPessoa)}) em Pagamento Múltiplo</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDistribuirTodasQuotas}
+                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-purple-300 border border-purple-700/60 rounded-lg text-xs font-bold uppercase flex items-center gap-1 transition-all cursor-pointer active:scale-98"
+                        title="Distribui o total da conta nas cotas exatas de cada pessoa"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Preencher Todas as {dividirPessoas} Cotas</span>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1454,19 +1862,37 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                         pagamentosMultiplos.map((pg) => (
                           <div
                             key={pg.id}
-                            className="flex items-center justify-between p-2 bg-neutral-900 rounded-lg border border-neutral-800 text-xs"
+                            className="flex items-center justify-between p-2.5 bg-neutral-900 rounded-lg border border-neutral-800 text-xs"
                           >
-                            <span className="font-bold uppercase text-neutral-200">
-                              {pg.forma.replace('_', ' ')}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={pg.forma}
+                                onChange={(e) => {
+                                  const novaForma = e.target.value as FormaPagamento;
+                                  setPagamentosMultiplos((prev) =>
+                                    prev.map((item) => (item.id === pg.id ? { ...item, forma: novaForma } : item))
+                                  );
+                                }}
+                                className="px-2 py-1 bg-neutral-850 border border-neutral-700 text-neutral-200 rounded text-[11px] font-bold uppercase cursor-pointer"
+                              >
+                                {formasPagamento
+                                  .filter((fp) => fp.ativo !== false && fp.id !== 'multiplo')
+                                  .map((fp) => (
+                                    <option key={fp.id} value={fp.id}>
+                                      {fp.nome.replace(' (ESPÉCIE)', '').replace(' (CHAVE / QR CODE)', '').replace(' (FATURADO EM CONTA)', '')}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
                             <div className="flex items-center gap-3">
-                              <span className="font-mono font-black text-amber-400">
+                              <span className="font-mono font-black text-amber-400 text-xs">
                                 {formatBRL(pg.valor)}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => handleRemovePagamentoMultiplo(pg.id)}
-                                className="text-neutral-500 hover:text-red-400 p-1 cursor-pointer"
+                                className="text-neutral-500 hover:text-red-400 p-1 cursor-pointer transition-colors"
+                                title="Remover pagamento parcial"
                               >
                                 ✕
                               </button>

@@ -197,7 +197,10 @@ export default function App() {
         const mappedMesas: Mesa[] = rawMesas.map((m) => {
           const num = Number(m.numero || m.id);
           const activeOrder = cloudPedidos.find(
-            (p) => p.mesa_id === num && !['cancelado', 'entregue'].includes(p.status)
+            (p) =>
+              p.mesa_id === num &&
+              p.status !== 'cancelado' &&
+              (!p.pagamentos || p.pagamentos.length === 0)
           );
           const activeReserva = cloudReservas.find(
             (r) =>
@@ -211,10 +214,10 @@ export default function App() {
           let cliente_nome: string | undefined = undefined;
           let pessoas: number | undefined = undefined;
 
-          // Se tiver pedido em andamento no salão hoje na nuvem
-          if (activeOrder) {
+          // Se tiver pedido em andamento no salão hoje na nuvem ou mesa estiver ocupada/conta
+          if (activeOrder || m.status === 'ocupada' || m.status === 'conta') {
             status = m.status === 'conta' ? 'conta' : 'ocupada';
-            cliente_nome = m.cliente_nome || activeOrder.cliente?.nome;
+            cliente_nome = m.cliente_nome || activeOrder?.cliente?.nome || 'MESA OCUPADA';
             pessoas = m.pessoas ? Number(m.pessoas) : 2;
           } else if (activeReserva || m.status === 'reservada') {
             // Se tiver reserva confirmada ou pendente
@@ -1077,6 +1080,15 @@ export default function App() {
             formasPagamento={formasPagamento}
             onOrderCreated={async (novo) => {
               setPedidos((prev) => [novo, ...prev]);
+
+              // Toda vez que lançado um pedido na mesa, marca a mesa como ocupada no estado e no Supabase
+              if (novo.tipo === 'salão' && novo.mesa_id) {
+                const mesaNum = Number(novo.mesa_id);
+                const mesaAtual = mesas.find((m) => m.numero === mesaNum);
+                const cliNome = novo.cliente?.nome || mesaAtual?.cliente_nome || 'MESA OCUPADA';
+                await handleUpdateMesaStatus(mesaNum, 'ocupada', cliNome, mesaAtual?.pessoas || 2);
+              }
+
               // Quando pedido tiver pagamentos imediatos (balcão ou delivery) e o caixa estiver aberto, lança no faturamento do dia
               if (caixa && caixa.status === 'aberto' && novo.pagamentos && novo.pagamentos.length > 0) {
                 const validPgs = novo.pagamentos.filter((pg) => pg.valor > 0);
