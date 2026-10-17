@@ -94,19 +94,24 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
             {/* Order Items */}
             <div className="py-2 border-b border-dashed border-black">
               <div className="flex justify-between font-bold text-[10px] mb-1">
-                <span>ITEM / DESCRIÇÃO</span>
-                <span>TOTAL</span>
+                <span>QTD · PRODUTO / DESCRIÇÃO</span>
+                <span className="text-right">UNIT · SUBTOTAL</span>
               </div>
               <div className="space-y-2">
                 {pedido.itens.map((it, idx) => (
                   <div key={idx} className="text-[11px]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-start">
                       <span className="font-bold">
                         {it.quantidade}x {it.produto_nome || `PROD #${it.produto_id}`}
                       </span>
-                      <span className="tabular-nums">
-                        {formatBRL(it.preco_unitario * it.quantidade)}
-                      </span>
+                      <div className="text-right shrink-0">
+                        <span className="tabular-nums font-bold block">
+                          {formatBRL(it.preco_unitario * it.quantidade)}
+                        </span>
+                        <span className="text-[9.5px] text-neutral-600 block">
+                          ({it.quantidade}x {formatBRL(it.preco_unitario)})
+                        </span>
+                      </div>
                     </div>
 
                     {it.opcionais_selecionados && it.opcionais_selecionados.length > 0 && (
@@ -132,14 +137,20 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
 
             {/* Financial Totals */}
             <div className="py-2 border-b border-dashed border-black space-y-1 text-[11px]">
+              <div className="flex justify-between">
+                <span>SUBTOTAL PRODUTOS:</span>
+                <span className="tabular-nums font-bold">
+                  {formatBRL(pedido.itens.reduce((acc, it) => acc + it.preco_unitario * it.quantidade, 0))}
+                </span>
+              </div>
               {pedido.taxa_entrega > 0 && (
                 <div className="flex justify-between">
                   <span>TAXA DE ENTREGA:</span>
-                  <span className="tabular-nums">{formatBRL(pedido.taxa_entrega)}</span>
+                  <span className="tabular-nums font-bold">{formatBRL(pedido.taxa_entrega)}</span>
                 </div>
               )}
-              <div className="flex justify-between font-black text-xs pt-1 border-t border-neutral-300">
-                <span>TOTAL DO PEDIDO:</span>
+              <div className="flex justify-between font-black text-xs pt-1 border-t border-black">
+                <span>TOTAL GERAL:</span>
                 <span className="tabular-nums">{formatBRL(pedido.valor_total)}</span>
               </div>
 

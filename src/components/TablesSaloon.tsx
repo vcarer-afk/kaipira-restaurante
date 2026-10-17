@@ -1029,8 +1029,8 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                 {/* Items Detail */}
                 <div className="py-2 border-b border-dashed border-black">
                   <div className="flex justify-between font-bold text-[10px] mb-1">
-                    <span>QTD · ITEM</span>
-                    <span>VALOR</span>
+                    <span>QTD · ITEM / PRODUTO</span>
+                    <span className="text-right">UNIT · SUBTOTAL</span>
                   </div>
                   <div className="space-y-1.5">
                     {currentMesaOrders.flatMap((ord) => ord.itens).length === 0 ? (
@@ -1039,11 +1039,16 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                       currentMesaOrders.flatMap((ord) => ord.itens).map((it, idx) => (
                         <div key={idx} className="flex justify-between items-start text-[10px]">
                           <span className="truncate pr-2 font-medium">
-                            {it.quantidade}x {it.produto_nome}
+                            <strong>{it.quantidade}x</strong> {it.produto_nome}
                           </span>
-                          <span className="tabular-nums font-bold shrink-0">
-                            {formatBRL(it.preco_unitario * it.quantidade)}
-                          </span>
+                          <div className="text-right shrink-0">
+                            <span className="tabular-nums font-bold block">
+                              {formatBRL(it.preco_unitario * it.quantidade)}
+                            </span>
+                            <span className="text-[9px] text-neutral-600 block">
+                              ({it.quantidade}x {formatBRL(it.preco_unitario)})
+                            </span>
+                          </div>
                         </div>
                       ))
                     )}

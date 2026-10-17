@@ -30,7 +30,7 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* Print Styles for 80mm/58mm Thermal Printer */
+/* Print Styles for Thermal Printer & PDF Reports */
 @media print {
   body {
     background: white !important;
@@ -39,24 +39,67 @@
   body * {
     visibility: hidden;
   }
-  #thermal-print-area, #thermal-print-area * {
-    visibility: visible;
+
+  /* 1. Comandas Térmicas e Conferência de Mesas */
+  #thermal-print-area,
+  #thermal-print-area *,
+  #thermal-table-bill,
+  #thermal-table-bill * {
+    visibility: visible !important;
   }
-  #thermal-print-area {
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: 76mm;
-    margin: 0;
-    padding: 2mm 3mm;
+  #thermal-print-area,
+  #thermal-table-bill {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 78mm !important;
+    max-width: 78mm !important;
+    margin: 0 !important;
+    padding: 2mm 3mm !important;
     background: white !important;
     color: black !important;
     font-family: 'Courier New', Courier, monospace !important;
-    font-size: 11px;
-    line-height: 1.25;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    display: block !important;
+    box-shadow: none !important;
   }
+
+  /* 2. Relatório de Fechamento do Caixa (A4 / PDF) */
+  #relatorio-fechamento-caixa,
+  #relatorio-fechamento-caixa * {
+    visibility: visible !important;
+  }
+  #relatorio-fechamento-caixa {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
+    padding: 8mm !important;
+    background: white !important;
+    color: black !important;
+    border: none !important;
+    display: block !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+  }
+
+  #relatorio-fechamento-caixa table,
+  #relatorio-fechamento-caixa th,
+  #relatorio-fechamento-caixa td {
+    color: black !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  #relatorio-fechamento-caixa * {
+    color: black !important;
+    background-color: transparent !important;
+  }
+
   @page {
-    size: 80mm auto;
-    margin: 0;
+    margin: 6mm;
   }
 }

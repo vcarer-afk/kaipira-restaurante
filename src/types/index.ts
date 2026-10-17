@@ -163,6 +163,9 @@ export interface Pedido {
   taxa_entrega: number;
   itens: ItemPedido[];
   pagamentos: Pagamento[];
+  conferencia_entrega?: 'pendente' | 'conferido';
+  conferido_por?: string;
+  conferido_em?: string;
   criado_em: string;
   atualizado_em: string;
 }
