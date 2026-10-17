@@ -46,7 +46,6 @@ import {
   INITIAL_PRODUTOS,
   INITIAL_MESAS,
   INITIAL_CLIENTES,
-  INITIAL_ESTOQUE,
   INITIAL_PERFIS,
   INITIAL_USUARIOS,
   INITIAL_CAIXA,
@@ -116,7 +115,7 @@ export default function App() {
   const [mesas, setMesas] = useState<Mesa[]>(INITIAL_MESAS);
   const [clientes, setClientes] = useState<Cliente[]>(INITIAL_CLIENTES);
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>(INITIAL_USUARIOS);
-  const [estoque, setEstoque] = useState<ItemEstoque[]>(INITIAL_ESTOQUE);
+  const [estoque, setEstoque] = useState<ItemEstoque[]>([]); // 100% da nuvem Supabase - zero mock/local
   const [caixa, setCaixa] = useState<CaixaDiario>(INITIAL_CAIXA);
   const [pedidos, setPedidos] = useState<Pedido[]>([]); // 100% da nuvem - sem pedidos mock locais em mesas
   const [reservas, setReservas] = useState<Reserva[]>([]);
@@ -241,8 +240,21 @@ export default function App() {
         mappedMesas.sort((a, b) => a.numero - b.numero);
         setMesas(mappedMesas);
       }
-      if (estoqueRes.status === 'fulfilled' && estoqueRes.value.data && estoqueRes.value.data.length > 0) {
-        setEstoque(estoqueRes.value.data as ItemEstoque[]);
+      if (estoqueRes.status === 'fulfilled') {
+        if (estoqueRes.value.error) {
+          console.warn('Aviso ao consultar estoque no Supabase:', estoqueRes.value.error.message);
+        } else if (estoqueRes.value.data) {
+          const mappedEstoque: ItemEstoque[] = (estoqueRes.value.data as any[]).map((d: any) => ({
+            id: Number(d.id),
+            item_nome: (d.item_nome || '').toUpperCase().trim(),
+            quantidade_atual: Number(d.quantidade_atual) || 0,
+            unidade_medida: (d.unidade_medida || 'un').toLowerCase().trim(),
+            estoque_minimo: Number(d.estoque_minimo) || 0,
+            fornecedor_info: d.fornecedor_info ? d.fornecedor_info.toUpperCase().trim() : '',
+            atualizado_em: d.atualizado_em,
+          }));
+          setEstoque(mappedEstoque);
+        }
       }
       if (caixaRes.status === 'fulfilled' && caixaRes.value.data && caixaRes.value.data.length > 0) {
         const row = caixaRes.value.data[0];
@@ -431,9 +443,26 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'estoque' },
           (payload: any) => {
-            if (payload.new) {
-              const updatedItem: ItemEstoque = payload.new;
-              setEstoque((prev) => prev.map((it) => (it.id === updatedItem.id ? { ...it, ...updatedItem } : it)));
+            if (payload.eventType === 'DELETE' && payload.old) {
+              const targetId = Number(payload.old.id);
+              setEstoque((prev) => prev.filter((it) => it.id !== targetId));
+            } else if (payload.new) {
+              const item: ItemEstoque = {
+                id: Number(payload.new.id),
+                item_nome: (payload.new.item_nome || '').toUpperCase().trim(),
+                quantidade_atual: Number(payload.new.quantidade_atual) || 0,
+                unidade_medida: (payload.new.unidade_medida || 'un').toLowerCase().trim(),
+                estoque_minimo: Number(payload.new.estoque_minimo) || 0,
+                fornecedor_info: payload.new.fornecedor_info ? payload.new.fornecedor_info.toUpperCase().trim() : '',
+                atualizado_em: payload.new.atualizado_em,
+              };
+              setEstoque((prev) => {
+                const exists = prev.some((it) => it.id === item.id);
+                if (exists) {
+                  return prev.map((it) => (it.id === item.id ? item : it));
+                }
+                return [...prev, item];
+              });
             }
           }
         )
@@ -617,20 +646,26 @@ export default function App() {
     } catch {}
   };
 
-  // Stock operations via Supabase
+  // Stock & Insumos operations via Supabase (100% Nuvem - Sem registros locais)
   const handleUpdateStockItem = async (id: number, data: Partial<ItemEstoque>) => {
-    setEstoque((prev) => prev.map((it) => (it.id === id ? { ...it, ...data } : it)));
-    await atualizarItemEstoqueSupabase(id, data);
+    const res = await atualizarItemEstoqueSupabase(id, data);
+    if (res.success) {
+      setEstoque((prev) => prev.map((it) => (it.id === id ? { ...it, ...data } : it)));
+    }
   };
 
   const handleAddStockItem = async (data: Partial<ItemEstoque>) => {
-    const novo = await adicionarItemEstoqueSupabase(data);
-    setEstoque((prev) => [...prev, novo]);
+    const res = await adicionarItemEstoqueSupabase(data);
+    if (res.success && res.data) {
+      setEstoque((prev) => [...prev, res.data!]);
+    }
   };
 
   const handleDeleteStockItem = async (id: number) => {
-    setEstoque((prev) => prev.filter((it) => it.id !== id));
-    await excluirItemEstoqueSupabase(id);
+    const res = await excluirItemEstoqueSupabase(id);
+    if (res.success) {
+      setEstoque((prev) => prev.filter((it) => it.id !== id));
+    }
   };
 
   // Mensalistas operations via Supabase

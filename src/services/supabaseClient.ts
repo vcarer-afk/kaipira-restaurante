@@ -559,8 +559,37 @@ export async function fecharMesaSupabase(numero: number): Promise<void> {
 }
 
 /**
- * Estoque operations via Supabase (100% Nuvem)
+ * Estoque & Insumos operations via Supabase (100% Nuvem - Sem registros locais)
  */
+export async function fetchEstoqueSupabase(): Promise<ItemEstoque[]> {
+  try {
+    const { data, error } = await supabase
+      .from('estoque')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (error) {
+      console.warn('Aviso ao consultar estoque no Supabase:', error.message);
+      return [];
+    }
+
+    if (!data) return [];
+
+    return data.map((d: any) => ({
+      id: Number(d.id),
+      item_nome: (d.item_nome || '').toUpperCase().trim(),
+      quantidade_atual: Number(d.quantidade_atual) || 0,
+      unidade_medida: (d.unidade_medida || 'un').toLowerCase().trim(),
+      estoque_minimo: Number(d.estoque_minimo) || 0,
+      fornecedor_info: d.fornecedor_info ? d.fornecedor_info.toUpperCase().trim() : '',
+      atualizado_em: d.atualizado_em,
+    }));
+  } catch (err) {
+    console.warn('Erro de conexão ao buscar estoque no Supabase:', err);
+    return [];
+  }
+}
+
 export async function atualizarItemEstoqueSupabase(
   id: number,
   data: Partial<ItemEstoque>
@@ -589,12 +618,17 @@ export async function atualizarItemEstoqueSupabase(
 
 export async function adicionarItemEstoqueSupabase(
   data: Partial<ItemEstoque>
-): Promise<ItemEstoque> {
+): Promise<{ success: boolean; data?: ItemEstoque; error?: string }> {
+  const cleanNome = (data.item_nome || '').toUpperCase().trim();
+  if (!cleanNome) {
+    return { success: false, error: 'Nome do insumo é obrigatório' };
+  }
+
   const payload: any = {
-    item_nome: (data.item_nome || '').toUpperCase().trim(),
+    item_nome: cleanNome,
     quantidade_atual: Number(data.quantidade_atual) || 0,
     unidade_medida: (data.unidade_medida || 'un').toLowerCase().trim(),
-    estoque_minimo: Number(data.estoque_minimo) || 5,
+    estoque_minimo: Number(data.estoque_minimo) || 0,
     fornecedor_info: data.fornecedor_info ? data.fornecedor_info.toUpperCase().trim() : null,
     atualizado_em: new Date().toISOString(),
   };
@@ -606,29 +640,31 @@ export async function adicionarItemEstoqueSupabase(
       .select()
       .single();
 
-    if (!error && inserted) {
-      return {
-        id: Number(inserted.id),
-        item_nome: inserted.item_nome,
-        quantidade_atual: Number(inserted.quantidade_atual) || 0,
-        unidade_medida: inserted.unidade_medida || 'un',
-        estoque_minimo: Number(inserted.estoque_minimo) || 5,
-        fornecedor_info: inserted.fornecedor_info || undefined,
-        atualizado_em: inserted.atualizado_em,
-      };
-    }
     if (error) {
       console.warn('Aviso insert estoque Supabase:', error.message);
+      return { success: false, error: error.message };
     }
-  } catch (err) {
-    console.warn('Erro ao inserir item de estoque no Supabase:', err);
-  }
 
-  return {
-    id: Date.now(),
-    ...payload,
-    fornecedor_info: payload.fornecedor_info || undefined,
-  };
+    if (inserted) {
+      return {
+        success: true,
+        data: {
+          id: Number(inserted.id),
+          item_nome: inserted.item_nome,
+          quantidade_atual: Number(inserted.quantidade_atual) || 0,
+          unidade_medida: inserted.unidade_medida || 'un',
+          estoque_minimo: Number(inserted.estoque_minimo) || 0,
+          fornecedor_info: inserted.fornecedor_info || undefined,
+          atualizado_em: inserted.atualizado_em,
+        },
+      };
+    }
+
+    return { success: false, error: 'Nenhum dado retornado da nuvem' };
+  } catch (err: any) {
+    console.warn('Erro ao inserir item de estoque no Supabase:', err);
+    return { success: false, error: err?.message || 'Erro de conexão com o Supabase' };
+  }
 }
 
 export async function excluirItemEstoqueSupabase(

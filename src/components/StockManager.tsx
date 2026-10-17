@@ -29,13 +29,13 @@ interface StockManagerProps {
 export type EstoqueSortMode = 'nome' | 'cadastro' | 'critico';
 
 export const StockManager: React.FC<StockManagerProps> = ({
-  estoque: initialEstoque,
+  estoque: estoqueProp,
   onUpdateItem,
   onAddItem,
   onDeleteItem,
 }) => {
-  // State for inventory items directly from Supabase
-  const [items, setItems] = useState<ItemEstoque[]>(initialEstoque || []);
+  // State for inventory items directly from Supabase (100% Nuvem)
+  const [items, setItems] = useState<ItemEstoque[]>(estoqueProp || []);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [search, setSearch] = useState<string>('');
   const [apenasAlerta, setApenasAlerta] = useState<boolean>(false);
@@ -73,7 +73,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
   };
 
   /**
-   * 1. Listar itens diretamente da tabela 'estoque' no Supabase
+   * 1. Listar itens diretamente da tabela 'estoque' no Supabase (100% Nuvem)
    */
   const fetchEstoqueFromSupabase = useCallback(async () => {
     setIsLoading(true);
@@ -85,7 +85,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
       if (error) {
         console.warn('Aviso ao consultar estoque no Supabase:', error.message);
-      } else if (data && data.length > 0) {
+      } else if (data) {
         const mapped: ItemEstoque[] = data.map((d: any) => ({
           id: Number(d.id),
           item_nome: (d.item_nome || '').toUpperCase().trim(),
@@ -124,12 +124,12 @@ export const StockManager: React.FC<StockManagerProps> = ({
     };
   }, [fetchEstoqueFromSupabase]);
 
-  // Sync if parent updates initialEstoque
+  // Sync if parent updates estoqueProp from Supabase
   useEffect(() => {
-    if (initialEstoque && initialEstoque.length > 0 && items.length === 0) {
-      setItems(initialEstoque);
+    if (estoqueProp !== undefined) {
+      setItems(estoqueProp);
     }
-  }, [initialEstoque, items.length]);
+  }, [estoqueProp]);
 
   // Alert counter
   const alertItemsCount = useMemo(
@@ -168,7 +168,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
   }, [items, apenasAlerta, search, sortMode]);
 
   /**
-   * 2. Inserir novo insumo diretamente no Supabase (.insert())
+   * 2. Inserir novo insumo diretamente no Supabase (.insert()) - 100% Nuvem
    */
   const handleConfirmAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -197,23 +197,24 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
       if (error) {
         console.warn('Erro ao inserir insumo no Supabase:', error.message);
+        showNotification(`Erro ao gravar na nuvem: ${error.message}`);
+        return;
       }
 
-      const createdItem: ItemEstoque = data
-        ? {
-            id: Number(data.id),
-            item_nome: data.item_nome,
-            quantidade_atual: Number(data.quantidade_atual) || 0,
-            unidade_medida: data.unidade_medida || 'un',
-            estoque_minimo: Number(data.estoque_minimo) || 5,
-            fornecedor_info: data.fornecedor_info || undefined,
-            atualizado_em: data.atualizado_em,
-          }
-        : {
-            id: Date.now(),
-            ...payload,
-            fornecedor_info: payload.fornecedor_info || undefined,
-          };
+      if (!data) {
+        showNotification('Nenhum registro retornado pelo Supabase.');
+        return;
+      }
+
+      const createdItem: ItemEstoque = {
+        id: Number(data.id),
+        item_nome: data.item_nome,
+        quantidade_atual: Number(data.quantidade_atual) || 0,
+        unidade_medida: data.unidade_medida || 'un',
+        estoque_minimo: Number(data.estoque_minimo) || 0,
+        fornecedor_info: data.fornecedor_info || undefined,
+        atualizado_em: data.atualizado_em,
+      };
 
       setItems((prev) => [...prev, createdItem]);
       onAddItem?.(createdItem);
@@ -224,16 +225,17 @@ export const StockManager: React.FC<StockManagerProps> = ({
       setNovaUnidade('kg');
       setNovoMinimo('5');
       setNovoFornecedor('');
-      showNotification(`"${cleanNome}" cadastrado e salvo na nuvem com sucesso!`);
-    } catch (err) {
-      console.error('Erro de rede ao salvar insumo:', err);
+      showNotification(`"${cleanNome}" gravado na nuvem com sucesso!`);
+    } catch (err: any) {
+      console.error('Erro de rede ao salvar insumo na nuvem:', err);
+      showNotification(`Erro de conexão com o Supabase: ${err?.message || 'Falha de rede'}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   /**
-   * 3. Atualizar insumo diretamente no Supabase (.update())
+   * 3. Atualizar insumo diretamente no Supabase (.update()) - 100% Nuvem
    */
   const handleConfirmFullEdit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -261,6 +263,8 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
       if (error) {
         console.warn('Erro ao atualizar insumo no Supabase:', error.message);
+        showNotification(`Erro ao salvar na nuvem: ${error.message}`);
+        return;
       }
 
       const localUpdated: Partial<ItemEstoque> = {
@@ -279,15 +283,16 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
       setEditingItem(null);
       showNotification(`Insumo "${cleanNome}" atualizado na nuvem!`);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao atualizar insumo no Supabase:', err);
+      showNotification(`Erro de conexão com o Supabase: ${err?.message || 'Falha de rede'}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   /**
-   * 4. Ajuste rápido de quantidade e mínimo no Supabase (.update())
+   * 4. Ajuste rápido de quantidade e mínimo no Supabase (.update()) - 100% Nuvem
    */
   const handleConfirmAdjust = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -311,6 +316,8 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
       if (error) {
         console.warn('Erro ao ajustar estoque no Supabase:', error.message);
+        showNotification(`Erro ao ajustar na nuvem: ${error.message}`);
+        return;
       }
 
       setItems((prev) =>
@@ -320,15 +327,16 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
       setAdjustingItem(null);
       showNotification(`Ajuste de "${adjustingItem.item_nome}" salvo na nuvem!`);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao salvar ajuste no Supabase:', err);
+      showNotification(`Erro de conexão com o Supabase: ${err?.message || 'Falha de rede'}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   /**
-   * 5. Excluir alerta (define estoque_minimo = 0 no Supabase)
+   * 5. Excluir alerta (define estoque_minimo = 0 no Supabase) - 100% Nuvem
    */
   const handleExcluirAlerta = async (it: ItemEstoque) => {
     try {
@@ -344,6 +352,8 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
       if (error) {
         console.warn('Erro ao excluir alerta no Supabase:', error.message);
+        showNotification(`Erro ao excluir alerta na nuvem: ${error.message}`);
+        return;
       }
 
       setItems((prev) =>
@@ -352,23 +362,20 @@ export const StockManager: React.FC<StockManagerProps> = ({
       onUpdateItem?.(it.id, updatePayload);
 
       showNotification(`Alerta de "${it.item_nome}" excluído na nuvem.`);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao excluir alerta:', err);
+      showNotification(`Erro de conexão com o Supabase: ${err?.message || 'Falha de rede'}`);
     }
   };
 
   /**
-   * 6. Ajuste rápido +/- direto no Supabase
+   * 6. Ajuste rápido +/- direto no Supabase - 100% Nuvem
    */
   const handleQuickDelta = async (it: ItemEstoque, delta: number) => {
     const nextVal = Math.max(0, Number((it.quantidade_atual + delta).toFixed(2)));
-    setItems((prev) =>
-      prev.map((item) => (item.id === it.id ? { ...item, quantidade_atual: nextVal } : item))
-    );
-    onUpdateItem?.(it.id, { quantidade_atual: nextVal });
 
     try {
-      await supabase
+      const { error } = await supabase
         .from('estoque')
         .update({
           quantidade_atual: nextVal,
@@ -376,14 +383,26 @@ export const StockManager: React.FC<StockManagerProps> = ({
         })
         .eq('id', it.id);
 
+      if (error) {
+        console.warn('Erro ao atualizar saldo no Supabase:', error.message);
+        showNotification(`Erro ao atualizar na nuvem: ${error.message}`);
+        return;
+      }
+
+      setItems((prev) =>
+        prev.map((item) => (item.id === it.id ? { ...item, quantidade_atual: nextVal } : item))
+      );
+      onUpdateItem?.(it.id, { quantidade_atual: nextVal });
+
       showNotification(`"${it.item_nome}": ${nextVal} ${it.unidade_medida} (salvo na nuvem)`);
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Erro ao atualizar saldo no Supabase:', err);
+      showNotification(`Erro de conexão com o Supabase: ${err?.message || 'Falha de rede'}`);
     }
   };
 
   /**
-   * 7. Excluir insumo diretamente no Supabase (.delete())
+   * 7. Excluir insumo diretamente no Supabase (.delete()) - 100% Nuvem
    */
   const handleConfirmDelete = async () => {
     if (!deletingItem) return;
@@ -399,6 +418,8 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
       if (error) {
         console.warn('Erro ao excluir insumo no Supabase:', error.message);
+        showNotification(`Erro ao excluir da nuvem: ${error.message}`);
+        return;
       }
 
       setItems((prev) => prev.filter((it) => it.id !== targetId));
@@ -406,8 +427,9 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
       setDeletingItem(null);
       showNotification(`Insumo "${nome}" excluído permanentemente da nuvem.`);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao excluir insumo:', err);
+      showNotification(`Erro de conexão com o Supabase: ${err?.message || 'Falha de rede'}`);
     } finally {
       setIsSubmitting(false);
     }
