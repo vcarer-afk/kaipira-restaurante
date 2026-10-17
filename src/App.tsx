@@ -191,7 +191,7 @@ export default function App() {
 
       if (mesasRes.status === 'fulfilled' && mesasRes.value.data && mesasRes.value.data.length > 0) {
         const rawMesas = mesasRes.value.data as any[];
-        const cloudPedidos = (pedidosRes.status === 'fulfilled' && pedidosRes.value.data) ? (pedidosRes.value.data as Pedido[]) : [];
+        const cloudPedidos = cloudPeds;
         const cloudReservas = (reservasRes.status === 'fulfilled' && reservasRes.value.data) ? (reservasRes.value.data as Reserva[]) : [];
         const hojeStr = new Date().toISOString().split('T')[0];
 
@@ -253,6 +253,15 @@ export default function App() {
             ? Number(row.valor_abertura)
             : (row.valor_apertura !== undefined && row.valor_apertura !== null ? Number(row.valor_apertura) : 250);
 
+          let savedMovs: MovimentacaoCaixa[] = [];
+          try {
+            const rawLocal = localStorage.getItem('kaipira_caixa_movs');
+            if (rawLocal) {
+              const parsed = JSON.parse(rawLocal);
+              if (Array.isArray(parsed) && parsed.length > 0) savedMovs = parsed;
+            }
+          } catch {}
+
           setCaixa((prev) => ({
             ...prev,
             id: row.id || prev.id,
@@ -261,6 +270,7 @@ export default function App() {
             valor_abertura: valAbertura,
             valor_fechamento: row.valor_fechamento !== null && row.valor_fechamento !== undefined ? Number(row.valor_fechamento) : undefined,
             observacoes: row.observacoes || prev.observacoes,
+            movimentacoes: savedMovs.length > 0 ? savedMovs : (prev.movimentacoes || []),
           }));
         }
       }
@@ -393,7 +403,17 @@ export default function App() {
           (payload: any) => {
             if (payload.new) {
               const updated: Pedido = payload.new;
-              setPedidos((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
+              setPedidos((prev) =>
+                prev.map((p) => {
+                  if (p.id !== updated.id) return p;
+                  return {
+                    ...p,
+                    ...updated,
+                    itens: updated.itens && updated.itens.length > 0 ? updated.itens : p.itens,
+                    pagamentos: updated.pagamentos && updated.pagamentos.length > 0 ? updated.pagamentos : p.pagamentos,
+                  };
+                })
+              );
             }
           }
         )
@@ -563,8 +583,8 @@ export default function App() {
       }
     }
 
-    // 4. Registra movimentações no faturamento do caixa se caixa estiver aberto (Dinheiro, PIX, etc.)
-    if (caixa && caixa.status === 'aberto' && pagamentos && pagamentos.length > 0) {
+    // 4. Registra movimentações no faturamento do caixa (Dinheiro, PIX, Débito, Crédito, etc.)
+    if (pagamentos && pagamentos.length > 0) {
       const validPgs = pagamentos.filter((pg) => pg.valor > 0);
       if (validPgs.length > 0) {
         await handleRegistrarMultiplasMovimentacoesCaixa(
@@ -572,7 +592,7 @@ export default function App() {
             tipo: 'entrada_pedido' as const,
             forma: pg.forma,
             valor: pg.valor,
-            descricao: `FECHAMENTO MESA #${numero}`,
+            descricao: `FECHAMENTO MESA #${numero} (${String(pg.forma).toUpperCase().replace('_', ' ')})`,
           }))
         );
       }
@@ -822,10 +842,16 @@ export default function App() {
     }));
 
     // Atualização atômica do estado React para garantir que todas as formas (dinheiro, pix, etc.) fiquem salvas
-    setCaixa((prevCaixa) => ({
-      ...prevCaixa,
-      movimentacoes: [...(prevCaixa.movimentacoes || []), ...novasMovs],
-    }));
+    setCaixa((prevCaixa) => {
+      const mergedMovs = [...(prevCaixa.movimentacoes || []), ...novasMovs];
+      try {
+        localStorage.setItem('kaipira_caixa_movs', JSON.stringify(mergedMovs));
+      } catch {}
+      return {
+        ...prevCaixa,
+        movimentacoes: mergedMovs,
+      };
+    });
 
     // Sincroniza em nuvem no Supabase
     await registrarMultiplasMovimentacoesCaixaSupabase(caixa, movsParaRegistrar);

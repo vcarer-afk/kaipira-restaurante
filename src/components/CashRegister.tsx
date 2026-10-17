@@ -187,6 +187,78 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       }
     });
 
+    // Inclusão de segurança: agrega também pagamentos finalizados em pedidos (ex: fechamentos de mesa)
+    // para garantir que nenhuma forma (como PIX ou Dinheiro) deixe de constar no faturamento do dia
+    pedidos.forEach((p) => {
+      if (p.status === 'cancelado') return;
+      if (p.pagamentos && p.pagamentos.length > 0) {
+        p.pagamentos.forEach((pg) => {
+          if (!pg.valor || pg.valor <= 0) return;
+          // Evita duplicidade se esta mesma entrada já estiver explícita em movs
+          const alreadyInMovs = movs.some(
+            (m) =>
+              m.tipo === 'entrada_pedido' &&
+              m.descricao &&
+              (m.descricao.includes(`PEDIDO #${p.id}`) ||
+                (p.mesa_id && m.descricao.includes(`MESA #${p.mesa_id}`) && Math.abs(m.valor - pg.valor) < 0.01))
+          );
+
+          if (!alreadyInMovs) {
+            const rawForma = String(pg.forma || 'outro').toLowerCase().trim();
+            const formaKey =
+              rawForma === 'pix' || rawForma.includes('pix')
+                ? 'pix'
+                : rawForma === 'dinheiro' || rawForma.includes('dinheiro') || rawForma.includes('espécie') || rawForma.includes('especie')
+                ? 'dinheiro'
+                : rawForma === 'cartao_debito' || rawForma.includes('debito') || rawForma.includes('débito')
+                ? 'cartao_debito'
+                : rawForma === 'cartao_credito' || rawForma.includes('credito') || rawForma.includes('crédito')
+                ? 'cartao_credito'
+                : rawForma === 'vale_refeicao' || rawForma.includes('vale') || rawForma.includes('vr')
+                ? 'vale_refeicao'
+                : rawForma === 'mensalista' || rawForma.includes('mensalista')
+                ? 'mensalista'
+                : rawForma;
+
+            totalEntradasGerais += pg.valor;
+
+            if (!statsMap[formaKey]) {
+              const guessedNome =
+                formaKey === 'dinheiro'
+                  ? 'DINHEIRO (ESPÉCIE)'
+                  : formaKey === 'pix'
+                  ? 'PIX (CHAVE / QR CODE)'
+                  : formaKey === 'cartao_debito'
+                  ? 'CARTÃO DE DÉBITO'
+                  : formaKey === 'cartao_credito'
+                  ? 'CARTÃO DE CRÉDITO'
+                  : formaKey === 'vale_refeicao'
+                  ? 'VALE REFEIÇÃO / VR'
+                  : formaKey === 'mensalista'
+                  ? 'MENSALISTA (FATURADO)'
+                  : formaKey.toUpperCase();
+
+              statsMap[formaKey] = {
+                id: formaKey,
+                nome: guessedNome,
+                tipo: 'outro',
+                total: 0,
+                qtd: 0,
+                taxa_operadora: 0,
+              };
+            }
+
+            statsMap[formaKey].total += pg.valor;
+            statsMap[formaKey].qtd += 1;
+
+            if (formaKey === 'dinheiro') {
+              totalDinheiroEntradas += pg.valor;
+            }
+          }
+        });
+      }
+    });
+
     // Calculate Physical drawer money
     const fundoAbertura = caixa.valor_abertura || 0;
     const dinheiroGavetaEsperado =
@@ -212,7 +284,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       fundoAbertura,
       dinheiroGavetaEsperado,
     };
-  }, [formasPagamento, movs, caixa.valor_abertura]);
+  }, [formasPagamento, movs, pedidos, caixa.valor_abertura]);
 
   // Breakdown by channel from orders
   const channelStats = useMemo(() => {

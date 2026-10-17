@@ -190,21 +190,25 @@ export async function testarConexaoSupabase(
 }
 
 /**
- * Pedidos operations via Supabase (Estrutura Relacional estrita: 'pedidos' -> 'itens_pedido' -> 'pagamentos')
+/**
+ * Pedidos operations via Supabase (Estrutura Relacional estrita em 2 etapas:
+ * 1. Insere dados gerais na tabela 'pedidos' SEM a coluna 'itens' e recupera data[0].id
+ * 2. Com o id em mãos, insere em lote (ou sequencial) na tabela 'itens_pedido'
+ * 3. Se houver pagamentos imediatos (balcão/delivery), insere na tabela 'pagamentos'
  */
 export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
-  const idGeradoFallback = pedido.id || Date.now();
-  const codigoSenhaFallback = pedido.codigo_senha || Math.floor(100 + Math.random() * 900);
   const now = new Date().toISOString();
+  const idFallback = pedido.id || Date.now();
+  const codigoSenhaFallback = pedido.codigo_senha || Math.floor(100 + Math.random() * 900);
 
-  // Validador de UUID para cliente_id (evita erro de sintaxe UUID no PostgreSQL caso venha string customizada)
+  // Validador de UUID para cliente_id (evita erro de sintaxe UUID no PostgreSQL)
   const isValidUUID = (id?: string) =>
     typeof id === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 
   const clienteIdVal = isValidUUID(pedido.cliente_id) ? pedido.cliente_id : null;
 
-  // 1. Inserir o pedido: dados gerais na tabela 'pedidos' estritamente SEM coluna 'itens' nem 'pagamentos'
+  // 1. INSERIR O PEDIDO: dados gerais na tabela 'pedidos' ESTRITAMENTE SEM 'itens'
   const pedidoPayload: Record<string, any> = {
     tipo: pedido.tipo,
     status: pedido.status || 'pendente',
@@ -219,46 +223,57 @@ export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
     atualizado_em: now,
   };
 
-  if (pedido.codigo_senha) {
+  // Se codigo_senha numérico foi fornecido
+  if (pedido.codigo_senha && Number(pedido.codigo_senha) > 0) {
     pedidoPayload.codigo_senha = Number(pedido.codigo_senha);
   }
 
-  let pedidoIdGerado = idGeradoFallback;
+  let pedidoIdGerado = idFallback;
   let codigoSenhaGerado = codigoSenhaFallback;
 
   try {
     let { data, error } = await supabase
       .from('pedidos')
-      .insert(pedidoPayload)
+      .insert([pedidoPayload])
       .select();
 
     if (error) {
-      console.warn('Tentativa 1 de insert em pedidos falhou:', error.message);
-      // Se falhou por causa de codigo_senha
+      console.warn('Tentativa 1 de insert na tabela pedidos falhou:', error.message);
+      // Tratamento resiliente se codigo_senha for autoincrement ou conflitar
       if (error.message?.includes('codigo_senha')) {
         delete pedidoPayload.codigo_senha;
-        const retry = await supabase.from('pedidos').insert(pedidoPayload).select();
-        data = retry.data;
-        error = retry.error;
       }
+      // Se falhar por foreign key em mesa_id ou cliente_id
+      if (error.message?.includes('mesa_id') || error.message?.includes('foreign key')) {
+        pedidoPayload.mesa_id = null;
+      }
+      if (error.message?.includes('cliente_id')) {
+        pedidoPayload.cliente_id = null;
+      }
+
+      const retry = await supabase.from('pedidos').insert([pedidoPayload]).select();
+      data = retry.data;
+      error = retry.error;
     }
 
     if (!error && data && data.length > 0) {
-      pedidoIdGerado = Number(data[0].id) || idGeradoFallback;
-      codigoSenhaGerado = Number(data[0].codigo_senha) || codigoSenhaFallback;
+      pedidoIdGerado = Number(data[0].id) || idFallback;
+      codigoSenhaGerado = Number(data[0].codigo_senha) || pedidoIdGerado;
+    } else if (error) {
+      console.error('Erro ao persistir pedido no Supabase:', error.message);
     }
   } catch (err) {
     console.warn('Exceção ao inserir pedido no Supabase:', err);
   }
 
-  // 2. Inserir os itens: insert em lote na tabela 'itens_pedido' com pedido_id
+  // 2. INSERIR OS ITENS: Com o id do pedido em mãos, insert na tabela 'itens_pedido'
   const itensFormatados: ItemPedido[] = [];
   if (pedido.itens && pedido.itens.length > 0) {
-    const itensPayload = pedido.itens.map((it: any, index: number) => ({
+    const itensPayload = pedido.itens.map((it: any) => ({
       pedido_id: pedidoIdGerado,
-      produto_id: it.produto_id ? Number(it.produto_id) : null,
+      produto_id: it.produto_id ? Number(it.produto_id) : (it.id ? Number(it.id) : null),
       quantidade: Number(it.quantidade) || 1,
-      preco_unitario: Number(it.preco_unitario) || 0,
+      preco_unitario: Number(it.preco_unitario || it.preco_salao || it.preco_delivery || 0),
       observacao: it.observacao ? String(it.observacao).toUpperCase().trim() : null,
       opcionais_selecionados: it.opcionais_selecionados || null,
     }));
@@ -273,7 +288,10 @@ export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
         console.warn('Insert em lote na tabela itens_pedido falhou, tentando sequencial:', itensError.message);
         for (const itemP of itensPayload) {
           try {
-            const { data: singleItem } = await supabase.from('itens_pedido').insert(itemP).select();
+            const { data: singleItem } = await supabase
+              .from('itens_pedido')
+              .insert([itemP])
+              .select();
             if (singleItem && singleItem[0]) {
               itensFormatados.push(singleItem[0] as ItemPedido);
             }
@@ -287,7 +305,7 @@ export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
     }
   }
 
-  // 3. Inserir pagamentos se houver na tabela 'pagamentos'
+  // 3. INSERIR PAGAMENTOS se houver na tabela 'pagamentos'
   const pagamentosFormatados: Pagamento[] = [];
   if (pedido.pagamentos && pedido.pagamentos.length > 0) {
     const pagsPayload = pedido.pagamentos.map((pg: any) => ({
@@ -853,7 +871,7 @@ export async function registrarMultiplasMovimentacoesCaixaSupabase(
     const existingRow = rows && rows.length > 0 ? rows[0] : null;
     const baseObs = existingRow?.observacoes || caixaAtual.observacoes || '';
     const resumoNovas = formatadas
-      .map((n) => `${n.tipo.toUpperCase()}: ${n.valor.toFixed(2)} (${n.forma.toUpperCase()})`)
+      .map((n) => `${n.tipo.toUpperCase()}: ${n.valor.toFixed(2)} (${(n.forma || 'outro').toUpperCase()})`)
       .join(' | ');
     const obsAtualizada = `${baseObs ? baseObs + ' | ' : ''}${resumoNovas}`.slice(0, 500);
 

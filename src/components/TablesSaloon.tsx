@@ -105,6 +105,8 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   // Payment form state
   const [paymentMode, setPaymentMode] = useState<string>('pix');
   const [valorRecebidoDinheiro, setValorRecebidoDinheiro] = useState('');
+  const [valorDinheiroDuplo, setValorDinheiroDuplo] = useState('');
+  const [valorPixDuplo, setValorPixDuplo] = useState('');
   const [selectedMensalistaId, setSelectedMensalistaId] = useState<string>('');
   const [pagamentosMultiplos, setPagamentosMultiplos] = useState<PagamentoParcial[]>([]);
   const [novaFormaMultiplo, setNovaFormaMultiplo] = useState<FormaPagamento>('pix');
@@ -229,7 +231,26 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
     // Preparar lista de pagamentos realizados
     let pagamentosFinal: { forma: FormaPagamento; valor: number }[] = [];
 
-    if (paymentMode === 'multiplo') {
+    if (paymentMode === 'dinheiro_pix') {
+      const dVal = parseFloat(valorDinheiroDuplo.replace(',', '.')) || 0;
+      const pVal = parseFloat(valorPixDuplo.replace(',', '.')) || 0;
+      const totalSoma = dVal + pVal;
+
+      if (totalSoma < mesaConsumoTotal - 0.05) {
+        alert(
+          `O VALOR TOTAL (${formatBRL(totalSoma)}) É INFERIOR AO CONSUMO DA MESA (${formatBRL(
+            mesaConsumoTotal
+          )}). AJUSTE OS VALORES DE DINHEIRO E PIX.`
+        );
+        setIsProcessingClose(false);
+        return;
+      }
+
+      pagamentosFinal = [
+        { forma: 'dinheiro', valor: dVal },
+        { forma: 'pix', valor: pVal },
+      ].filter((p) => p.valor > 0);
+    } else if (paymentMode === 'multiplo') {
       if (totalPagoMultiplo < mesaConsumoTotal - 0.05) {
         alert(
           `O VALOR PAGO (${formatBRL(totalPagoMultiplo)}) É INFERIOR AO TOTAL DA CONTA (${formatBRL(
@@ -245,17 +266,15 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
       }));
     } else if (paymentMode === 'dinheiro') {
       if (dinheiroEntregueNum > 0 && dinheiroEntregueNum < mesaConsumoTotal - 0.05) {
-        alert(
-          `O VALOR RECEBIDO EM DINHEIRO (${formatBRL(
-            dinheiroEntregueNum
-          )}) É INFERIOR AO TOTAL DA CONTA (${formatBRL(
-            mesaConsumoTotal
-          )}). CLIQUE EM "COMPLETAR NO PIX" OU USE "MÚLTIPLOS / COMBINAÇÃO" PARA DIVIDIR A FORMA DE PAGAMENTO.`
-        );
-        setIsProcessingClose(false);
-        return;
+        // Se o valor em dinheiro for parcial, divide automaticamente com PIX para não travar
+        const restoPix = Math.round((mesaConsumoTotal - dinheiroEntregueNum) * 100) / 100;
+        pagamentosFinal = [
+          { forma: 'dinheiro', valor: dinheiroEntregueNum },
+          { forma: 'pix', valor: restoPix },
+        ];
+      } else {
+        pagamentosFinal = [{ forma: 'dinheiro', valor: mesaConsumoTotal }];
       }
-      pagamentosFinal = [{ forma: 'dinheiro', valor: mesaConsumoTotal }];
     } else if (paymentMode === 'mensalista') {
       if (!selectedMensalistaId) {
         alert('POR FAVOR, SELECIONE O CLIENTE MENSALISTA PARA FATURAR A CONTA.');
@@ -1127,6 +1146,34 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                       );
                     })}
 
+                  {/* Botão rápido: DINHEIRO + PIX */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMode('dinheiro_pix');
+                      const metade = Math.round((mesaConsumoTotal / 2) * 100) / 100;
+                      setValorDinheiroDuplo(metade.toFixed(2));
+                      setValorPixDuplo((mesaConsumoTotal - metade).toFixed(2));
+                    }}
+                    className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer relative overflow-hidden ${
+                      paymentMode === 'dinheiro_pix'
+                        ? 'bg-amber-600 text-white border-amber-500 shadow-md ring-2 ring-emerald-500'
+                        : 'bg-neutral-850 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                    }`}
+                  >
+                    <span className="absolute top-1 right-1 px-1.5 py-0.2 bg-emerald-500 text-black font-black text-[9px] rounded-full uppercase tracking-tighter">
+                      Rápido
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <DollarSign className="w-4 h-4 text-emerald-300" />
+                      <span className="text-xs font-black">+</span>
+                      <QrCode className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <span className="text-xs font-black uppercase text-center leading-tight">
+                      Dinheiro + PIX
+                    </span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setPaymentMode('multiplo')}
@@ -1144,6 +1191,88 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                 </div>
 
                 {/* Detalhes específicos de cada forma */}
+                {/* 1.1 DINHEIRO + PIX COMBINADO */}
+                {paymentMode === 'dinheiro_pix' && (
+                  <div className="p-4 rounded-xl bg-neutral-950 border border-emerald-900/60 space-y-4 animate-in fade-in">
+                    <div className="flex items-center justify-between pb-2 border-b border-neutral-850">
+                      <div>
+                        <span className="text-xs font-black text-emerald-400 uppercase flex items-center gap-1.5">
+                          <DollarSign className="w-4 h-4" />
+                          <span>+</span>
+                          <QrCode className="w-4 h-4" />
+                          Divisão Rápida: Dinheiro + PIX
+                        </span>
+                        <p className="text-[11px] text-neutral-400 mt-0.5">
+                          Ambos os valores serão lançados no faturamento do caixa individualmente.
+                        </p>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-neutral-300 bg-neutral-900 px-2 py-1 rounded border border-neutral-800">
+                        Total Conta: <strong className="text-white">{formatBRL(mesaConsumoTotal)}</strong>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Entrada Dinheiro */}
+                      <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800 space-y-1.5">
+                        <label className="text-[11px] font-bold uppercase text-emerald-300 flex items-center gap-1">
+                          <DollarSign className="w-3.5 h-3.5" />
+                          1. Valor em Dinheiro (R$):
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2.5 text-neutral-500 text-xs font-bold">R$</span>
+                          <input
+                            type="text"
+                            value={valorDinheiroDuplo}
+                            onChange={(e) => {
+                              const valStr = e.target.value;
+                              setValorDinheiroDuplo(valStr);
+                              const parsed = parseFloat(valStr.replace(',', '.')) || 0;
+                              const resto = Math.max(0, Math.round((mesaConsumoTotal - parsed) * 100) / 100);
+                              setValorPixDuplo(resto.toFixed(2));
+                            }}
+                            placeholder="0.00"
+                            className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-emerald-400 font-mono font-bold rounded-lg text-sm focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Entrada PIX */}
+                      <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800 space-y-1.5">
+                        <label className="text-[11px] font-bold uppercase text-cyan-300 flex items-center gap-1">
+                          <QrCode className="w-3.5 h-3.5" />
+                          2. Valor no PIX (R$):
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2.5 text-neutral-500 text-xs font-bold">R$</span>
+                          <input
+                            type="text"
+                            value={valorPixDuplo}
+                            onChange={(e) => {
+                              const valStr = e.target.value;
+                              setValorPixDuplo(valStr);
+                              const parsed = parseFloat(valStr.replace(',', '.')) || 0;
+                              const resto = Math.max(0, Math.round((mesaConsumoTotal - parsed) * 100) / 100);
+                              setValorDinheiroDuplo(resto.toFixed(2));
+                            }}
+                            placeholder="0.00"
+                            className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-cyan-400 font-mono font-bold rounded-lg text-sm focus:outline-none focus:border-cyan-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Resumo da Soma */}
+                    <div className="flex items-center justify-between p-2.5 bg-neutral-900/80 rounded-xl border border-neutral-800 text-xs">
+                      <div className="flex items-center gap-3 font-mono text-[11px]">
+                        <span>💵 Dinheiro: <strong>{formatBRL(parseFloat(valorDinheiroDuplo.replace(',', '.')) || 0)}</strong></span>
+                        <span>⚡ PIX: <strong>{formatBRL(parseFloat(valorPixDuplo.replace(',', '.')) || 0)}</strong></span>
+                      </div>
+                      <span className="font-bold text-emerald-400 font-mono text-xs">
+                        Soma: {formatBRL((parseFloat(valorDinheiroDuplo.replace(',', '.')) || 0) + (parseFloat(valorPixDuplo.replace(',', '.')) || 0))}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {/* 1. DINHEIRO COM TROCO */}
                 {paymentMode === 'dinheiro' && (
                   <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-800 space-y-3 animate-in fade-in">
