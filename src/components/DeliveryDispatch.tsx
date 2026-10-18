@@ -1,20 +1,33 @@
 import React, { useState } from 'react';
-import { Pedido } from '../types';
+import { Pedido, Produto } from '../types';
 import { formatBRL, formatTime } from '../utils/formatters';
-import { Bike, Navigation, CheckCircle2, Clock, Printer, MapPin, Phone, AlertCircle } from 'lucide-react';
+import { Bike, Navigation, CheckCircle2, Clock, Printer, MapPin, Phone, AlertCircle, ShoppingBag } from 'lucide-react';
 
 interface DeliveryDispatchProps {
   pedidos: Pedido[];
+  produtos?: Produto[];
   onUpdateStatus: (id: number, status: 'a_caminho' | 'entregue', entregador?: string) => void;
   onPrintReceipt: (pedido: Pedido) => void;
 }
 
 export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
   pedidos,
+  produtos = [],
   onUpdateStatus,
   onPrintReceipt,
 }) => {
   const [selectedEntregador, setSelectedEntregador] = useState<string>('RODRIGO MOTOBOY');
+
+  const getProductDescription = (it: { produto_id?: number; produto_nome?: string }): string => {
+    if (it.produto_nome && !it.produto_nome.startsWith('#') && it.produto_nome !== `#${it.produto_id}`) {
+      return it.produto_nome;
+    }
+    if (it.produto_id && produtos && produtos.length > 0) {
+      const match = produtos.find((pr) => pr.id === it.produto_id);
+      if (match && match.nome) return match.nome;
+    }
+    return it.produto_nome || `PRODUTO #${it.produto_id}`;
+  };
 
   // Filter only delivery orders
   const deliveryOrders = pedidos.filter((p) => p.tipo === 'delivery');
@@ -118,6 +131,33 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
                     </div>
                   )}
 
+                  {/* Lista de Produtos com Descrição Completa */}
+                  {p.itens && p.itens.length > 0 && (
+                    <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                        <ShoppingBag className="w-3 h-3 text-amber-500" />
+                        <span>Itens do Pedido ({p.itens.reduce((s, it) => s + it.quantidade, 0)}):</span>
+                      </div>
+                      <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
+                        {p.itens.map((it, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-xs py-0.5">
+                            <span className="text-neutral-200">
+                              <strong className="text-amber-400 font-mono">{it.quantidade}x</strong>{' '}
+                              {getProductDescription(it)}
+                            </span>
+                            <span className="text-[11px] font-mono text-neutral-300 font-semibold tabular-nums shrink-0">
+                              {formatBRL(it.preco_unitario * it.quantidade)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="pt-1.5 border-t border-neutral-800 flex justify-between text-[10.5px] font-mono text-neutral-400">
+                        <span>Taxa Entrega: +{formatBRL(p.taxa_entrega || 0)}</span>
+                        <span className="font-bold text-white">Total: {formatBRL(p.valor_total)}</span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Change warning */}
                   {p.precisa_troco && p.troco_para && (
                     <div className="p-2 rounded bg-amber-950/60 border border-amber-800 text-[11px] text-amber-300 flex items-center gap-1.5 font-bold">
@@ -191,6 +231,29 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
                       </div>
                       <div className="text-[11px] text-neutral-500">
                         TEL: {p.cliente.telefone}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Lista de Produtos com Descrição Completa */}
+                  {p.itens && p.itens.length > 0 && (
+                    <div className="p-2 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                        <ShoppingBag className="w-3 h-3 text-cyan-500" />
+                        <span>Itens ({p.itens.reduce((s, it) => s + it.quantidade, 0)}):</span>
+                      </div>
+                      <div className="space-y-1 max-h-28 overflow-y-auto pr-0.5">
+                        {p.itens.map((it, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-xs py-0.5">
+                            <span className="text-neutral-200">
+                              <strong className="text-cyan-400 font-mono">{it.quantidade}x</strong>{' '}
+                              {getProductDescription(it)}
+                            </span>
+                            <span className="text-[11px] font-mono text-neutral-300 font-semibold tabular-nums shrink-0">
+                              {formatBRL(it.preco_unitario * it.quantidade)}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}

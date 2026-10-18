@@ -93,6 +93,7 @@ import {
   registrarMultiplasMovimentacoesCaixaSupabase,
   registrarPagamentosMesaSupabase,
   conferirEntregaPedidoSupabase,
+  subscribeActiveConnections,
 } from './services/supabaseClient';
 
 // Helper para enriquecer e garantir a descrição/nome completo do produto em todo o sistema
@@ -125,6 +126,9 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentPerfil, setCurrentPerfil] = useState<Perfil | undefined>(undefined);
   const [currentRole, setCurrentRole] = useState<TipoUsuario>('admin');
+
+  // Conexões ativas no sistema em tempo real
+  const [activeConnectionsCount, setActiveConnectionsCount] = useState<number>(1);
 
   // Navigation & Menu Settings
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -172,6 +176,18 @@ export default function App() {
     const interval = setInterval(checkLunch, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // Conexões ativas de dispositivos em tempo real pela internet (Supabase Presence)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const unsub = subscribeActiveConnections(
+      currentPerfil?.nome || 'Operador Kaipira',
+      (count) => {
+        setActiveConnectionsCount(count);
+      }
+    );
+    return () => unsub();
+  }, [isAuthenticated, currentPerfil]);
 
   // Update browser document title based on cloud configuracoes
   useEffect(() => {
@@ -295,15 +311,7 @@ export default function App() {
             ? Number(row.valor_abertura)
             : (row.valor_apertura !== undefined && row.valor_apertura !== null ? Number(row.valor_apertura) : 250);
 
-          let savedMovs: MovimentacaoCaixa[] = [];
-          try {
-            const rawLocal = localStorage.getItem('kaipira_caixa_movs');
-            if (rawLocal) {
-              const parsed = JSON.parse(rawLocal);
-              if (Array.isArray(parsed) && parsed.length > 0) savedMovs = parsed;
-            }
-          } catch {}
-
+          const cloudMovs: MovimentacaoCaixa[] = Array.isArray(row.movimentacoes) ? row.movimentacoes : [];
           setCaixa((prev) => ({
             ...prev,
             id: row.id || prev.id,
@@ -312,7 +320,7 @@ export default function App() {
             valor_abertura: valAbertura,
             valor_fechamento: row.valor_fechamento !== null && row.valor_fechamento !== undefined ? Number(row.valor_fechamento) : undefined,
             observacoes: row.observacoes || prev.observacoes,
-            movimentacoes: savedMovs.length > 0 ? savedMovs : (prev.movimentacoes || []),
+            movimentacoes: cloudMovs.length > 0 ? cloudMovs : (prev.movimentacoes || []),
           }));
         }
       }
@@ -400,6 +408,21 @@ export default function App() {
       // Connect to Supabase Realtime channel (works in static hosting like GitHub Pages)
       channel = supabase
         .channel('restaurante_kaipira_cloud_sync')
+        .on('presence', { event: 'sync' }, () => {
+          const state = channel.presenceState();
+          const count = Object.keys(state).length;
+          setActiveConnectionsCount(Math.max(1, count));
+        })
+        .on('presence', { event: 'join' }, () => {
+          const state = channel.presenceState();
+          const count = Object.keys(state).length;
+          setActiveConnectionsCount(Math.max(1, count));
+        })
+        .on('presence', { event: 'leave' }, () => {
+          const state = channel.presenceState();
+          const count = Object.keys(state).length;
+          setActiveConnectionsCount(Math.max(1, count));
+        })
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'configuracoes' },
@@ -497,7 +520,16 @@ export default function App() {
             }
           }
         )
-        .subscribe();
+        .subscribe(async (status: string) => {
+          if (status === 'SUBSCRIBED') {
+            try {
+              await channel.track({
+                online_em: new Date().toISOString(),
+                device: navigator.userAgent.slice(0, 30),
+              });
+            } catch {}
+          }
+        });
     } catch (err) {
       console.warn('Supabase Realtime não disponível:', err);
     }
@@ -981,9 +1013,6 @@ export default function App() {
     // Atualização atômica do estado React para garantir que todas as formas (dinheiro, pix, etc.) fiquem salvas
     setCaixa((prevCaixa) => {
       const mergedMovs = [...(prevCaixa.movimentacoes || []), ...novasMovs];
-      try {
-        localStorage.setItem('kaipira_caixa_movs', JSON.stringify(mergedMovs));
-      } catch {}
       return {
         ...prevCaixa,
         movimentacoes: mergedMovs,
@@ -1053,6 +1082,7 @@ export default function App() {
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         onOpenSlideMenu={() => setIsSlideMenuOpen(true)}
         pendingKdsCount={pendingKdsCount}
+        activeConnectionsCount={activeConnectionsCount}
         posicaoMenu={configuracoes.posicaoMenu}
         padraoCor={configuracoes.padraoCor}
         configuracoes={configuracoes}
@@ -1240,6 +1270,7 @@ export default function App() {
         {activeTab === 'expedicao' && (
           <DeliveryDispatch
             pedidos={pedidos}
+            produtos={produtos}
             onUpdateStatus={handleUpdateOrderStatus}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}
           />

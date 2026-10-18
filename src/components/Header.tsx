@@ -1,6 +1,7 @@
+import React, { useState, useEffect } from 'react';
 import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { UtensilsCrossed, Cloud, Menu } from 'lucide-react';
+import { UtensilsCrossed, Cloud, Menu, Clock, Users } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
@@ -27,6 +28,7 @@ interface HeaderProps {
   onOpenSupabaseModal: () => void;
   onOpenSlideMenu: () => void;
   pendingKdsCount: number;
+  activeConnectionsCount?: number;
   posicaoMenu?: PosicaoMenu;
   padraoCor?: PadraoCor;
   configuracoes?: ConfiguracoesSistema;
@@ -45,6 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSupabaseModal,
   onOpenSlideMenu,
   pendingKdsCount,
+  activeConnectionsCount = 1,
   posicaoMenu = 'direita',
   padraoCor = 'ambar',
   configuracoes,
@@ -53,6 +56,21 @@ export const Header: React.FC<HeaderProps> = ({
   onRefreshCloudConfig,
 }) => {
   const theme = THEMES[padraoCor] || THEMES.ambar;
+
+  // Relógio em tempo real no formato "00:00"
+  const [currentTime, setCurrentTime] = useState<string>(() => {
+    const now = new Date();
+    return now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  });
+
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    };
+    const timer = setInterval(updateClock, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <header className="sticky top-0 z-40 bg-neutral-900 border-b border-neutral-800">
@@ -113,6 +131,34 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
 
+
+        {/* Zone 2: Realtime Clock & Admin Active Connections */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Relógio em tempo real "00:00" */}
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-neutral-850/90 border border-neutral-750 shadow-inner"
+            title="Horário Oficial em Tempo Real"
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="font-mono text-xs sm:text-sm font-black text-white tracking-widest tabular-nums">
+              {currentTime}
+            </span>
+          </div>
+
+          {/* Somente na tela do Administrador/Master: Conexões Ativas "Conectados xx" */}
+          {(currentRole === 'admin' || currentRole === 'master') && (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-bold shadow-xs whitespace-nowrap"
+              title="Dispositivos e operadores conectados pela internet em tempo real"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <Users className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="font-mono font-black tracking-tight">
+                Conectados {String(activeConnectionsCount || 1).padStart(2, '0')}
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Zone 3: Slide Menu Trigger & Operator Info */}
         <div className="flex items-center gap-3 shrink-0">

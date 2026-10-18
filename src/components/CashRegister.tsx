@@ -460,22 +460,28 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     window.print();
   };
 
-  // Exportação nativa de PDF com jsPDF + html2canvas (Garante download de arquivo .pdf)
+  // Exportação nativa de PDF com jsPDF + html2canvas (Garante download de arquivo .pdf sem espaço em branco no topo)
   const handleExportarPDF = async () => {
     setIsExportingPDF(true);
     try {
       const reportElement = document.getElementById('relatorio-fechamento-caixa');
       if (!reportElement) {
-        alert('Elemento do relatório não encontrado na página.');
         setIsExportingPDF(false);
         return;
       }
 
+      // Garante captura do elemento a partir do topo exato sem adicionar scroll
       const canvas = await html2canvas(reportElement, {
         scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
+        x: 0,
+        y: 0,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: reportElement.scrollWidth,
+        windowHeight: reportElement.scrollHeight,
       });
 
       const imgData = canvas.toDataURL('image/png');
@@ -487,21 +493,22 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
       const pdfWidth = 210;
       const pdfHeight = 297;
-      const margin = 8;
+      const margin = 5;
       const contentWidth = pdfWidth - margin * 2;
+      const pageUsableHeight = pdfHeight - margin * 2;
       const contentHeight = (canvas.height * contentWidth) / canvas.width;
 
       let heightLeft = contentHeight;
       let position = margin;
 
       pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
-      heightLeft -= (pdfHeight - margin * 2);
+      heightLeft -= pageUsableHeight;
 
       while (heightLeft > 0) {
-        position = heightLeft - contentHeight + margin;
+        position -= pageUsableHeight;
         pdf.addPage();
         pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
-        heightLeft -= (pdfHeight - margin * 2);
+        heightLeft -= pageUsableHeight;
       }
 
       const dataHoje = caixa.data_caixa || new Date().toISOString().split('T')[0];
@@ -1790,10 +1797,10 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
           MODAL 4: RELATÓRIO COMPLETO DE TODO MOVIMENTO FINANCEIRO E CAIXA DO SISTEMA
           ========================================================================= */}
       {showRelatorioModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-3 sm:p-5 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-3xl w-full p-5 sm:p-7 shadow-2xl flex flex-col gap-5 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-3 sm:p-5 backdrop-blur-sm overflow-y-auto print:p-0 print:m-0 print:static print:block print:bg-white">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-3xl w-full p-5 sm:p-7 shadow-2xl flex flex-col gap-5 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 print:p-0 print:m-0 print:border-none print:shadow-none print:max-w-none print:max-h-none print:overflow-visible print:bg-white">
             {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-neutral-800 pb-4">
+            <div className="flex items-start justify-between border-b border-neutral-800 pb-4 print:hidden">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="p-1.5 rounded-lg bg-amber-600/20 text-amber-500 border border-amber-500/30">

@@ -351,26 +351,18 @@ export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
   return novoPedidoCompleto;
 }
 
-const CONFERIDOS_STORAGE_KEY = 'kaipira_delivery_conferidos_v1';
+// Estado de conferências mantido exclusivamente em memória durante a sessão (zero localStorage)
+const conferenciasSessao: Record<number, { conferido_por: string; conferido_em: string }> = {};
 
 export function getConferenciasLocais(): Record<number, { conferido_por: string; conferido_em: string }> {
-  try {
-    const raw = localStorage.getItem(CONFERIDOS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+  return conferenciasSessao;
 }
 
 export function registrarConferenciaLocal(pedidoId: number, conferidoPor: string) {
-  try {
-    const map = getConferenciasLocais();
-    map[pedidoId] = {
-      conferido_por: conferidoPor,
-      conferido_em: new Date().toISOString(),
-    };
-    localStorage.setItem(CONFERIDOS_STORAGE_KEY, JSON.stringify(map));
-  } catch {}
+  conferenciasSessao[pedidoId] = {
+    conferido_por: conferidoPor,
+    conferido_em: new Date().toISOString(),
+  };
 }
 
 let pedidosColumnsChecked = false;
@@ -526,7 +518,6 @@ export async function atualizarStatusPedidoSupabase(
     await checkPedidosSchema();
     const payload: any = {
       status,
-      atualizado_em: new Date().toISOString(),
     };
 
     if (entregador_nome && pedidosCols.entregador_nome) {
@@ -538,17 +529,11 @@ export async function atualizarStatusPedidoSupabase(
 
     const { error } = await supabase.from('pedidos').update(payload).eq('id', id);
     if (error) {
-      console.warn('Update pedido status falhou com payload completo:', error.message);
-      if (error.code === 'PGRST204' || error.message?.includes('column') || (error as any).status === 400) {
-        pedidosCols.conferencia_entrega = false;
-        pedidosCols.entregador_nome = false;
-        pedidosColumnsChecked = true;
-        // Fallback apenas com colunas essenciais padrão
-        await supabase.from('pedidos').update({
-          status,
-          atualizado_em: new Date().toISOString(),
-        }).eq('id', id);
-      }
+      // Fallback sem colunas adicionais para evitar 400 Bad Request se a coluna não existir no Supabase
+      pedidosCols.conferencia_entrega = false;
+      pedidosCols.entregador_nome = false;
+      pedidosColumnsChecked = true;
+      await supabase.from('pedidos').update({ status }).eq('id', id);
     }
   } catch (err) {
     console.warn('Erro ao atualizar status do pedido no Supabase:', err);
@@ -560,38 +545,79 @@ export async function conferirEntregaPedidoSupabase(
   conferidoPor: string
 ): Promise<void> {
   try {
-    // 1. Sempre registra em cache local persistente para garantir integridade do estado
+    // 1. Sempre registra em cache de sessão em memória para garantir integridade do estado em tempo real
     registrarConferenciaLocal(id, conferidoPor);
 
     await checkPedidosSchema();
 
-    // 2. Se a tabela pedidos possui as colunas de conferência, atualiza no Supabase
+    // 2. Se a tabela pedidos possui as colunas de conferência no Supabase, tenta atualizar
     if (pedidosCols.conferencia_entrega) {
       const payload: any = {
         conferencia_entrega: 'conferido',
-        atualizado_em: new Date().toISOString(),
       };
       if (pedidosCols.conferido_por) payload.conferido_por = conferidoPor;
       if (pedidosCols.conferido_em) payload.conferido_em = new Date().toISOString();
 
       const { error } = await supabase.from('pedidos').update(payload).eq('id', id);
-      if (!error) return;
-
-      console.warn('Conferência via colunas no Supabase falhou:', error.message);
-      if (error.code === 'PGRST204' || error.message?.includes('column') || (error as any).status === 400) {
+      if (error) {
         pedidosCols.conferencia_entrega = false;
         pedidosCols.conferido_por = false;
         pedidosCols.conferido_em = false;
         pedidosColumnsChecked = true;
       }
     }
-
-    // 3. Fallback seguro: atualiza apenas timestamp padrão para não dar erro 400 Bad Request
-    await supabase.from('pedidos').update({
-      atualizado_em: new Date().toISOString(),
-    }).eq('id', id);
   } catch (err) {
-    console.warn('Erro ao salvar conferência de entrega no Supabase:', err);
+    console.warn('Conferência de entrega salva em sessão:', err);
+  }
+}
+
+/**
+ * Conexões ativas no sistema em tempo real (Supabase Presence)
+ * Notifica a quantidade de dispositivos (tablets, celulares, PCs) conectados pela internet
+ */
+export function subscribeActiveConnections(
+  userPerfilNome: string,
+  onCountChange: (count: number) => void
+): () => void {
+  try {
+    const channelId = `dev_${Math.random().toString(36).substring(2, 9)}`;
+    const channel = supabase.channel('kaipira_online_presence', {
+      config: {
+        presence: { key: channelId },
+      },
+    });
+
+    const updateCount = () => {
+      try {
+        const state = channel.presenceState();
+        const count = Math.max(1, Object.keys(state).length);
+        onCountChange(count);
+      } catch {}
+    };
+
+    channel
+      .on('presence', { event: 'sync' }, updateCount)
+      .on('presence', { event: 'join' }, updateCount)
+      .on('presence', { event: 'leave' }, updateCount)
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          try {
+            await channel.track({
+              nome: userPerfilNome,
+              online_at: new Date().toISOString(),
+            });
+          } catch {}
+        }
+      });
+
+    return () => {
+      try {
+        channel.unsubscribe();
+      } catch {}
+    };
+  } catch (err) {
+    console.warn('Erro ao conectar presença em tempo real:', err);
+    return () => {};
   }
 }
 
