@@ -351,8 +351,56 @@ export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
   return novoPedidoCompleto;
 }
 
+const CONFERIDOS_STORAGE_KEY = 'kaipira_delivery_conferidos_v1';
+
+export function getConferenciasLocais(): Record<number, { conferido_por: string; conferido_em: string }> {
+  try {
+    const raw = localStorage.getItem(CONFERIDOS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function registrarConferenciaLocal(pedidoId: number, conferidoPor: string) {
+  try {
+    const map = getConferenciasLocais();
+    map[pedidoId] = {
+      conferido_por: conferidoPor,
+      conferido_em: new Date().toISOString(),
+    };
+    localStorage.setItem(CONFERIDOS_STORAGE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+let pedidosColumnsChecked = false;
+let pedidosCols = {
+  conferencia_entrega: false,
+  conferido_por: false,
+  conferido_em: false,
+  entregador_nome: false,
+};
+
+async function checkPedidosSchema() {
+  if (pedidosColumnsChecked) return pedidosCols;
+  try {
+    const { data, error } = await supabase.from('pedidos').select('*').limit(1);
+    if (!error && data && data.length > 0) {
+      const first = data[0];
+      pedidosCols.conferencia_entrega = 'conferencia_entrega' in first;
+      pedidosCols.conferido_por = 'conferido_por' in first;
+      pedidosCols.conferido_em = 'conferido_em' in first;
+      pedidosCols.entregador_nome = 'entregador_nome' in first;
+      pedidosColumnsChecked = true;
+    }
+  } catch {}
+  return pedidosCols;
+}
+
 export async function fetchPedidosSupabase(): Promise<Pedido[]> {
   try {
+    const conferidosLocais = getConferenciasLocais();
+
     // 1. Tenta carregar pedidos com relacionamento dos itens e pagamentos
     const { data: pedidosData, error } = await supabase
       .from('pedidos')
@@ -360,28 +408,44 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
       .order('criado_em', { ascending: false });
 
     if (!error && pedidosData && pedidosData.length > 0) {
-      return pedidosData.map((p: any) => ({
-        id: Number(p.id),
-        codigo_senha: Number(p.codigo_senha || p.id),
-        tipo: p.tipo,
-        status: p.status,
-        cliente_id: p.cliente_id,
-        cliente: p.cliente,
-        mesa_id: p.mesa_id ? Number(p.mesa_id) : undefined,
-        precisa_troco: !!p.precisa_troco,
-        troco_para: p.troco_para ? Number(p.troco_para) : undefined,
-        motoboy_tipo: p.motoboy_tipo,
-        entregador_nome: p.entregador_nome,
-        valor_total: Number(p.valor_total) || 0,
-        taxa_entrega: Number(p.taxa_entrega) || 0,
-        itens: Array.isArray(p.itens) ? p.itens : [],
-        pagamentos: Array.isArray(p.pagamentos) ? p.pagamentos : [],
-        conferencia_entrega: p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined),
-        conferido_por: p.conferido_por || undefined,
-        conferido_em: p.conferido_em || undefined,
-        criado_em: p.criado_em || new Date().toISOString(),
-        atualizado_em: p.atualizado_em || new Date().toISOString(),
-      }));
+      if (!pedidosColumnsChecked && pedidosData[0]) {
+        pedidosCols.conferencia_entrega = 'conferencia_entrega' in pedidosData[0];
+        pedidosCols.conferido_por = 'conferido_por' in pedidosData[0];
+        pedidosCols.conferido_em = 'conferido_em' in pedidosData[0];
+        pedidosCols.entregador_nome = 'entregador_nome' in pedidosData[0];
+        pedidosColumnsChecked = true;
+      }
+
+      return pedidosData.map((p: any) => {
+        const confLocal = conferidosLocais[Number(p.id)];
+        const isConferido = p.conferencia_entrega === 'conferido' || !!confLocal;
+        const statusConf = isConferido
+          ? 'conferido'
+          : p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined);
+
+        return {
+          id: Number(p.id),
+          codigo_senha: Number(p.codigo_senha || p.id),
+          tipo: p.tipo,
+          status: p.status,
+          cliente_id: p.cliente_id,
+          cliente: p.cliente,
+          mesa_id: p.mesa_id ? Number(p.mesa_id) : undefined,
+          precisa_troco: !!p.precisa_troco,
+          troco_para: p.troco_para ? Number(p.troco_para) : undefined,
+          motoboy_tipo: p.motoboy_tipo,
+          entregador_nome: p.entregador_nome,
+          valor_total: Number(p.valor_total) || 0,
+          taxa_entrega: Number(p.taxa_entrega) || 0,
+          itens: Array.isArray(p.itens) ? p.itens : [],
+          pagamentos: Array.isArray(p.pagamentos) ? p.pagamentos : [],
+          conferencia_entrega: statusConf,
+          conferido_por: p.conferido_por || confLocal?.conferido_por || undefined,
+          conferido_em: p.conferido_em || confLocal?.conferido_em || undefined,
+          criado_em: p.criado_em || new Date().toISOString(),
+          atualizado_em: p.atualizado_em || new Date().toISOString(),
+        };
+      });
     }
 
     // 2. Fallback: buscar pedidos e itens_pedido separadamente
@@ -391,6 +455,14 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
       .order('criado_em', { ascending: false });
 
     if (!simpleError && simplePeds && simplePeds.length > 0) {
+      if (!pedidosColumnsChecked && simplePeds[0]) {
+        pedidosCols.conferencia_entrega = 'conferencia_entrega' in simplePeds[0];
+        pedidosCols.conferido_por = 'conferido_por' in simplePeds[0];
+        pedidosCols.conferido_em = 'conferido_em' in simplePeds[0];
+        pedidosCols.entregador_nome = 'entregador_nome' in simplePeds[0];
+        pedidosColumnsChecked = true;
+      }
+
       let allItens: any[] = [];
       let allPagamentos: any[] = [];
       try {
@@ -409,6 +481,12 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
       return simplePeds.map((p: any) => {
         const pedItens = allItens.filter((it: any) => it.pedido_id === p.id);
         const pedPags = allPagamentos.filter((pg: any) => pg.pedido_id === p.id);
+        const confLocal = conferidosLocais[Number(p.id)];
+        const isConferido = p.conferencia_entrega === 'conferido' || !!confLocal;
+        const statusConf = isConferido
+          ? 'conferido'
+          : p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined);
+
         return {
           id: Number(p.id),
           codigo_senha: Number(p.codigo_senha || p.id),
@@ -425,9 +503,9 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           taxa_entrega: Number(p.taxa_entrega) || 0,
           itens: pedItens.length > 0 ? pedItens : (Array.isArray(p.itens) ? p.itens : []),
           pagamentos: pedPags.length > 0 ? pedPags : (Array.isArray(p.pagamentos) ? p.pagamentos : []),
-          conferencia_entrega: p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined),
-          conferido_por: p.conferido_por || undefined,
-          conferido_em: p.conferido_em || undefined,
+          conferencia_entrega: statusConf,
+          conferido_por: p.conferido_por || confLocal?.conferido_por || undefined,
+          conferido_em: p.conferido_em || confLocal?.conferido_em || undefined,
           criado_em: p.criado_em || new Date().toISOString(),
           atualizado_em: p.atualizado_em || new Date().toISOString(),
         };
@@ -445,16 +523,33 @@ export async function atualizarStatusPedidoSupabase(
   entregador_nome?: string
 ): Promise<void> {
   try {
+    await checkPedidosSchema();
     const payload: any = {
       status,
       atualizado_em: new Date().toISOString(),
     };
-    if (entregador_nome) payload.entregador_nome = entregador_nome;
-    if (status === 'entregue') {
+
+    if (entregador_nome && pedidosCols.entregador_nome) {
+      payload.entregador_nome = entregador_nome;
+    }
+    if (status === 'entregue' && pedidosCols.conferencia_entrega) {
       payload.conferencia_entrega = 'pendente';
     }
 
-    await supabase.from('pedidos').update(payload).eq('id', id);
+    const { error } = await supabase.from('pedidos').update(payload).eq('id', id);
+    if (error) {
+      console.warn('Update pedido status falhou com payload completo:', error.message);
+      if (error.code === 'PGRST204' || error.message?.includes('column') || (error as any).status === 400) {
+        pedidosCols.conferencia_entrega = false;
+        pedidosCols.entregador_nome = false;
+        pedidosColumnsChecked = true;
+        // Fallback apenas com colunas essenciais padrão
+        await supabase.from('pedidos').update({
+          status,
+          atualizado_em: new Date().toISOString(),
+        }).eq('id', id);
+      }
+    }
   } catch (err) {
     console.warn('Erro ao atualizar status do pedido no Supabase:', err);
   }
@@ -465,13 +560,36 @@ export async function conferirEntregaPedidoSupabase(
   conferidoPor: string
 ): Promise<void> {
   try {
-    const payload = {
-      conferencia_entrega: 'conferido',
-      conferido_por: conferidoPor,
-      conferido_em: new Date().toISOString(),
+    // 1. Sempre registra em cache local persistente para garantir integridade do estado
+    registrarConferenciaLocal(id, conferidoPor);
+
+    await checkPedidosSchema();
+
+    // 2. Se a tabela pedidos possui as colunas de conferência, atualiza no Supabase
+    if (pedidosCols.conferencia_entrega) {
+      const payload: any = {
+        conferencia_entrega: 'conferido',
+        atualizado_em: new Date().toISOString(),
+      };
+      if (pedidosCols.conferido_por) payload.conferido_por = conferidoPor;
+      if (pedidosCols.conferido_em) payload.conferido_em = new Date().toISOString();
+
+      const { error } = await supabase.from('pedidos').update(payload).eq('id', id);
+      if (!error) return;
+
+      console.warn('Conferência via colunas no Supabase falhou:', error.message);
+      if (error.code === 'PGRST204' || error.message?.includes('column') || (error as any).status === 400) {
+        pedidosCols.conferencia_entrega = false;
+        pedidosCols.conferido_por = false;
+        pedidosCols.conferido_em = false;
+        pedidosColumnsChecked = true;
+      }
+    }
+
+    // 3. Fallback seguro: atualiza apenas timestamp padrão para não dar erro 400 Bad Request
+    await supabase.from('pedidos').update({
       atualizado_em: new Date().toISOString(),
-    };
-    await supabase.from('pedidos').update(payload).eq('id', id);
+    }).eq('id', id);
   } catch (err) {
     console.warn('Erro ao salvar conferência de entrega no Supabase:', err);
   }

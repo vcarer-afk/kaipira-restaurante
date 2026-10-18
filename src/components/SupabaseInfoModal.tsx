@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS reservas (
     status VARCHAR(20) DEFAULT 'confirmada'
 );
 
--- 7. PEDIDOS & ITENS
+-- 7. PEDIDOS & ITENS (COM CONFERÊNCIA DE DELIVERY PELO CAIXA)
 CREATE TABLE IF NOT EXISTS pedidos (
     id SERIAL PRIMARY KEY,
     codigo_senha SERIAL,
@@ -156,11 +156,21 @@ CREATE TABLE IF NOT EXISTS pedidos (
     precisa_troco BOOLEAN DEFAULT FALSE,
     troco_para DECIMAL(10,2),
     motoboy_tipo VARCHAR(20),
+    entregador_nome VARCHAR(150),
+    conferencia_entrega VARCHAR(20) DEFAULT NULL,
+    conferido_por VARCHAR(150) DEFAULT NULL,
+    conferido_em TIMESTAMP WITH TIME ZONE DEFAULT NULL,
     valor_total DECIMAL(10,2) DEFAULT 0.00,
     taxa_entrega DECIMAL(10,2) DEFAULT 0.00,
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Se a tabela pedidos já existe no seu Supabase sem essas colunas, execute no SQL Editor:
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS conferencia_entrega VARCHAR(20) DEFAULT NULL;
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS conferido_por VARCHAR(150) DEFAULT NULL;
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS conferido_em TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS entregador_nome VARCHAR(150) DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS itens_pedido (
     id SERIAL PRIMARY KEY,
