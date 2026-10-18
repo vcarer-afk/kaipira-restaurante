@@ -8,6 +8,7 @@ import {
   Pedido,
   ConfiguracoesSistema,
   UsuarioSistema,
+  Produto,
 } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { formatBRL, formatDateTime, playAlertChime } from '../utils/formatters';
@@ -51,6 +52,7 @@ interface CashRegisterProps {
   caixa: CaixaDiario;
   formasPagamento?: FormaPagamentoConfig[];
   pedidos?: Pedido[];
+  produtos?: Produto[];
   configuracoes?: ConfiguracoesSistema;
   currentRole?: string;
   currentPerfil?: any;
@@ -70,6 +72,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   caixa,
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
   pedidos = [],
+  produtos = [],
   configuracoes,
   currentRole,
   currentPerfil,
@@ -79,6 +82,17 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   onMovimentacao,
   onConferirEntrega,
 }) => {
+  // Helper para garantir exibição da descrição completa do produto em todas as telas
+  const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
+    if (it.produto_nome && !it.produto_nome.trim().startsWith('#') && !it.produto_nome.toLowerCase().startsWith('prod #') && !it.produto_nome.toLowerCase().startsWith('produto #')) {
+      return it.produto_nome;
+    }
+    if (produtos && it.produto_id) {
+      const match = produtos.find((p) => p.id === it.produto_id);
+      if (match?.nome) return match.nome;
+    }
+    return it.produto_nome || `Item #${it.produto_id || '?'}`;
+  };
   // Modal states
   const [showAbrirModal, setShowAbrirModal] = useState(false);
   const [valorAbertura, setValorAbertura] = useState('250.00');
@@ -1307,7 +1321,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                               >
                                 <span className="text-neutral-200">
                                   <strong className="text-amber-400 font-mono">{it.quantidade}x</strong>{' '}
-                                  {it.produto_nome || `Produto #${it.produto_id}`}
+                                  {getProductDescription(it)}
                                 </span>
                                 <div className="text-right shrink-0 font-mono">
                                   <span className="font-bold text-white">

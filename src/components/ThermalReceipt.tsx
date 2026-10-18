@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pedido, ConfiguracoesSistema } from '../types';
+import { Pedido, ConfiguracoesSistema, Produto } from '../types';
 import { formatBRL, formatDateTime } from '../utils/formatters';
 import { Printer, X } from 'lucide-react';
 
@@ -7,10 +7,22 @@ interface ThermalReceiptProps {
   pedido: Pedido | null;
   onClose: () => void;
   configuracoes?: ConfiguracoesSistema;
+  produtos?: Produto[];
 }
 
-export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose, configuracoes }) => {
+export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose, configuracoes, produtos }) => {
   if (!pedido) return null;
+
+  const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
+    if (it.produto_nome && !it.produto_nome.trim().startsWith('#') && !it.produto_nome.toLowerCase().startsWith('prod #')) {
+      return it.produto_nome;
+    }
+    if (produtos && it.produto_id) {
+      const match = produtos.find((p) => p.id === it.produto_id);
+      if (match?.nome) return match.nome;
+    }
+    return it.produto_nome || `Item #${it.produto_id || '?'}`;
+  };
 
   const handlePrint = () => {
     window.print();
@@ -102,7 +114,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
                   <div key={idx} className="text-[11px]">
                     <div className="flex justify-between items-start">
                       <span className="font-bold">
-                        {it.quantidade}x {it.produto_nome || `PROD #${it.produto_id}`}
+                        {it.quantidade}x {getProductDescription(it)}
                       </span>
                       <div className="text-right shrink-0">
                         <span className="tabular-nums font-bold block">

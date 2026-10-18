@@ -501,17 +501,17 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
             </div>
           </div>
 
-          {/* PADRÕES DE CORES CONFIGURÁVEIS (10 PALETAS) */}
+          {/* PADRÕES DE CORES CONFIGURÁVEIS (11 PALETAS) */}
           <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-xs flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2">
                 <Palette className="w-4 h-4 text-purple-400" />
                 <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
-                  Padrões de Cores do Restaurante (10 Paletas)
+                  Padrões de Cores do Restaurante (11 Paletas)
                 </h3>
               </div>
               <span className="text-[10px] font-mono text-purple-400 font-bold px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800">
-                10 TEMAS COMPLETOS
+                11 TEMAS (INCLUI WINDOWS SEGOE UI)
               </span>
             </div>
 

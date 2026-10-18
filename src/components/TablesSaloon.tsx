@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mesa, Pedido, Reserva, FormaPagamento, Cliente, ConfiguracoesSistema, FormaPagamentoConfig } from '../types';
+import { Mesa, Pedido, Reserva, FormaPagamento, Cliente, ConfiguracoesSistema, FormaPagamentoConfig, Produto } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { formatBRL, formatDateTime } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
@@ -33,6 +33,7 @@ interface TablesSaloonProps {
   mesas: Mesa[];
   pedidos: Pedido[];
   reservas: Reserva[];
+  produtos?: Produto[];
   clientes?: Cliente[];
   configuracoes?: ConfiguracoesSistema;
   formasPagamento?: FormaPagamentoConfig[];
@@ -60,6 +61,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   mesas,
   pedidos,
   reservas,
+  produtos = [],
   clientes = [],
   configuracoes,
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
@@ -70,6 +72,18 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   onPrintReceipt,
   onResetMesas,
 }) => {
+  // Helper para garantir exibição da descrição completa do produto em todas as telas
+  const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
+    if (it.produto_nome && !it.produto_nome.trim().startsWith('#') && !it.produto_nome.toLowerCase().startsWith('prod #')) {
+      return it.produto_nome;
+    }
+    if (produtos && it.produto_id) {
+      const match = produtos.find((p) => p.id === it.produto_id);
+      if (match?.nome) return match.nome;
+    }
+    return it.produto_nome || `Item #${it.produto_id || '?'}`;
+  };
+
   const [selectedMesa, setSelectedMesa] = useState<Mesa | null>(null);
   const [showReservaModal, setShowReservaModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'mapa' | 'reservas'>('mapa');
@@ -796,7 +810,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                                 </span>
                               </div>
                               <div className="text-[11px] text-neutral-400">
-                                {ord.itens.map((it) => `${it.quantidade}x ${it.produto_nome}`).join(', ')}
+                                {ord.itens.map((it) => `${it.quantidade}x ${getProductDescription(it)}`).join(', ')}
                               </div>
                               <button
                                 onClick={() => onPrintReceipt(ord)}
@@ -1039,7 +1053,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                       currentMesaOrders.flatMap((ord) => ord.itens).map((it, idx) => (
                         <div key={idx} className="flex justify-between items-start text-[10px]">
                           <span className="truncate pr-2 font-medium">
-                            <strong>{it.quantidade}x</strong> {it.produto_nome}
+                            <strong>{it.quantidade}x</strong> {getProductDescription(it)}
                           </span>
                           <div className="text-right shrink-0">
                             <span className="tabular-nums font-bold block">
@@ -1271,7 +1285,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                           >
                             <div className="space-y-0.5">
                               <span className="font-bold text-neutral-200">
-                                <strong className="text-amber-400 font-mono">{it.quantidade}x</strong> {it.produto_nome}
+                                <strong className="text-amber-400 font-mono">{it.quantidade}x</strong> {getProductDescription(it)}
                               </span>
                               {it.observacao && (
                                 <p className="text-[10px] text-amber-300 italic">

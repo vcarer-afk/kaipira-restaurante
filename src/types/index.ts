@@ -208,7 +208,8 @@ export type PadraoCor =
   | 'milho'
   | 'ceu'
   | 'cobre'
-  | 'oliva';
+  | 'oliva'
+  | 'windows';
 
 export interface ConfiguracoesSistema {
   // Banco de Dados

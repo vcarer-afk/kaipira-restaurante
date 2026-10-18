@@ -1,19 +1,33 @@
 import React, { useState } from 'react';
-import { Pedido, StatusPedido } from '../types';
+import { Pedido, StatusPedido, Produto } from '../types';
 import { formatTime, playAlertChime } from '../utils/formatters';
 import { Clock, ChefHat, Check, Printer, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 interface KitchenKDSProps {
   pedidos: Pedido[];
+  produtos?: Produto[];
   onUpdateStatus: (id: number, status: StatusPedido) => void;
   onPrintReceipt: (pedido: Pedido) => void;
 }
 
 export const KitchenKDS: React.FC<KitchenKDSProps> = ({
   pedidos,
+  produtos,
   onUpdateStatus,
   onPrintReceipt,
 }) => {
+  // Helper para garantir exibição da descrição completa do produto em todas as telas
+  const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
+    if (it.produto_nome && !it.produto_nome.trim().startsWith('#') && !it.produto_nome.toLowerCase().startsWith('prod #')) {
+      return it.produto_nome;
+    }
+    if (produtos && it.produto_id) {
+      const match = produtos.find((p) => p.id === it.produto_id);
+      if (match?.nome) return match.nome;
+    }
+    return it.produto_nome || `Item #${it.produto_id || '?'}`;
+  };
+
   // IDs de pedidos confirmados como retirados para remoção imediata da lista do KDS
   const [retiradosLocais, setRetiradosLocais] = useState<number[]>([]);
 
@@ -113,10 +127,12 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
               >
                 <div className="flex items-start justify-between text-xs font-bold text-white uppercase">
                   <span>
-                    <span className="text-amber-400 font-black text-sm mr-1">
+                    <span className="text-amber-400 font-black text-sm mr-1.5">
                       {it.quantidade}x
                     </span>{' '}
-                    {it.produto_nome}
+                    <span className="text-neutral-100 font-black tracking-wide">
+                      {getProductDescription(it)}
+                    </span>
                   </span>
                 </div>
 

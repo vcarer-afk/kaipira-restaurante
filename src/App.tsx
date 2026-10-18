@@ -95,6 +95,31 @@ import {
   conferirEntregaPedidoSupabase,
 } from './services/supabaseClient';
 
+// Helper para enriquecer e garantir a descrição/nome completo do produto em todo o sistema
+export function enrichPedidosWithProductNames(peds: Pedido[], prods: Produto[]): Pedido[] {
+  const prodMap = new Map<number, string>();
+  prods.forEach((p) => prodMap.set(p.id, p.nome));
+  INITIAL_PRODUTOS.forEach((p) => {
+    if (!prodMap.has(p.id)) prodMap.set(p.id, p.nome);
+  });
+
+  return peds.map((ped) => ({
+    ...ped,
+    itens: (ped.itens || []).map((it) => {
+      const isCodeOnly =
+        !it.produto_nome ||
+        it.produto_nome.trim().startsWith('#') ||
+        it.produto_nome.toLowerCase().startsWith('prod #') ||
+        it.produto_nome.toLowerCase().startsWith('produto #');
+      const foundName = it.produto_id ? prodMap.get(it.produto_id) : undefined;
+      return {
+        ...it,
+        produto_nome: isCodeOnly && foundName ? foundName : (it.produto_nome || foundName || `Produto #${it.produto_id || '?'}`),
+      };
+    }),
+  }));
+}
+
 export default function App() {
   // Authentication State (In-Memory / Cloud Session - ZERO localStorage)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -186,7 +211,8 @@ export default function App() {
         supabase.from('clientes').select('*').order('nome', { ascending: true }),
       ]);
 
-      const cloudPeds = pedidosData.status === 'fulfilled' && pedidosData.value ? pedidosData.value : [];
+      const rawCloudPeds = pedidosData.status === 'fulfilled' && pedidosData.value ? pedidosData.value : [];
+      const cloudPeds = enrichPedidosWithProductNames(rawCloudPeds, produtos);
       setPedidos(cloudPeds);
 
       if (mesasRes.status === 'fulfilled' && mesasRes.value.data && mesasRes.value.data.length > 0) {
@@ -312,6 +338,7 @@ export default function App() {
         const cloudProds = await fetchProdutosSupabase();
         if (cloudProds && cloudProds.length > 0) {
           setProdutos(cloudProds);
+          setPedidos((prev) => enrichPedidosWithProductNames(prev, cloudProds));
         }
       } catch (err) {
         console.warn('Conectando a produtos do Supabase...', err);
@@ -1135,7 +1162,8 @@ export default function App() {
             selectedMesaNumber={selectedMesaNumber}
             formasPagamento={formasPagamento}
             onOrderCreated={async (novo) => {
-              setPedidos((prev) => [novo, ...prev]);
+              const enrichedNovo = enrichPedidosWithProductNames([novo], produtos)[0] || novo;
+              setPedidos((prev) => [enrichedNovo, ...prev.filter((p) => p.id !== novo.id)]);
 
               // Toda vez que lançado um pedido na mesa, marca a mesa como ocupada no estado e no Supabase
               if (novo.tipo === 'salão' && novo.mesa_id) {
@@ -1177,6 +1205,7 @@ export default function App() {
         {activeTab === 'kds' && (
           <KitchenKDS
             pedidos={pedidos}
+            produtos={produtos}
             onUpdateStatus={handleUpdateOrderStatus}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}
           />
@@ -1191,6 +1220,7 @@ export default function App() {
             mesas={mesas}
             pedidos={pedidos}
             reservas={reservas}
+            produtos={produtos}
             clientes={clientes}
             configuracoes={configuracoes}
             formasPagamento={formasPagamento}
@@ -1240,6 +1270,7 @@ export default function App() {
             caixa={caixa}
             formasPagamento={formasPagamento}
             pedidos={pedidos}
+            produtos={produtos}
             configuracoes={configuracoes}
             currentRole={currentRole}
             currentPerfil={currentPerfil}
@@ -1274,6 +1305,7 @@ export default function App() {
       {/* Thermal Receipt Print Modal */}
       <ThermalReceipt
         pedido={printReceiptPedido}
+        produtos={produtos}
         onClose={() => setPrintReceiptPedido(null)}
         configuracoes={configuracoes}
       />
