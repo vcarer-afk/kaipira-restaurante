@@ -92,6 +92,7 @@ import {
   fetchPedidosSupabase,
   registrarMultiplasMovimentacoesCaixaSupabase,
   registrarPagamentosMesaSupabase,
+  conferirEntregaPedidoSupabase,
 } from './services/supabaseClient';
 
 export default function App() {
@@ -534,9 +535,64 @@ export default function App() {
   // Order status updates via Supabase
   const handleUpdateOrderStatus = async (id: number, status: StatusPedido, entregador?: string) => {
     setPedidos((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status, entregador_nome: entregador } : p))
+      prev.map((p) => {
+        if (p.id === id) {
+          const updated = { ...p, status };
+          if (entregador) updated.entregador_nome = entregador;
+          // Quando motoboy confirmar entrega, fica pendente de conferência pelo caixa
+          if (p.tipo === 'delivery' && status === 'entregue') {
+            updated.conferencia_entrega = 'pendente';
+          }
+          return updated;
+        }
+        return p;
+      })
     );
     await atualizarStatusPedidoSupabase(id, status, entregador);
+  };
+
+  // Conferência de entrega pelo Gerente ou Supervisor no Caixa
+  const handleConferirEntrega = async (pedidoId: number, conferidoPor: string) => {
+    const pedidoAlvo = pedidos.find((p) => p.id === pedidoId);
+    if (!pedidoAlvo) return;
+
+    const agora = new Date().toISOString();
+
+    setPedidos((prev) =>
+      prev.map((p) =>
+        p.id === pedidoId
+          ? {
+              ...p,
+              conferencia_entrega: 'conferido',
+              conferido_por: conferidoPor,
+              conferido_em: agora,
+            }
+          : p
+      )
+    );
+
+    // Persistir conferência no banco Supabase
+    await conferirEntregaPedidoSupabase(pedidoId, conferidoPor);
+
+    // REGRA: Somente entrará no faturamento diário se estiver conferido pelo gerente ou supervisor
+    // Lança agora as entradas de pagamento do delivery no caixa diário
+    if (caixa && caixa.status === 'aberto') {
+      const pgs =
+        pedidoAlvo.pagamentos && pedidoAlvo.pagamentos.length > 0
+          ? pedidoAlvo.pagamentos.filter((pg) => pg.valor > 0)
+          : [{ forma: 'dinheiro', valor: pedidoAlvo.valor_total }];
+
+      await handleRegistrarMultiplasMovimentacoesCaixa(
+        pgs.map((pg) => ({
+          tipo: 'entrada_pedido' as const,
+          forma: pg.forma,
+          valor: pg.valor,
+          descricao: `PEDIDO #${pedidoAlvo.id} (DELIVERY CONFERIDO - ${conferidoPor.toUpperCase()})`,
+        }))
+      );
+    }
+
+    playAlertChime();
   };
 
   // Table status updates via Supabase
@@ -1089,8 +1145,14 @@ export default function App() {
                 await handleUpdateMesaStatus(mesaNum, 'ocupada', cliNome, mesaAtual?.pessoas || 2);
               }
 
-              // Quando pedido tiver pagamentos imediatos (balcão ou delivery) e o caixa estiver aberto, lança no faturamento do dia
-              if (caixa && caixa.status === 'aberto' && novo.pagamentos && novo.pagamentos.length > 0) {
+              // Quando pedido tiver pagamentos imediatos (apenas balcão ou salão; delivery entra somente após conferência pelo gerente/supervisor)
+              if (
+                novo.tipo !== 'delivery' &&
+                caixa &&
+                caixa.status === 'aberto' &&
+                novo.pagamentos &&
+                novo.pagamentos.length > 0
+              ) {
                 const validPgs = novo.pagamentos.filter((pg) => pg.valor > 0);
                 if (validPgs.length > 0) {
                   await handleRegistrarMultiplasMovimentacoesCaixa(
@@ -1179,9 +1241,13 @@ export default function App() {
             formasPagamento={formasPagamento}
             pedidos={pedidos}
             configuracoes={configuracoes}
+            currentRole={currentRole}
+            currentPerfil={currentPerfil}
+            usuarios={usuarios}
             onAbrirCaixa={handleAbrirCaixa}
             onFecharCaixa={handleFecharCaixa}
             onMovimentacao={handleMovimentacaoCaixa}
+            onConferirEntrega={handleConferirEntrega}
           />
         )}
       </main>

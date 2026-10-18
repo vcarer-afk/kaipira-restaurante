@@ -256,13 +256,22 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
                     </div>
                   </div>
 
-                  <div className="text-right">
+                  <div className="text-right flex flex-col items-end gap-0.5">
                     <div className="font-bold text-white tabular-nums">
                       {formatBRL(p.valor_total)}
                     </div>
                     <span className="text-[10px] text-emerald-400 font-bold uppercase">
                       ENTREGUE
                     </span>
+                    {p.conferencia_entrega === 'conferido' ? (
+                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                        CONFERIDO CAIXA
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 animate-pulse">
+                        PEND. CONFERÊNCIA
+                      </span>
+                    )}
                   </div>
                 </div>
               ))

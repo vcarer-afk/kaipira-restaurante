@@ -1,10 +1,13 @@
 import React, { useState, useMemo } from 'react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import {
   CaixaDiario,
   FormaPagamento,
   FormaPagamentoConfig,
   Pedido,
   ConfiguracoesSistema,
+  UsuarioSistema,
 } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { formatBRL, formatDateTime, playAlertChime } from '../utils/formatters';
@@ -36,6 +39,12 @@ import {
   FileText,
   Sparkles,
   ChevronRight,
+  ShieldCheck,
+  CheckSquare,
+  UserCheck,
+  BadgeCheck,
+  Loader2,
+  FileDown,
 } from 'lucide-react';
 
 interface CashRegisterProps {
@@ -43,6 +52,9 @@ interface CashRegisterProps {
   formasPagamento?: FormaPagamentoConfig[];
   pedidos?: Pedido[];
   configuracoes?: ConfiguracoesSistema;
+  currentRole?: string;
+  currentPerfil?: any;
+  usuarios?: UsuarioSistema[];
   onAbrirCaixa: (valor: number, observacoes?: string) => void;
   onFecharCaixa: (valor: number, observacoes?: string) => void;
   onMovimentacao: (
@@ -51,6 +63,7 @@ interface CashRegisterProps {
     valor: number,
     descricao: string
   ) => void;
+  onConferirEntrega?: (pedidoId: number, conferidoPor: string) => void;
 }
 
 export const CashRegister: React.FC<CashRegisterProps> = ({
@@ -58,9 +71,13 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
   pedidos = [],
   configuracoes,
+  currentRole,
+  currentPerfil,
+  usuarios = [],
   onAbrirCaixa,
   onFecharCaixa,
   onMovimentacao,
+  onConferirEntrega,
 }) => {
   // Modal states
   const [showAbrirModal, setShowAbrirModal] = useState(false);
@@ -80,6 +97,15 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   // End of day report modal
   const [showRelatorioModal, setShowRelatorioModal] = useState(false);
   const [reportPrintMode, setReportPrintMode] = useState<'cupom' | 'a4'>('cupom');
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+
+  // Caixa Navigation: Resumo Geral, Conferência de Entregas, ou Extrato
+  const [caixaTab, setCaixaTab] = useState<'resumo' | 'conferencia_entregas' | 'extrato'>('resumo');
+  const [conferenciaFiltro, setConferenciaFiltro] = useState<'pendentes' | 'conferidos' | 'todos'>('pendentes');
+  const [conferindoPedido, setConferindoPedido] = useState<Pedido | null>(null);
+  const [responsavelConferencia, setResponsavelConferencia] = useState(
+    currentPerfil?.nome || 'GERENTE GERAL'
+  );
 
   // Filter & Search in movements ledger
   const [searchMov, setSearchMov] = useState('');
@@ -87,6 +113,29 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
   // Computations
   const movs = useMemo(() => caixa.movimentacoes || [], [caixa.movimentacoes]);
+
+  // REGRA DO USUÁRIO: Entregas confirmadas pelos motoboys ficam sob conferência do caixa
+  const deliveryOrdersAll = useMemo(() => {
+    return pedidos.filter(
+      (p) => p.tipo === 'delivery' && (p.status === 'entregue' || p.conferencia_entrega === 'conferido')
+    );
+  }, [pedidos]);
+
+  const deliveryOrdersPendentes = useMemo(() => {
+    return deliveryOrdersAll.filter((p) => p.conferencia_entrega !== 'conferido');
+  }, [deliveryOrdersAll]);
+
+  const deliveryOrdersConferidos = useMemo(() => {
+    return deliveryOrdersAll.filter((p) => p.conferencia_entrega === 'conferido');
+  }, [deliveryOrdersAll]);
+
+  const totalPendenteConferencia = useMemo(() => {
+    return deliveryOrdersPendentes.reduce((sum, p) => sum + p.valor_total, 0);
+  }, [deliveryOrdersPendentes]);
+
+  const totalConferidoHoje = useMemo(() => {
+    return deliveryOrdersConferidos.reduce((sum, p) => sum + p.valor_total, 0);
+  }, [deliveryOrdersConferidos]);
 
   // Dynamic dictionary of payment methods (registered + any other found in movements)
   const paymentStats = useMemo(() => {
@@ -123,6 +172,16 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     let suprimentosDinheiro = 0;
 
     movs.forEach((m) => {
+      // REGRA: Se houver movimentação de delivery não conferido, não entra no faturamento
+      const isDeliveryNaoConferido = pedidos.some(
+        (p) =>
+          p.tipo === 'delivery' &&
+          p.conferencia_entrega !== 'conferido' &&
+          m.descricao &&
+          m.descricao.includes(`PEDIDO #${p.id}`)
+      );
+      if (isDeliveryNaoConferido) return;
+
       const rawForma = String(m.forma || 'outro').toLowerCase().trim();
       const formaKey =
         rawForma === 'pix' || rawForma.includes('pix')
@@ -191,6 +250,11 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     // para garantir que nenhuma forma (como PIX ou Dinheiro) deixe de constar no faturamento do dia
     pedidos.forEach((p) => {
       if (p.status === 'cancelado') return;
+      // REGRA: Entregas confirmadas por motoboys só entram no faturamento diário se conferidas pelo gerente ou supervisor!
+      if (p.tipo === 'delivery' && p.conferencia_entrega !== 'conferido') {
+        return;
+      }
+
       if (p.pagamentos && p.pagamentos.length > 0) {
         p.pagamentos.forEach((pg) => {
           if (!pg.valor || pg.valor <= 0) return;
@@ -301,8 +365,11 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
         salaoTotal += p.valor_total;
         salaoQtd += 1;
       } else if (p.tipo === 'delivery') {
-        deliveryTotal += p.valor_total;
-        deliveryQtd += 1;
+        // REGRA MANDATÓRIA: Somente entra no faturamento se conferido pelo gerente ou supervisor
+        if (p.conferencia_entrega === 'conferido') {
+          deliveryTotal += p.valor_total;
+          deliveryQtd += 1;
+        }
       } else if (p.tipo === 'retirada') {
         balcaoTotal += p.valor_total;
         balcaoQtd += 1;
@@ -377,6 +444,83 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
   const handlePrintReport = () => {
     window.print();
+  };
+
+  // Exportação nativa de PDF com jsPDF + html2canvas (Garante download de arquivo .pdf)
+  const handleExportarPDF = async () => {
+    setIsExportingPDF(true);
+    try {
+      const reportElement = document.getElementById('relatorio-fechamento-caixa');
+      if (!reportElement) {
+        alert('Elemento do relatório não encontrado na página.');
+        setIsExportingPDF(false);
+        return;
+      }
+
+      const canvas = await html2canvas(reportElement, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const margin = 8;
+      const contentWidth = pdfWidth - margin * 2;
+      const contentHeight = (canvas.height * contentWidth) / canvas.width;
+
+      let heightLeft = contentHeight;
+      let position = margin;
+
+      pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+      heightLeft -= (pdfHeight - margin * 2);
+
+      while (heightLeft > 0) {
+        position = heightLeft - contentHeight + margin;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+        heightLeft -= (pdfHeight - margin * 2);
+      }
+
+      const dataHoje = caixa.data_caixa || new Date().toISOString().split('T')[0];
+      pdf.save(`Relatorio_Fechamento_Caixa_${dataHoje}.pdf`);
+    } catch (err) {
+      console.error('Erro ao gerar arquivo PDF:', err);
+      window.print();
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
+
+  // Conferência de entrega individual pelo Gerente ou Supervisor
+  const handleConfirmarConferencia = (pedido: Pedido, responsavel?: string) => {
+    const nome = responsavel?.trim() || responsavelConferencia.trim() || 'GERENTE GERAL';
+    if (onConferirEntrega) {
+      onConferirEntrega(pedido.id, nome);
+    }
+    setConferindoPedido(null);
+  };
+
+  // Conferência em lote de todas as entregas pendentes
+  const handleConferirTodasPendentes = () => {
+    if (deliveryOrdersPendentes.length === 0) return;
+    const nome = responsavelConferencia.trim() || currentPerfil?.nome || 'GERENTE GERAL';
+    if (!window.confirm(`Confirma a conferência e lançamento no faturamento de ${deliveryOrdersPendentes.length} entrega(s) pelo supervisor ${nome}?`)) {
+      return;
+    }
+    deliveryOrdersPendentes.forEach((p) => {
+      if (onConferirEntrega) {
+        onConferirEntrega(p.id, nome);
+      }
+    });
   };
 
   return (
@@ -475,9 +619,89 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
         </div>
       </div>
 
-      {/* KPI Cards: Visão Geral em Tempo Real */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Total Faturamento Geral do Dia */}
+      {/* Caixa Navigation Tabs: Resumo Geral / Conferência Entregas / Extrato */}
+      <div className="flex items-center gap-2 border-b border-neutral-800 pb-2 overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setCaixaTab('resumo')}
+          className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all cursor-pointer ${
+            caixaTab === 'resumo'
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'bg-neutral-850 text-neutral-400 hover:text-white border border-neutral-800'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4" />
+          <span>Fluxo & Faturamento</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCaixaTab('conferencia_entregas')}
+          className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all cursor-pointer relative ${
+            caixaTab === 'conferencia_entregas'
+              ? 'bg-cyan-600 text-white shadow-md'
+              : 'bg-neutral-850 text-neutral-400 hover:text-white border border-neutral-800'
+          }`}
+        >
+          <Bike className="w-4 h-4 text-cyan-400" />
+          <span>Conferência Entregas</span>
+          {deliveryOrdersPendentes.length > 0 ? (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-black animate-pulse">
+              {deliveryOrdersPendentes.length} PENDENTE{deliveryOrdersPendentes.length > 1 ? 'S' : ''}
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-neutral-800 text-neutral-400">
+              0 pendentes
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCaixaTab('extrato')}
+          className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all cursor-pointer ${
+            caixaTab === 'extrato'
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'bg-neutral-850 text-neutral-400 hover:text-white border border-neutral-800'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>Extrato Geral ({movs.length})</span>
+        </button>
+      </div>
+
+      {/* Banner de Alerta se houver entregas pendentes */}
+      {deliveryOrdersPendentes.length > 0 && caixaTab !== 'conferencia_entregas' && (
+        <div className="p-3.5 bg-amber-950/40 border border-amber-800/80 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30">
+              <Bike className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-black text-amber-300 uppercase">
+                {deliveryOrdersPendentes.length} {deliveryOrdersPendentes.length === 1 ? 'Entrega Confirmada por Motoboy Pendente' : 'Entregas Confirmadas por Motoboys Pendentes'} de Conferência
+              </p>
+              <p className="text-[11px] text-neutral-400 mt-0.5">
+                Total de <strong className="text-white">{formatBRL(totalPendenteConferencia)}</strong> aguardando validação do Gerente ou Supervisor para entrar no faturamento do dia.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCaixaTab('conferencia_entregas')}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-sm"
+          >
+            <span>Conferir Agora</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {caixaTab === 'resumo' && (
+        <>
+          {/* KPI Cards: Visão Geral em Tempo Real */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {/* Total Faturamento Geral do Dia */}
         <div className="bg-neutral-850 p-4 rounded-2xl border border-neutral-800 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-amber-500 uppercase tracking-wider">
@@ -817,6 +1041,438 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
           </div>
         </div>
       </div>
+      </>
+    )}
+
+      {/* =========================================================================
+          ABA 2: CONFERÊNCIA ENTREGAS (MOTOBOYS)
+          ========================================================================= */}
+      {caixaTab === 'conferencia_entregas' && (
+        <div className="space-y-4 animate-in fade-in">
+          {/* Header & Banner da Conferência */}
+          <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-cyan-600/20 text-cyan-400 border border-cyan-500/40 rounded-2xl">
+                <Bike className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-black text-white uppercase tracking-tight">
+                    Conferência de Entregas (Motoboys)
+                  </h2>
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800">
+                    Auditoria de Caixa
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Todas as entregas confirmadas pelos entregadores (motoboys) ficam pendentes de conferência pelo caixa. Somente entrarão no faturamento diário após a conferência do Gerente ou Supervisor.
+                </p>
+              </div>
+            </div>
+
+            {deliveryOrdersPendentes.length > 0 && (
+              <button
+                type="button"
+                onClick={handleConferirTodasPendentes}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer shrink-0"
+              >
+                <CheckSquare className="w-4 h-4" />
+                <span>Conferir Todas as {deliveryOrdersPendentes.length} Pendentes</span>
+              </button>
+            )}
+          </div>
+
+          {/* Cards de Métricas da Conferência */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-4 bg-neutral-850 border border-amber-800/60 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black text-amber-400 uppercase tracking-wider block">
+                  Pendentes de Conferência
+                </span>
+                <span className="text-2xl font-black text-amber-400 font-mono tabular-nums">
+                  {formatBRL(totalPendenteConferencia)}
+                </span>
+                <span className="text-[11px] text-neutral-400 block mt-0.5">
+                  {deliveryOrdersPendentes.length} {deliveryOrdersPendentes.length === 1 ? 'entrega aguardando liberação' : 'entregas aguardando liberação'}
+                </span>
+              </div>
+              <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl">
+                <Clock className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="p-4 bg-neutral-850 border border-emerald-800/60 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider block">
+                  Conferidas & Faturadas Hoje
+                </span>
+                <span className="text-2xl font-black text-emerald-400 font-mono tabular-nums">
+                  {formatBRL(totalConferidoHoje)}
+                </span>
+                <span className="text-[11px] text-neutral-400 block mt-0.5">
+                  {deliveryOrdersConferidos.length} {deliveryOrdersConferidos.length === 1 ? 'entrega validada no faturamento' : 'entregas validadas no faturamento'}
+                </span>
+              </div>
+              <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="p-4 bg-neutral-850 border border-neutral-800 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block">
+                  Total Geral de Entregas Hoje
+                </span>
+                <span className="text-2xl font-black text-white font-mono tabular-nums">
+                  {formatBRL(totalPendenteConferencia + totalConferidoHoje)}
+                </span>
+                <span className="text-[11px] text-neutral-400 block mt-0.5">
+                  {deliveryOrdersAll.length} entregas finalizadas
+                </span>
+              </div>
+              <div className="p-3 bg-neutral-800 text-neutral-400 rounded-xl">
+                <Bike className="w-6 h-6" />
+              </div>
+            </div>
+          </div>
+
+          {/* Filtro de Visualização & Responsável */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-neutral-850 p-3 rounded-2xl border border-neutral-800">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setConferenciaFiltro('pendentes')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all cursor-pointer ${
+                  conferenciaFiltro === 'pendentes'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+              >
+                Pendentes ({deliveryOrdersPendentes.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setConferenciaFiltro('conferidos')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all cursor-pointer ${
+                  conferenciaFiltro === 'conferidos'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+              >
+                Conferidas ({deliveryOrdersConferidos.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setConferenciaFiltro('todos')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all cursor-pointer ${
+                  conferenciaFiltro === 'todos'
+                    ? 'bg-neutral-700 text-white shadow-sm'
+                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+              >
+                Todas ({deliveryOrdersAll.length})
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-neutral-400 font-bold uppercase">Gerente/Supervisor:</span>
+              <input
+                type="text"
+                value={responsavelConferencia}
+                onChange={(e) => setResponsavelConferencia(e.target.value.toUpperCase())}
+                placeholder="GERENTE OU SUPERVISOR"
+                className="px-2.5 py-1 bg-neutral-900 border border-neutral-700 text-amber-400 font-bold rounded-lg text-xs uppercase focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Lista de Entregas */}
+          {(() => {
+            const list =
+              conferenciaFiltro === 'pendentes'
+                ? deliveryOrdersPendentes
+                : conferenciaFiltro === 'conferidos'
+                ? deliveryOrdersConferidos
+                : deliveryOrdersAll;
+
+            if (list.length === 0) {
+              return (
+                <div className="py-16 text-center bg-neutral-850 rounded-2xl border border-neutral-800 p-8 space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-neutral-800 text-neutral-500 mx-auto flex items-center justify-center">
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-sm font-black text-white uppercase">
+                    {conferenciaFiltro === 'pendentes'
+                      ? 'Nenhuma entrega pendente de conferência!'
+                      : 'Nenhuma entrega encontrada neste filtro.'}
+                  </h3>
+                  <p className="text-xs text-neutral-400 max-w-md mx-auto">
+                    {conferenciaFiltro === 'pendentes'
+                      ? 'Todas as entregas confirmadas pelos motoboys já foram auditadas pelo gerente ou supervisor e constam no faturamento diário.'
+                      : 'Alterne os filtros acima para consultar entregas pendentes ou conferidas.'}
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {list.map((p) => {
+                  const isConferido = p.conferencia_entrega === 'conferido';
+                  const subtotalProdutos = p.itens.reduce(
+                    (sum, it) => sum + it.preco_unitario * it.quantidade,
+                    0
+                  );
+
+                  return (
+                    <div
+                      key={p.id}
+                      className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                        isConferido
+                          ? 'bg-neutral-850/80 border-neutral-800'
+                          : 'bg-neutral-850 border-amber-800/80 shadow-md ring-1 ring-amber-500/30'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        {/* Top bar da entrega */}
+                        <div className="flex items-start justify-between border-b border-neutral-800 pb-2.5">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-black text-base text-white">
+                                #{p.codigo_senha}
+                              </span>
+                              <span className="text-[10px] text-neutral-400 font-mono">
+                                Pedido #{p.id}
+                              </span>
+                              <span
+                                className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded ${
+                                  isConferido
+                                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                    : 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                                }`}
+                              >
+                                {isConferido ? 'CONFERIDO NO CAIXA' : 'PENDENTE CONFERÊNCIA'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-neutral-400 mt-0.5 flex items-center gap-2">
+                              <span className="flex items-center gap-1 text-cyan-400 font-bold">
+                                <Bike className="w-3.5 h-3.5" />
+                                {p.entregador_nome || 'MOTOBOY KAIPIRA'}
+                              </span>
+                              <span>•</span>
+                              <span>Atualizado às {formatDateTime(p.atualizado_em)}</span>
+                            </p>
+                          </div>
+
+                          <div className="text-right">
+                            <span className="text-lg font-black text-amber-400 font-mono tabular-nums">
+                              {formatBRL(p.valor_total)}
+                            </span>
+                            <span className="text-[10px] text-neutral-400 block uppercase">
+                              {p.pagamentos?.[0]?.forma ? p.pagamentos[0].forma.toUpperCase() : 'A RECEBER'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Dados do Cliente e Endereço de Entrega */}
+                        <div className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-1">
+                          <div className="flex justify-between items-baseline">
+                            <span className="font-bold text-white uppercase">
+                              {p.cliente?.nome || 'CLIENTE NÃO IDENTIFICADO'}
+                            </span>
+                            {p.cliente?.telefone && (
+                              <span className="text-[11px] text-neutral-400 font-mono">
+                                {p.cliente.telefone}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-neutral-300">
+                            {p.cliente?.endereco || 'ENDEREÇO NÃO CADASTRADO'}
+                            {p.cliente?.numero ? `, Nº ${p.cliente.numero}` : ''}
+                            {p.cliente?.complemento ? ` (${p.cliente.complemento})` : ''} -{' '}
+                            <strong className="text-amber-400">{p.cliente?.bairro || 'PIRACICABA'}</strong>
+                          </p>
+                        </div>
+
+                        {/* Detalhe dos Produtos, Quantidades, Valores e Subtotal (Regra solicitada) */}
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                            Itens Entregues:
+                          </span>
+                          <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                            {p.itens.map((it, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-neutral-900/60 border border-neutral-850"
+                              >
+                                <span className="text-neutral-200">
+                                  <strong className="text-amber-400 font-mono">{it.quantidade}x</strong>{' '}
+                                  {it.produto_nome || `Produto #${it.produto_id}`}
+                                </span>
+                                <div className="text-right shrink-0 font-mono">
+                                  <span className="font-bold text-white">
+                                    {formatBRL(it.preco_unitario * it.quantidade)}
+                                  </span>
+                                  <span className="text-[9.5px] text-neutral-500 block">
+                                    ({it.quantidade}x {formatBRL(it.preco_unitario)})
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="pt-2 border-t border-neutral-800 text-[11px] flex justify-between text-neutral-400 font-mono">
+                            <span>Subtotal Pratos: {formatBRL(subtotalProdutos)}</span>
+                            <span>Taxa Entrega: +{formatBRL(p.taxa_entrega || 0)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Ação de Conferência */}
+                      <div className="pt-3 border-t border-neutral-800">
+                        {isConferido ? (
+                          <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-800/60 flex items-center justify-between text-xs text-emerald-300">
+                            <span className="flex items-center gap-1.5 font-bold uppercase">
+                              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                              Conferido por: {p.conferido_por || 'GERENTE'}
+                            </span>
+                            <span className="text-[10px] text-neutral-400 font-mono">
+                              {p.conferido_em ? formatDateTime(p.conferido_em) : 'Hoje'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-amber-950/20 p-2.5 rounded-xl border border-amber-800/40">
+                            <div className="flex items-center gap-1.5 text-xs text-amber-300">
+                              <UserCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span className="text-[11px]">
+                                Liberar entrada de <strong>{formatBRL(p.valor_total)}</strong> no faturamento diário
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmarConferencia(p)}
+                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              <span>Conferir & Faturar</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* =========================================================================
+          ABA 3: EXTRATO COMPLETO DE MOVIMENTAÇÕES DO CAIXA
+          ========================================================================= */}
+      {caixaTab === 'extrato' && (
+        <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 space-y-4 animate-in fade-in">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-neutral-800 pb-3">
+            <div>
+              <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-500" />
+                <span>Extrato Geral das Movimentações ({filteredMovs.length})</span>
+              </h3>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Todas as entradas de pedidos, sangrias e suprimentos registrados no caixa do dia.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={filterTipoMov}
+                onChange={(e) => setFilterTipoMov(e.target.value as any)}
+                aria-label="Filtrar por tipo de movimentação"
+                className="px-3 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none"
+              >
+                <option value="todos">TODOS OS TIPOS</option>
+                <option value="entrada_pedido">VENDAS / ENTRADAS</option>
+                <option value="sangria">SANGRIAS (RETIRADAS)</option>
+                <option value="suprimento">SUPRIMENTOS</option>
+              </select>
+
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                <input
+                  type="text"
+                  placeholder="FILTRAR..."
+                  value={searchMov}
+                  onChange={(e) => setSearchMov(e.target.value)}
+                  className="pl-9 pr-3 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs uppercase w-36 focus:w-48 transition-all focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+            {filteredMovs.length === 0 ? (
+              <div className="py-16 text-center text-xs text-neutral-500 uppercase tracking-wider">
+                Nenhuma movimentação registrada com os filtros aplicados
+              </div>
+            ) : (
+              [...filteredMovs].reverse().map((m) => (
+                <div
+                  key={m.id}
+                  className="p-3.5 bg-neutral-900 rounded-xl border border-neutral-800/80 hover:border-neutral-700 transition-colors flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-3">
+                    {m.tipo === 'sangria' ? (
+                      <div className="p-2.5 rounded-lg bg-red-950/60 border border-red-800/50 text-red-400 shrink-0">
+                        <ArrowDownCircle className="w-4 h-4" />
+                      </div>
+                    ) : m.tipo === 'suprimento' ? (
+                      <div className="p-2.5 rounded-lg bg-cyan-950/60 border border-cyan-800/50 text-cyan-400 shrink-0">
+                        <ArrowUpCircle className="w-4 h-4" />
+                      </div>
+                    ) : (
+                      <div className="p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-800/50 text-emerald-400 shrink-0">
+                        <CheckCircle className="w-4 h-4" />
+                      </div>
+                    )}
+
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-neutral-400">
+                          {m.hora ? m.hora.slice(0, 5) : '--:--'}
+                        </span>
+                        <span className="font-black text-white uppercase">{m.descricao}</span>
+                      </div>
+                      <div className="text-[11px] text-neutral-400 flex items-center gap-2 mt-0.5">
+                        <span className="font-semibold uppercase text-neutral-300">
+                          {m.forma ? m.forma.toUpperCase() : 'DINHEIRO'}
+                        </span>
+                        <span>•</span>
+                        <span className="uppercase text-[10px]">
+                          {m.tipo === 'entrada_pedido'
+                            ? 'Venda / Entrada'
+                            : m.tipo === 'sangria'
+                            ? 'Sangria'
+                            : 'Suprimento'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <span
+                    className={`font-black tabular-nums text-base font-mono ${
+                      m.tipo === 'sangria' ? 'text-red-400' : 'text-emerald-400'
+                    }`}
+                  >
+                    {m.tipo === 'sangria' ? '-' : '+'} {formatBRL(m.valor)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* =========================================================================
           MODAL 1: ABRIR CAIXA
@@ -1145,6 +1801,21 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  disabled={isExportingPDF}
+                  onClick={handleExportarPDF}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                  title="Baixar arquivo PDF com o relatório completo de fechamento"
+                >
+                  {isExportingPDF ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{isExportingPDF ? 'Gerando PDF...' : 'Baixar PDF (.PDF)'}</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handlePrintReport}
                   className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
                 >
@@ -1161,25 +1832,25 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
               </div>
             </div>
 
-            {/* Printable Report Paper Layout */}
+            {/* Printable Report Paper Layout (Folha A4 Branca com Renderização Nítida para PDF e Impressão) */}
             <div
               id="relatorio-fechamento-caixa"
-              className="p-5 sm:p-6 bg-neutral-950 border border-neutral-800 rounded-xl space-y-6 text-neutral-200 font-sans print:bg-white print:text-black print:border-none print:p-0"
+              className="p-6 sm:p-8 bg-white border border-neutral-300 rounded-xl space-y-6 text-neutral-900 font-sans shadow-2xl max-w-[210mm] mx-auto print:border-none print:shadow-none print:p-0 print:max-w-none"
             >
               {/* Header Banner */}
-              <div className="text-center border-b border-dashed border-neutral-700 pb-4">
-                <h3 className="text-lg font-black uppercase text-amber-400 tracking-wide">
+              <div className="text-center border-b border-dashed border-neutral-400 pb-4">
+                <h3 className="text-xl font-black uppercase text-amber-800 tracking-wide font-serif">
                   {configuracoes?.nomeRestaurante || 'RESTAURANTE KAIPIRA'}
                 </h3>
-                <p className="text-xs text-neutral-400">
+                <p className="text-xs text-neutral-600">
                   {configuracoes?.endereco || 'RUA DO PORTO'} · {configuracoes?.cidade || 'PIRACICABA'} -{' '}
-                  {configuracoes?.uf || 'SP'} · RESTAURANTE KAIPIRA
+                  {configuracoes?.uf || 'SP'} · RESTAURANTE KAIPIRA PIRACICABA
                 </p>
-                <h4 className="text-xs font-black uppercase tracking-widest text-white mt-2">
-                  FECHAMENTO DIÁRIO & DEMONSTRATIVO DE MOVIMENTO
+                <h4 className="text-xs font-black uppercase tracking-widest text-neutral-900 mt-2 border-t border-b border-neutral-200 py-1 inline-block px-4">
+                  DEMONSTRATIVO DE FECHAMENTO DE CAIXA & AUDITORIA FINANCEIRA
                 </h4>
-                <div className="flex flex-wrap justify-center gap-3 text-[11px] text-neutral-400 font-mono mt-1">
-                  <span>DATA: {caixa.data_caixa}</span>
+                <div className="flex flex-wrap justify-center gap-3 text-[11px] text-neutral-600 font-mono mt-2">
+                  <span>DATA DO CAIXA: <strong className="text-neutral-900">{caixa.data_caixa}</strong></span>
                   <span>•</span>
                   <span>ABERTURA: {caixa.aberto_em ? caixa.aberto_em.slice(11, 16) : '--:--'}</span>
                   <span>•</span>
@@ -1187,70 +1858,70 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 </div>
               </div>
 
-              {/* 1. Balanço do Caixa Físico (Gaveta) */}
+              {/* 1. Balanço do Caixa Físico (Gaveta em Dinheiro) */}
               <div className="space-y-2">
-                <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider flex items-center gap-1.5 border-b border-neutral-800 pb-1">
-                  <Banknote className="w-3.5 h-3.5" />
+                <h4 className="text-xs font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5 border-b border-neutral-300 pb-1">
+                  <Banknote className="w-3.5 h-3.5 text-amber-700" />
                   <span>1. Balanço do Caixa Físico (Gaveta em Dinheiro)</span>
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
-                  <div className="flex justify-between p-2 rounded bg-neutral-900 border border-neutral-850">
-                    <span className="text-neutral-400 font-bold uppercase">(+) Fundo de Troco Inicial:</span>
-                    <span className="font-mono font-black text-white">
+                  <div className="flex justify-between p-2.5 rounded bg-neutral-50 border border-neutral-200">
+                    <span className="text-neutral-600 font-bold uppercase">(+) Fundo de Troco Inicial:</span>
+                    <span className="font-mono font-black text-neutral-900">
                       {formatBRL(caixa.valor_abertura || 0)}
                     </span>
                   </div>
 
-                  <div className="flex justify-between p-2 rounded bg-neutral-900 border border-neutral-850">
-                    <span className="text-neutral-400 font-bold uppercase">(+) Entradas em Dinheiro:</span>
-                    <span className="font-mono font-black text-emerald-400">
+                  <div className="flex justify-between p-2.5 rounded bg-neutral-50 border border-neutral-200">
+                    <span className="text-neutral-600 font-bold uppercase">(+) Entradas em Dinheiro:</span>
+                    <span className="font-mono font-black text-emerald-700">
                       +{formatBRL(paymentStats.totalDinheiroEntradas)}
                     </span>
                   </div>
 
-                  <div className="flex justify-between p-2 rounded bg-neutral-900 border border-neutral-850">
-                    <span className="text-neutral-400 font-bold uppercase">(+) Suprimentos em Dinheiro:</span>
-                    <span className="font-mono font-black text-emerald-400">
+                  <div className="flex justify-between p-2.5 rounded bg-neutral-50 border border-neutral-200">
+                    <span className="text-neutral-600 font-bold uppercase">(+) Suprimentos em Dinheiro:</span>
+                    <span className="font-mono font-black text-emerald-700">
                       +{formatBRL(paymentStats.suprimentosDinheiro)}
                     </span>
                   </div>
 
-                  <div className="flex justify-between p-2 rounded bg-neutral-900 border border-neutral-850">
-                    <span className="text-neutral-400 font-bold uppercase">(-) Sangrias / Retiradas:</span>
-                    <span className="font-mono font-black text-red-400">
+                  <div className="flex justify-between p-2.5 rounded bg-neutral-50 border border-neutral-200">
+                    <span className="text-neutral-600 font-bold uppercase">(-) Sangrias / Retiradas:</span>
+                    <span className="font-mono font-black text-red-700">
                       -{formatBRL(paymentStats.sangriasDinheiro)}
                     </span>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mt-2">
+                <div className="p-3.5 rounded-xl bg-neutral-100 border border-neutral-300 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mt-2">
                   <div>
-                    <span className="text-[11px] text-neutral-400 font-bold uppercase block">
-                      Saldo Calculado pelo Sistema:
+                    <span className="text-[11px] text-neutral-600 font-bold uppercase block">
+                      Saldo Calculado pelo Sistema (Esperado na Gaveta):
                     </span>
-                    <span className="text-base font-black text-emerald-400 font-mono">
+                    <span className="text-lg font-black text-emerald-800 font-mono">
                       {formatBRL(dinheiroNaGaveta)}
                     </span>
                   </div>
 
                   {caixa.valor_fechamento !== undefined && (
                     <div className="sm:text-right">
-                      <span className="text-[11px] text-neutral-400 font-bold uppercase block">
-                        Saldo Físico Declarado:
+                      <span className="text-[11px] text-neutral-600 font-bold uppercase block">
+                        Saldo Físico Declarado no Fechamento:
                       </span>
-                      <span className="text-base font-black text-white font-mono">
+                      <span className="text-lg font-black text-neutral-900 font-mono">
                         {formatBRL(caixa.valor_fechamento)}
                       </span>
                       <span className="text-[10px] block mt-0.5 font-bold">
                         {(() => {
                           const diff = (caixa.valor_fechamento || 0) - dinheiroNaGaveta;
                           if (Math.abs(diff) < 0.01) {
-                            return <span className="text-emerald-400">CAIXA BATIDO (SEM DIFERENÇA)</span>;
+                            return <span className="text-emerald-700">CAIXA BATIDO (SEM DIFERENÇA)</span>;
                           } else if (diff > 0) {
-                            return <span className="text-cyan-400">SOBRA: +{formatBRL(diff)}</span>;
+                            return <span className="text-blue-700">SOBRA: +{formatBRL(diff)}</span>;
                           } else {
-                            return <span className="text-red-400">FALTA: {formatBRL(diff)}</span>;
+                            return <span className="text-red-700">FALTA: {formatBRL(diff)}</span>;
                           }
                         })()}
                       </span>
@@ -1261,66 +1932,66 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
               {/* 2. Faturamento Geral por Forma de Pagamento */}
               <div className="space-y-2">
-                <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider flex items-center gap-1.5 border-b border-neutral-800 pb-1">
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>2. Faturamento por Forma de Pagamento</span>
+                <h4 className="text-xs font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5 border-b border-neutral-300 pb-1">
+                  <CreditCard className="w-3.5 h-3.5 text-amber-700" />
+                  <span>2. Faturamento Consolidado por Forma de Pagamento</span>
                 </h4>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-neutral-800 text-[11px] font-black uppercase text-neutral-400">
-                        <th className="py-2">Forma de Pagamento</th>
-                        <th className="py-2 text-center">Transações</th>
-                        <th className="py-2 text-right">Total Faturado</th>
-                        <th className="py-2 text-right">% do Total</th>
+                  <table className="w-full text-left text-xs border border-neutral-300">
+                    <thead className="bg-neutral-100 text-neutral-800 font-black uppercase text-[11px] border-b border-neutral-300">
+                      <tr>
+                        <th className="py-2.5 px-3">Forma de Pagamento</th>
+                        <th className="py-2.5 px-3 text-center">Transações</th>
+                        <th className="py-2.5 px-3 text-right">Total Faturado</th>
+                        <th className="py-2.5 px-3 text-right">% Participação</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-neutral-850">
+                    <tbody className="divide-y divide-neutral-200">
                       {paymentStats.statsList.map((fp) => (
-                        <tr key={fp.id} className="hover:bg-neutral-900/60 transition-colors">
-                          <td className="py-2.5 font-bold uppercase text-white flex items-center gap-1.5">
-                            <span>{fp.nome}</span>
+                        <tr key={fp.id} className="hover:bg-neutral-50 transition-colors">
+                          <td className="py-2 px-3 font-bold uppercase text-neutral-900">
+                            {fp.nome}
                           </td>
-                          <td className="py-2.5 text-center font-mono text-neutral-300">
+                          <td className="py-2 px-3 text-center font-mono text-neutral-700">
                             {fp.qtd}
                           </td>
-                          <td className="py-2.5 text-right font-mono font-black text-amber-400">
+                          <td className="py-2 px-3 text-right font-mono font-bold text-neutral-900">
                             {formatBRL(fp.total)}
                           </td>
-                          <td className="py-2.5 text-right font-mono text-neutral-300">
+                          <td className="py-2 px-3 text-right font-mono text-neutral-600">
                             {fp.percentual.toFixed(1)}%
                           </td>
                         </tr>
                       ))}
-                      <tr className="border-t border-neutral-700 font-black text-sm text-white">
-                        <td className="py-2.5 uppercase">TOTAL GERAL FATURADO:</td>
-                        <td className="py-2.5 text-center font-mono">
+                      <tr className="border-t-2 border-neutral-800 font-black text-xs bg-neutral-100 text-neutral-900">
+                        <td className="py-2.5 px-3 uppercase">TOTAL GERAL FATURADO:</td>
+                        <td className="py-2.5 px-3 text-center font-mono">
                           {movs.filter((m) => m.tipo === 'entrada_pedido').length}
                         </td>
-                        <td className="py-2.5 text-right font-mono text-amber-400">
+                        <td className="py-2.5 px-3 text-right font-mono text-amber-800 text-sm">
                           {formatBRL(paymentStats.totalEntradasGerais)}
                         </td>
-                        <td className="py-2.5 text-right font-mono">100.0%</td>
+                        <td className="py-2.5 px-3 text-right font-mono">100.0%</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               </div>
 
-              {/* 3. Resumo por Canais de Atendimento */}
+              {/* 3. Resumo Operacional por Canal de Atendimento */}
               <div className="space-y-2">
-                <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider flex items-center gap-1.5 border-b border-neutral-800 pb-1">
-                  <Layers className="w-3.5 h-3.5" />
+                <h4 className="text-xs font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5 border-b border-neutral-300 pb-1">
+                  <Layers className="w-3.5 h-3.5 text-amber-700" />
                   <span>3. Resumo Operacional por Canal</span>
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                  <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-850">
-                    <span className="text-[10px] text-neutral-400 font-bold uppercase block">
+                  <div className="p-3 rounded-lg bg-neutral-50 border border-neutral-200">
+                    <span className="text-[10px] text-neutral-600 font-bold uppercase block">
                       Salão (Mesas):
                     </span>
-                    <span className="text-sm font-black text-white font-mono block mt-1">
+                    <span className="text-base font-black text-neutral-900 font-mono block mt-1">
                       {formatBRL(channelStats.salaoTotal)}
                     </span>
                     <span className="text-[10px] text-neutral-500 font-mono">
@@ -1328,48 +1999,76 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                     </span>
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-850">
-                    <span className="text-[10px] text-neutral-400 font-bold uppercase block">
-                      Delivery Piracicaba:
+                  <div className="p-3 rounded-lg bg-neutral-50 border border-neutral-200">
+                    <span className="text-[10px] text-neutral-600 font-bold uppercase block">
+                      Delivery Piracicaba (Conferido):
                     </span>
-                    <span className="text-sm font-black text-white font-mono block mt-1">
+                    <span className="text-base font-black text-neutral-900 font-mono block mt-1">
                       {formatBRL(channelStats.deliveryTotal)}
                     </span>
                     <span className="text-[10px] text-neutral-500 font-mono">
-                      {channelStats.deliveryQtd} pedidos
+                      {channelStats.deliveryQtd} pedidos conferidos
                     </span>
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-850">
-                    <span className="text-[10px] text-neutral-400 font-bold uppercase block">
+                  <div className="p-3 rounded-lg bg-neutral-50 border border-neutral-200">
+                    <span className="text-[10px] text-neutral-600 font-bold uppercase block">
                       Retirada no Balcão:
                     </span>
-                    <span className="text-sm font-black text-white font-mono block mt-1">
+                    <span className="text-base font-black text-neutral-900 font-mono block mt-1">
                       {formatBRL(channelStats.balcaoTotal)}
                     </span>
                     <span className="text-[10px] text-neutral-500 font-mono">
-                      {channelStats.balcaoQtd} pedidos
+                      {channelStats.balcaoQtd} pedidos retirados
                     </span>
                   </div>
                 </div>
+              </div>
 
-                <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-850 flex items-center justify-between text-xs mt-1">
-                  <span className="text-neutral-400 uppercase font-bold">
-                    Ticket Médio por Atendimento:
-                  </span>
-                  <span className="font-mono font-black text-amber-400">
-                    {formatBRL(channelStats.ticketMedio)}
-                  </span>
+              {/* 4. Auditoria da Conferência de Entregas (Motoboys) */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5 border-b border-neutral-300 pb-1">
+                  <Bike className="w-3.5 h-3.5 text-amber-700" />
+                  <span>4. Auditoria de Conferência de Entregas (Motoboys)</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-200">
+                    <span className="text-[10px] text-neutral-600 font-bold uppercase block">
+                      Entregas Realizadas Hoje:
+                    </span>
+                    <span className="text-sm font-black text-neutral-900 font-mono block mt-0.5">
+                      {deliveryOrdersAll.length} entregas
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                    <span className="text-[10px] text-emerald-800 font-bold uppercase block">
+                      Conferidas & Faturadas:
+                    </span>
+                    <span className="text-sm font-black text-emerald-900 font-mono block mt-0.5">
+                      {deliveryOrdersConferidos.length} ({formatBRL(totalConferidoHoje)})
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                    <span className="text-[10px] text-amber-800 font-bold uppercase block">
+                      Pendentes de Conferência:
+                    </span>
+                    <span className="text-sm font-black text-amber-900 font-mono block mt-0.5">
+                      {deliveryOrdersPendentes.length} ({formatBRL(totalPendenteConferencia)})
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* 4. Observações */}
+              {/* 5. Observações */}
               {(caixa.observacoes || obsAbertura || obsFechamento) && (
-                <div className="p-3 rounded-lg bg-neutral-900 border border-neutral-800 text-xs">
-                  <span className="text-[10px] text-neutral-400 font-black uppercase block mb-1">
+                <div className="p-3 rounded-lg bg-neutral-50 border border-neutral-200 text-xs">
+                  <span className="text-[10px] text-neutral-600 font-black uppercase block mb-1">
                     Observações Operacionais:
                   </span>
-                  <p className="text-neutral-300 italic">
+                  <p className="text-neutral-800 italic">
                     {caixa.observacoes || obsFechamento || obsAbertura}
                   </p>
                 </div>
@@ -1377,33 +2076,48 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
               {/* Signatures */}
               <div className="pt-8 grid grid-cols-2 gap-8 text-center text-xs">
-                <div className="border-t border-neutral-700 pt-1.5">
-                  <span className="font-bold uppercase text-neutral-300">
-                    Operador / Responsável pelo Caixa
+                <div className="border-t border-neutral-400 pt-1.5">
+                  <span className="font-bold uppercase text-neutral-800 block">
+                    Operador do Caixa
                   </span>
+                  <span className="text-[10px] text-neutral-500 font-mono">Assinatura / Carimbo</span>
                 </div>
-                <div className="border-t border-neutral-700 pt-1.5">
-                  <span className="font-bold uppercase text-neutral-300">
-                    Gerência / Conferência
+                <div className="border-t border-neutral-400 pt-1.5">
+                  <span className="font-bold uppercase text-neutral-800 block">
+                    Gerência / Supervisão
                   </span>
+                  <span className="text-[10px] text-neutral-500 font-mono">Visto do Supervisor</span>
                 </div>
               </div>
             </div>
 
             {/* Modal Actions */}
-            <div className="flex items-center justify-between gap-3 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-neutral-800">
               <span className="text-xs text-neutral-500">
-                Sincronizado e auditado em nuvem Supabase.
+                Arquivo gerado em formato A4 · Auditado no Supabase.
               </span>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isExportingPDF}
+                  onClick={handleExportarPDF}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer disabled:opacity-50"
+                >
+                  {isExportingPDF ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{isExportingPDF ? 'Gerando PDF...' : 'Baixar Relatório em PDF (.PDF)'}</span>
+                </button>
                 <button
                   type="button"
                   onClick={handlePrintReport}
                   className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>Imprimir Relatório</span>
+                  <span>Imprimir / Salvar como PDF</span>
                 </button>
                 <button
                   type="button"

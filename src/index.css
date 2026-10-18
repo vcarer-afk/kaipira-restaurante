@@ -32,10 +32,25 @@
 
 /* Print Styles for Thermal Printer & PDF Reports */
 @media print {
-  body {
+  html, body {
     background: white !important;
     color: black !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
   }
+
+  /* Reset all modal containers so they don't clip the printed report */
+  .fixed, [class*="fixed"], [class*="overflow-y-auto"], [class*="overflow-hidden"], [class*="max-h-"] {
+    position: static !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
   body * {
     visibility: hidden;
   }
@@ -47,6 +62,7 @@
   #thermal-table-bill * {
     visibility: visible !important;
   }
+
   #thermal-print-area,
   #thermal-table-bill {
     position: absolute !important;
@@ -70,14 +86,15 @@
   #relatorio-fechamento-caixa * {
     visibility: visible !important;
   }
+
   #relatorio-fechamento-caixa {
-    position: absolute !important;
+    position: relative !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
-    max-width: 190mm !important;
+    max-width: 195mm !important;
     margin: 0 auto !important;
-    padding: 8mm !important;
+    padding: 6mm !important;
     background: white !important;
     color: black !important;
     border: none !important;
@@ -91,15 +108,40 @@
   #relatorio-fechamento-caixa th,
   #relatorio-fechamento-caixa td {
     color: black !important;
-    border-color: #cbd5e1 !important;
+    border-color: #64748b !important;
   }
 
   #relatorio-fechamento-caixa * {
     color: black !important;
+  }
+
+  #relatorio-fechamento-caixa [class*="bg-neutral-"],
+  #relatorio-fechamento-caixa [class*="bg-amber-"],
+  #relatorio-fechamento-caixa [class*="bg-emerald-"],
+  #relatorio-fechamento-caixa [class*="bg-red-"] {
     background-color: transparent !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  #relatorio-fechamento-caixa .border-neutral-800,
+  #relatorio-fechamento-caixa .border-neutral-850,
+  #relatorio-fechamento-caixa .border-neutral-700 {
+    border-color: #cbd5e1 !important;
+  }
+
+  #relatorio-fechamento-caixa .text-white,
+  #relatorio-fechamento-caixa .text-amber-400,
+  #relatorio-fechamento-caixa .text-amber-500,
+  #relatorio-fechamento-caixa .text-emerald-400,
+  #relatorio-fechamento-caixa .text-cyan-400,
+  #relatorio-fechamento-caixa .text-neutral-200,
+  #relatorio-fechamento-caixa .text-neutral-300,
+  #relatorio-fechamento-caixa .text-neutral-400 {
+    color: black !important;
   }
 
   @page {
-    margin: 6mm;
+    size: A4 portrait;
+    margin: 8mm;
   }
 }

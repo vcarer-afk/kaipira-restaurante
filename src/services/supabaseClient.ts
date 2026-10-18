@@ -376,6 +376,9 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
         taxa_entrega: Number(p.taxa_entrega) || 0,
         itens: Array.isArray(p.itens) ? p.itens : [],
         pagamentos: Array.isArray(p.pagamentos) ? p.pagamentos : [],
+        conferencia_entrega: p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined),
+        conferido_por: p.conferido_por || undefined,
+        conferido_em: p.conferido_em || undefined,
         criado_em: p.criado_em || new Date().toISOString(),
         atualizado_em: p.atualizado_em || new Date().toISOString(),
       }));
@@ -422,6 +425,9 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           taxa_entrega: Number(p.taxa_entrega) || 0,
           itens: pedItens.length > 0 ? pedItens : (Array.isArray(p.itens) ? p.itens : []),
           pagamentos: pedPags.length > 0 ? pedPags : (Array.isArray(p.pagamentos) ? p.pagamentos : []),
+          conferencia_entrega: p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined),
+          conferido_por: p.conferido_por || undefined,
+          conferido_em: p.conferido_em || undefined,
           criado_em: p.criado_em || new Date().toISOString(),
           atualizado_em: p.atualizado_em || new Date().toISOString(),
         };
@@ -444,10 +450,30 @@ export async function atualizarStatusPedidoSupabase(
       atualizado_em: new Date().toISOString(),
     };
     if (entregador_nome) payload.entregador_nome = entregador_nome;
+    if (status === 'entregue') {
+      payload.conferencia_entrega = 'pendente';
+    }
 
     await supabase.from('pedidos').update(payload).eq('id', id);
   } catch (err) {
     console.warn('Erro ao atualizar status do pedido no Supabase:', err);
+  }
+}
+
+export async function conferirEntregaPedidoSupabase(
+  id: number,
+  conferidoPor: string
+): Promise<void> {
+  try {
+    const payload = {
+      conferencia_entrega: 'conferido',
+      conferido_por: conferidoPor,
+      conferido_em: new Date().toISOString(),
+      atualizado_em: new Date().toISOString(),
+    };
+    await supabase.from('pedidos').update(payload).eq('id', id);
+  } catch (err) {
+    console.warn('Erro ao salvar conferência de entrega no Supabase:', err);
   }
 }
 
