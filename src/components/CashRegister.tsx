@@ -46,6 +46,8 @@ import {
   BadgeCheck,
   Loader2,
   FileDown,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 
 interface CashRegisterProps {
@@ -116,6 +118,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   // Caixa Navigation: Resumo Geral, Conferência de Entregas, ou Extrato
   const [caixaTab, setCaixaTab] = useState<'resumo' | 'conferencia_entregas' | 'extrato'>('resumo');
   const [conferenciaFiltro, setConferenciaFiltro] = useState<'pendentes' | 'conferidos' | 'todos'>('pendentes');
+  const [conferenciaViewMode, setConferenciaViewMode] = useState<'blocos' | 'lista'>('blocos');
   const [conferindoPedido, setConferindoPedido] = useState<Pedido | null>(null);
   const [responsavelConferencia, setResponsavelConferencia] = useState(
     currentPerfil?.nome || 'GERENTE GERAL'
@@ -1159,7 +1162,8 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
           {/* Filtro de Visualização & Responsável */}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-neutral-850 p-3 rounded-2xl border border-neutral-800">
-            <div className="flex items-center gap-1.5">
+            {/* Status Tabs */}
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
                 onClick={() => setConferenciaFiltro('pendentes')}
@@ -1195,15 +1199,49 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
               </button>
             </div>
 
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-neutral-400 font-bold uppercase">Gerente/Supervisor:</span>
-              <input
-                type="text"
-                value={responsavelConferencia}
-                onChange={(e) => setResponsavelConferencia(e.target.value.toUpperCase())}
-                placeholder="GERENTE OU SUPERVISOR"
-                className="px-2.5 py-1 bg-neutral-900 border border-neutral-700 text-amber-400 font-bold rounded-lg text-xs uppercase focus:outline-none"
-              />
+            {/* Right Controls: View Mode (Blocos / Lista) & Supervisor */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Toggle de Visualização: Blocos vs Lista */}
+              <div className="flex items-center bg-neutral-900 border border-neutral-750 p-1 rounded-xl shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setConferenciaViewMode('blocos')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    conferenciaViewMode === 'blocos'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Blocos (Cards Detalhados)"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Blocos</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConferenciaViewMode('lista')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    conferenciaViewMode === 'lista'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Visualização em Lista / Tabela Compacta"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>Lista</span>
+                </button>
+              </div>
+
+              {/* Input Responsável */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-neutral-400 font-bold uppercase hidden md:inline">Supervisor:</span>
+                <input
+                  type="text"
+                  value={responsavelConferencia}
+                  onChange={(e) => setResponsavelConferencia(e.target.value.toUpperCase())}
+                  placeholder="SUPERVISOR"
+                  className="px-2.5 py-1 bg-neutral-900 border border-neutral-700 text-amber-400 font-bold rounded-lg text-xs uppercase focus:outline-none max-w-[150px] sm:max-w-none"
+                />
+              </div>
             </div>
           </div>
 
@@ -1236,154 +1274,410 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
               );
             }
 
-            return (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {list.map((p) => {
-                  const isConferido = p.conferencia_entrega === 'conferido';
-                  const subtotalProdutos = p.itens.reduce(
-                    (sum, it) => sum + it.preco_unitario * it.quantidade,
-                    0
-                  );
+            // MODO 1: VISUALIZAÇÃO EM BLOCOS (CARDS)
+            if (conferenciaViewMode === 'blocos') {
+              return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {list.map((p) => {
+                    const isConferido = p.conferencia_entrega === 'conferido';
+                    const subtotalProdutos = p.itens.reduce(
+                      (sum, it) => sum + it.preco_unitario * it.quantidade,
+                      0
+                    );
 
-                  return (
-                    <div
-                      key={p.id}
-                      className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
-                        isConferido
-                          ? 'bg-neutral-850/80 border-neutral-800'
-                          : 'bg-neutral-850 border-amber-800/80 shadow-md ring-1 ring-amber-500/30'
-                      }`}
-                    >
-                      <div className="space-y-3">
-                        {/* Top bar da entrega */}
-                        <div className="flex items-start justify-between border-b border-neutral-800 pb-2.5">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-black text-base text-white">
+                    return (
+                      <div
+                        key={p.id}
+                        className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                          isConferido
+                            ? 'bg-neutral-850/80 border-neutral-800'
+                            : 'bg-neutral-850 border-amber-800/80 shadow-md ring-1 ring-amber-500/30'
+                        }`}
+                      >
+                        <div className="space-y-3">
+                          {/* Top bar da entrega */}
+                          <div className="flex items-start justify-between border-b border-neutral-800 pb-2.5">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-black text-base text-white">
+                                  #{p.codigo_senha}
+                                </span>
+                                <span className="text-[10px] text-neutral-400 font-mono">
+                                  Pedido #{p.id}
+                                </span>
+                                <span
+                                  className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded ${
+                                    isConferido
+                                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                      : 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                                  }`}
+                                >
+                                  {isConferido ? 'CONFERIDO NO CAIXA' : 'PENDENTE CONFERÊNCIA'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-neutral-400 mt-0.5 flex items-center gap-2">
+                                <span className="flex items-center gap-1 text-cyan-400 font-bold">
+                                  <Bike className="w-3.5 h-3.5" />
+                                  {p.entregador_nome || 'MOTOBOY KAIPIRA'}
+                                </span>
+                                <span>•</span>
+                                <span>Atualizado às {formatDateTime(p.atualizado_em)}</span>
+                              </p>
+                            </div>
+
+                            <div className="text-right">
+                              <span className="text-lg font-black text-amber-400 font-mono tabular-nums">
+                                {formatBRL(p.valor_total)}
+                              </span>
+                              <span className="text-[10px] text-neutral-400 block uppercase">
+                                {p.pagamentos?.[0]?.forma ? p.pagamentos[0].forma.toUpperCase() : 'A RECEBER'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Dados do Cliente e Endereço de Entrega */}
+                          <div className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-1">
+                            <div className="flex justify-between items-baseline">
+                              <span className="font-bold text-white uppercase">
+                                {p.cliente?.nome || 'CLIENTE NÃO IDENTIFICADO'}
+                              </span>
+                              {p.cliente?.telefone && (
+                                <span className="text-[11px] text-neutral-400 font-mono">
+                                  {p.cliente.telefone}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-neutral-300">
+                              {p.cliente?.endereco || 'ENDEREÇO NÃO CADASTRADO'}
+                              {p.cliente?.numero ? `, Nº ${p.cliente.numero}` : ''}
+                              {p.cliente?.complemento ? ` (${p.cliente.complemento})` : ''} -{' '}
+                              <strong className="text-amber-400">{p.cliente?.bairro || 'PIRACICABA'}</strong>
+                            </p>
+                          </div>
+
+                          {/* Detalhe dos Produtos, Quantidades, Valores e Subtotal (Regra solicitada) */}
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                              Itens Entregues:
+                            </span>
+                            <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                              {p.itens.map((it, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-neutral-900/60 border border-neutral-850"
+                                >
+                                  <span className="text-neutral-200">
+                                    <strong className="text-amber-400 font-mono">{it.quantidade}x</strong>{' '}
+                                    {getProductDescription(it)}
+                                  </span>
+                                  <div className="text-right shrink-0 font-mono">
+                                    <span className="font-bold text-white">
+                                      {formatBRL(it.preco_unitario * it.quantidade)}
+                                    </span>
+                                    <span className="text-[9.5px] text-neutral-500 block">
+                                      ({it.quantidade}x {formatBRL(it.preco_unitario)})
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="pt-2 border-t border-neutral-800 text-[11px] flex justify-between text-neutral-400 font-mono">
+                              <span>Subtotal Pratos: {formatBRL(subtotalProdutos)}</span>
+                              <span>Taxa Entrega: +{formatBRL(p.taxa_entrega || 0)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Ação de Conferência */}
+                        <div className="pt-3 border-t border-neutral-800">
+                          {isConferido ? (
+                            <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-800/60 flex items-center justify-between text-xs text-emerald-300">
+                              <span className="flex items-center gap-1.5 font-bold uppercase">
+                                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                                Conferido por: {p.conferido_por || 'GERENTE'}
+                              </span>
+                              <span className="text-[10px] text-neutral-400 font-mono">
+                                {p.conferido_em ? formatDateTime(p.conferido_em) : 'Hoje'}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-amber-950/20 p-2.5 rounded-xl border border-amber-800/40">
+                              <div className="flex items-center gap-1.5 text-xs text-amber-300">
+                                <UserCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                                <span className="text-[11px]">
+                                  Liberar entrada de <strong>{formatBRL(p.valor_total)}</strong> no faturamento diário
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmarConferencia(p)}
+                                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                                <span>Conferir & Faturar</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            // MODO 2: VISUALIZAÇÃO EM LISTA (TABELA COMPACTA E LINHAS)
+            return (
+              <div className="bg-neutral-850 rounded-2xl border border-neutral-800 shadow-sm overflow-hidden">
+                {/* Visualização em Tabela para Desktop */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-neutral-900 border-b border-neutral-800 text-neutral-400 text-[10.5px] uppercase font-black tracking-wider">
+                        <th className="py-3 px-4">Senha / Pedido</th>
+                        <th className="py-3 px-3">Status</th>
+                        <th className="py-3 px-3">Motoboy / Saída</th>
+                        <th className="py-3 px-3">Cliente & Destino</th>
+                        <th className="py-3 px-3">Itens / Descrição</th>
+                        <th className="py-3 px-3">Pagamento</th>
+                        <th className="py-3 px-4 text-right">Valor Total</th>
+                        <th className="py-3 px-4 text-center">Ação / Auditoria</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-800/80">
+                      {list.map((p) => {
+                        const isConferido = p.conferencia_entrega === 'conferido';
+                        const subtotalProdutos = p.itens.reduce(
+                          (sum, it) => sum + it.preco_unitario * it.quantidade,
+                          0
+                        );
+
+                        return (
+                          <tr
+                            key={p.id}
+                            className={`transition-colors ${
+                              isConferido
+                                ? 'hover:bg-neutral-800/40'
+                                : 'bg-amber-950/10 hover:bg-amber-950/25'
+                            }`}
+                          >
+                            {/* Senha / Pedido */}
+                            <td className="py-3.5 px-4 align-top whitespace-nowrap">
+                              <span className="font-mono font-black text-base text-amber-400 block">
                                 #{p.codigo_senha}
                               </span>
                               <span className="text-[10px] text-neutral-400 font-mono">
                                 Pedido #{p.id}
                               </span>
+                            </td>
+
+                            {/* Status */}
+                            <td className="py-3.5 px-3 align-top whitespace-nowrap">
                               <span
-                                className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded ${
+                                className={`inline-flex items-center gap-1 text-[9.5px] font-black uppercase px-2 py-0.5 rounded ${
                                   isConferido
                                     ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                                     : 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
                                 }`}
                               >
-                                {isConferido ? 'CONFERIDO NO CAIXA' : 'PENDENTE CONFERÊNCIA'}
+                                {isConferido ? (
+                                  <>
+                                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                                    <span>CONFERIDO</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock className="w-3 h-3 text-amber-400" />
+                                    <span>PENDENTE</span>
+                                  </>
+                                )}
                               </span>
-                            </div>
-                            <p className="text-xs text-neutral-400 mt-0.5 flex items-center gap-2">
-                              <span className="flex items-center gap-1 text-cyan-400 font-bold">
-                                <Bike className="w-3.5 h-3.5" />
-                                {p.entregador_nome || 'MOTOBOY KAIPIRA'}
-                              </span>
-                              <span>•</span>
-                              <span>Atualizado às {formatDateTime(p.atualizado_em)}</span>
-                            </p>
-                          </div>
+                            </td>
 
-                          <div className="text-right">
-                            <span className="text-lg font-black text-amber-400 font-mono tabular-nums">
-                              {formatBRL(p.valor_total)}
-                            </span>
-                            <span className="text-[10px] text-neutral-400 block uppercase">
-                              {p.pagamentos?.[0]?.forma ? p.pagamentos[0].forma.toUpperCase() : 'A RECEBER'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Dados do Cliente e Endereço de Entrega */}
-                        <div className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-1">
-                          <div className="flex justify-between items-baseline">
-                            <span className="font-bold text-white uppercase">
-                              {p.cliente?.nome || 'CLIENTE NÃO IDENTIFICADO'}
-                            </span>
-                            {p.cliente?.telefone && (
-                              <span className="text-[11px] text-neutral-400 font-mono">
-                                {p.cliente.telefone}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-neutral-300">
-                            {p.cliente?.endereco || 'ENDEREÇO NÃO CADASTRADO'}
-                            {p.cliente?.numero ? `, Nº ${p.cliente.numero}` : ''}
-                            {p.cliente?.complemento ? ` (${p.cliente.complemento})` : ''} -{' '}
-                            <strong className="text-amber-400">{p.cliente?.bairro || 'PIRACICABA'}</strong>
-                          </p>
-                        </div>
-
-                        {/* Detalhe dos Produtos, Quantidades, Valores e Subtotal (Regra solicitada) */}
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
-                            Itens Entregues:
-                          </span>
-                          <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                            {p.itens.map((it, idx) => (
-                              <div
-                                key={idx}
-                                className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-neutral-900/60 border border-neutral-850"
-                              >
-                                <span className="text-neutral-200">
-                                  <strong className="text-amber-400 font-mono">{it.quantidade}x</strong>{' '}
-                                  {getProductDescription(it)}
+                            {/* Motoboy / Saída */}
+                            <td className="py-3.5 px-3 align-top">
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-400">
+                                <Bike className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate max-w-[140px] uppercase">
+                                  {p.entregador_nome || 'MOTOBOY KAIPIRA'}
                                 </span>
-                                <div className="text-right shrink-0 font-mono">
-                                  <span className="font-bold text-white">
-                                    {formatBRL(it.preco_unitario * it.quantidade)}
+                              </div>
+                              <div className="text-[11px] text-neutral-400 mt-0.5 font-mono">
+                                {formatDateTime(p.atualizado_em)}
+                              </div>
+                            </td>
+
+                            {/* Cliente & Destino */}
+                            <td className="py-3.5 px-3 align-top">
+                              <div className="font-bold text-white uppercase text-xs">
+                                {p.cliente?.nome || 'CLIENTE NÃO IDENTIFICADO'}
+                              </div>
+                              <div className="text-[11px] text-neutral-300 truncate max-w-[200px] mt-0.5">
+                                {p.cliente?.endereco || 'PIRACICABA'}
+                                {p.cliente?.numero ? `, Nº ${p.cliente.numero}` : ''}
+                                {p.cliente?.complemento ? ` (${p.cliente.complemento})` : ''}
+                              </div>
+                              <div className="text-[10.5px] text-amber-400 font-bold mt-0.5">
+                                {p.cliente?.bairro || 'PIRACICABA'}
+                                {p.cliente?.telefone ? ` · ${p.cliente.telefone}` : ''}
+                              </div>
+                            </td>
+
+                            {/* Itens / Descrição do Produto */}
+                            <td className="py-3.5 px-3 align-top max-w-[280px]">
+                              <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                                {p.itens.map((it, idx) => (
+                                  <div key={idx} className="text-xs text-neutral-200 leading-snug">
+                                    <strong className="text-amber-400 font-mono mr-1">
+                                      {it.quantidade}x
+                                    </strong>
+                                    <span>{getProductDescription(it)}</span>
+                                    <span className="text-neutral-500 font-mono text-[10px] ml-1">
+                                      ({formatBRL(it.preco_unitario * it.quantidade)})
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="text-[10px] text-neutral-400 font-mono mt-1 pt-1 border-t border-neutral-800 flex justify-between">
+                                <span>Subtotal: {formatBRL(subtotalProdutos)}</span>
+                                {p.taxa_entrega > 0 && <span>Taxa: +{formatBRL(p.taxa_entrega)}</span>}
+                              </div>
+                            </td>
+
+                            {/* Forma de Pagamento */}
+                            <td className="py-3.5 px-3 align-top whitespace-nowrap">
+                              <span className="text-xs font-bold uppercase text-neutral-200 block">
+                                {p.pagamentos?.[0]?.forma
+                                  ? p.pagamentos[0].forma.replace('_', ' ')
+                                  : 'A RECEBER'}
+                              </span>
+                              {p.precisa_troco && p.troco_para && (
+                                <span className="text-[10px] text-amber-400 font-bold block mt-0.5">
+                                  Troco p/ {formatBRL(p.troco_para)}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Valor Total */}
+                            <td className="py-3.5 px-4 align-top text-right whitespace-nowrap">
+                              <span className="text-base font-black text-white font-mono tabular-nums block">
+                                {formatBRL(p.valor_total)}
+                              </span>
+                            </td>
+
+                            {/* Ação / Auditoria */}
+                            <td className="py-3.5 px-4 align-top text-center whitespace-nowrap">
+                              {isConferido ? (
+                                <div className="inline-flex flex-col items-center justify-center p-1.5 rounded-lg bg-emerald-950/60 border border-emerald-800/60 text-emerald-300">
+                                  <span className="flex items-center gap-1 text-[11px] font-bold uppercase">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                    Conferido
                                   </span>
-                                  <span className="text-[9.5px] text-neutral-500 block">
-                                    ({it.quantidade}x {formatBRL(it.preco_unitario)})
+                                  <span className="text-[9.5px] text-neutral-400 font-mono truncate max-w-[120px]">
+                                    {p.conferido_por || 'GERENTE'}
                                   </span>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmarConferencia(p)}
+                                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black uppercase inline-flex items-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-95"
+                                  title="Liberar entrada no faturamento diário"
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5" />
+                                  <span>Conferir</span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
 
-                          <div className="pt-2 border-t border-neutral-800 text-[11px] flex justify-between text-neutral-400 font-mono">
-                            <span>Subtotal Pratos: {formatBRL(subtotalProdutos)}</span>
-                            <span>Taxa Entrega: +{formatBRL(p.taxa_entrega || 0)}</span>
+                {/* Visualização em Lista Linear para Mobile */}
+                <div className="md:hidden divide-y divide-neutral-800">
+                  {list.map((p) => {
+                    const isConferido = p.conferencia_entrega === 'conferido';
+
+                    return (
+                      <div
+                        key={p.id}
+                        className={`p-3.5 space-y-2.5 transition-colors ${
+                          isConferido ? 'bg-neutral-850' : 'bg-amber-950/15'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-base text-amber-400">
+                              #{p.codigo_senha}
+                            </span>
+                            <span
+                              className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+                                isConferido
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                  : 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                              }`}
+                            >
+                              {isConferido ? 'CONFERIDO' : 'PENDENTE'}
+                            </span>
+                          </div>
+                          <span className="text-base font-black text-white font-mono tabular-nums">
+                            {formatBRL(p.valor_total)}
+                          </span>
+                        </div>
+
+                        <div className="text-xs space-y-0.5">
+                          <div className="font-bold text-white uppercase">{p.cliente?.nome || 'CLIENTE'}</div>
+                          <div className="text-[11px] text-neutral-400">
+                            {p.cliente?.bairro || 'PIRACICABA'} · Motoboy: {p.entregador_nome || 'PRÓPRIO'}
                           </div>
                         </div>
-                      </div>
 
-                      {/* Ação de Conferência */}
-                      <div className="pt-3 border-t border-neutral-800">
-                        {isConferido ? (
-                          <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-800/60 flex items-center justify-between text-xs text-emerald-300">
-                            <span className="flex items-center gap-1.5 font-bold uppercase">
-                              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                              Conferido por: {p.conferido_por || 'GERENTE'}
-                            </span>
-                            <span className="text-[10px] text-neutral-400 font-mono">
-                              {p.conferido_em ? formatDateTime(p.conferido_em) : 'Hoje'}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-amber-950/20 p-2.5 rounded-xl border border-amber-800/40">
-                            <div className="flex items-center gap-1.5 text-xs text-amber-300">
-                              <UserCheck className="w-4 h-4 text-amber-400 shrink-0" />
-                              <span className="text-[11px]">
-                                Liberar entrada de <strong>{formatBRL(p.valor_total)}</strong> no faturamento diário
+                        {/* Itens Resumidos */}
+                        <div className="bg-neutral-900 p-2 rounded-lg text-xs space-y-1">
+                          {p.itens.map((it, idx) => (
+                            <div key={idx} className="flex justify-between text-[11px]">
+                              <span className="text-neutral-200">
+                                <strong className="text-amber-400 mr-1">{it.quantidade}x</strong>
+                                {getProductDescription(it)}
+                              </span>
+                              <span className="text-neutral-400 font-mono">
+                                {formatBRL(it.preco_unitario * it.quantidade)}
                               </span>
                             </div>
+                          ))}
+                        </div>
 
+                        {/* Ação */}
+                        <div className="pt-1 flex items-center justify-between text-xs">
+                          <span className="text-neutral-400 text-[11px] uppercase">
+                            Pgto: {p.pagamentos?.[0]?.forma || 'A RECEBER'}
+                          </span>
+
+                          {isConferido ? (
+                            <span className="text-[10px] text-emerald-400 font-bold uppercase flex items-center gap-1">
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              Conferido por {p.conferido_por || 'GERENTE'}
+                            </span>
+                          ) : (
                             <button
                               type="button"
                               onClick={() => handleConfirmarConferencia(p)}
-                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98"
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black uppercase flex items-center gap-1.5 shadow-sm active:scale-95"
                             >
                               <ShieldCheck className="w-3.5 h-3.5" />
                               <span>Conferir & Faturar</span>
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             );
           })()}
