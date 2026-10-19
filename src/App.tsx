@@ -809,16 +809,16 @@ export default function App() {
     valor: number,
     _forma: 'pix' | 'dinheiro' | 'cartao_debito'
   ) => {
+    const cli = clientes.find((c) => c.id === clienteId);
     setClientes((prev) =>
       prev.map((c) =>
         c.id === clienteId
-          ? { ...c, saldo_devedor: Math.max(0, c.saldo_devedor - valor) }
+          ? { ...c, saldo_devedor: Math.max(0, (c.saldo_devedor || 0) - valor) }
           : c
       )
     );
-    await abaterSaldoMensalistaSupabase(clienteId, valor);
+    await abaterSaldoMensalistaSupabase(clienteId, valor, cli);
     if (caixa && caixa.status === 'aberto' && valor > 0) {
-      const cli = clientes.find((c) => c.id === clienteId);
       await handleMovimentacaoCaixa(
         'entrada_pedido',
         _forma,
@@ -990,11 +990,20 @@ export default function App() {
     setCaixa(fechado);
   };
 
-  // Rotina Administrativa: Zerar financeiro do dia atual no caixa
+  // Rotina Administrativa: Zerar financeiro do dia atual (Caixa, Faturamento, Pedidos, Mesas, Delivery)
   const handleZerarFinanceiroDia = async () => {
     try {
       const zerado = await zerarFinanceiroDiaSupabase(caixa);
       setCaixa(zerado);
+      setPedidos([]);
+      setMesas((prev) =>
+        prev.map((m) => ({
+          ...m,
+          status: 'livre',
+          cliente_nome: undefined,
+          pessoas: undefined,
+        }))
+      );
     } catch (err) {
       console.error('Erro ao zerar financeiro do dia:', err);
     }

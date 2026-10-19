@@ -353,7 +353,7 @@ export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
   return novoPedidoCompleto;
 }
 
-// Estado de conferências mantido exclusivamente em memória durante a sessão (zero localStorage)
+// Estado de conferências mantido exclusivamente em nuvem Supabase e sincronizado em memória
 const conferenciasSessao: Record<number, { conferido_por: string; conferido_em: string }> = {};
 
 export function getConferenciasLocais(): Record<number, { conferido_por: string; conferido_em: string }> {
@@ -365,6 +365,37 @@ export function registrarConferenciaLocal(pedidoId: number, conferidoPor: string
     conferido_por: conferidoPor,
     conferido_em: new Date().toISOString(),
   };
+}
+
+export async function carregarConferenciasNuvem(): Promise<Record<number, { conferido_por: string; conferido_em: string }>> {
+  try {
+    const { data } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+    const confs = (data?.dados?.conferencias_entregas || {}) as Record<number, { conferido_por: string; conferido_em: string }>;
+    // Sincroniza também no cache em memória
+    Object.assign(conferenciasSessao, confs);
+    return confs;
+  } catch {
+    return {};
+  }
+}
+
+export async function salvarConferenciaNuvem(pedidoId: number, conferidoPor: string): Promise<void> {
+  try {
+    const { data } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+    const dados = (data?.dados || {}) as Record<string, any>;
+    const confs = dados.conferencias_entregas || {};
+    confs[pedidoId] = {
+      conferido_por: conferidoPor,
+      conferido_em: new Date().toISOString(),
+    };
+    dados.conferencias_entregas = confs;
+    await supabase
+      .from('configuracoes')
+      .update({ dados, atualizado_em: new Date().toISOString() })
+      .eq('id', 1);
+  } catch (err) {
+    console.warn('Aviso ao sincronizar conferência na nuvem Supabase:', err);
+  }
 }
 
 let pedidosColumnsChecked = false;
@@ -393,7 +424,9 @@ async function checkPedidosSchema() {
 
 export async function fetchPedidosSupabase(): Promise<Pedido[]> {
   try {
-    const conferidosLocais = getConferenciasLocais();
+    // Carrega do Supabase as conferências salvas em nuvem
+    const conferidosNuvem = await carregarConferenciasNuvem();
+    const conferidosLocais = { ...conferidosNuvem, ...getConferenciasLocais() };
 
     // 1. Tenta carregar pedidos com relacionamento dos itens e pagamentos
     const { data: pedidosData, error } = await supabase
@@ -547,12 +580,15 @@ export async function conferirEntregaPedidoSupabase(
   conferidoPor: string
 ): Promise<void> {
   try {
-    // 1. Sempre registra em cache de sessão em memória para garantir integridade do estado em tempo real
+    // 1. Registra no cache em memória
     registrarConferenciaLocal(id, conferidoPor);
+
+    // 2. Persiste em nuvem diretamente no Supabase (configuracoes.dados.conferencias_entregas)
+    await salvarConferenciaNuvem(id, conferidoPor);
 
     await checkPedidosSchema();
 
-    // 2. Se a tabela pedidos possui as colunas de conferência no Supabase, tenta atualizar
+    // 3. Se a tabela pedidos possuir as colunas de conferência no Supabase, tenta atualizar
     if (pedidosCols.conferencia_entrega) {
       const payload: any = {
         conferencia_entrega: 'conferido',
@@ -569,7 +605,7 @@ export async function conferirEntregaPedidoSupabase(
       }
     }
   } catch (err) {
-    console.warn('Conferência de entrega salva em sessão:', err);
+    console.warn('Conferência de entrega salva na nuvem:', err);
   }
 }
 
@@ -1073,6 +1109,47 @@ export async function zerarFinanceiroDiaSupabase(
   };
 
   try {
+    // 1. Zera pedidos, itens e pagamentos na nuvem Supabase
+    try {
+      await supabase.from('itens_pedido').delete().gte('id', 0);
+    } catch (e) {
+      console.warn('Aviso ao limpar itens_pedido:', e);
+    }
+    try {
+      await supabase.from('pagamentos').delete().gte('id', 0);
+    } catch (e) {
+      console.warn('Aviso ao limpar pagamentos:', e);
+    }
+    try {
+      await supabase.from('pedidos').delete().gte('id', 0);
+    } catch (e) {
+      console.warn('Aviso ao limpar pedidos:', e);
+    }
+
+    // 2. Libera todas as mesas no salão
+    try {
+      await supabase.from('mesas').update({ status: 'livre' }).gte('id', 0);
+    } catch (e) {
+      console.warn('Aviso ao liberar mesas:', e);
+    }
+
+    // 3. Limpa conferências de entregas salvas na nuvem
+    try {
+      const { data: cfgRow } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+      if (cfgRow?.dados) {
+        const novosDados = { ...cfgRow.dados, conferencias_entregas: {} };
+        await supabase.from('configuracoes').update({ dados: novosDados, atualizado_em: now }).eq('id', 1);
+      }
+    } catch (e) {
+      console.warn('Aviso ao limpar conferencias em configuracoes:', e);
+    }
+
+    // Limpa também o cache local em memória
+    for (const key of Object.keys(conferenciasSessao)) {
+      delete conferenciasSessao[Number(key)];
+    }
+
+    // 4. Zera o caixa_diario na nuvem Supabase
     const { data: rows } = await supabase
       .from('caixa_diario')
       .select('id, data_caixa')
@@ -1252,15 +1329,56 @@ export async function criarReservaSupabase(
  */
 export async function abaterSaldoMensalistaSupabase(
   clienteId: string,
-  valor: number
+  valor: number,
+  clienteObj?: Cliente
 ): Promise<void> {
   try {
-    await supabase.rpc('abater_saldo_cliente', {
-      cliente_id_param: clienteId,
-      valor_param: valor,
-    });
+    // 1. Tenta buscar cliente atual no Supabase por id
+    const { data: dbCli } = await supabase
+      .from('clientes')
+      .select('id, saldo_devedor, telefone, nome')
+      .eq('id', clienteId)
+      .maybeSingle();
+
+    if (dbCli) {
+      const atual = Number(dbCli.saldo_devedor || 0);
+      const novoSaldo = Math.max(0, atual - valor);
+      await supabase
+        .from('clientes')
+        .update({ saldo_devedor: novoSaldo, atualizado_em: new Date().toISOString() })
+        .eq('id', clienteId);
+      return;
+    }
+
+    // 2. Se não achou por id (caso id seja temporário), busca por telefone
+    if (clienteObj?.telefone) {
+      const { data: byTel } = await supabase
+        .from('clientes')
+        .select('id, saldo_devedor')
+        .eq('telefone', clienteObj.telefone)
+        .maybeSingle();
+
+      if (byTel) {
+        const atual = Number(byTel.saldo_devedor || 0);
+        const novoSaldo = Math.max(0, atual - valor);
+        await supabase
+          .from('clientes')
+          .update({ saldo_devedor: novoSaldo, atualizado_em: new Date().toISOString() })
+          .eq('id', byTel.id);
+        return;
+      }
+    }
+
+    // 3. Caso o cliente ainda não esteja no Supabase, salva-o com o saldo reduzido
+    if (clienteObj) {
+      const novoSaldo = Math.max(0, (clienteObj.saldo_devedor || 0) - valor);
+      await salvarClienteSupabase({
+        ...clienteObj,
+        saldo_devedor: novoSaldo,
+      });
+    }
   } catch (err) {
-    console.warn('Erro ao abater saldo no Supabase:', err);
+    console.warn('Erro ao atualizar saldo devedor do mensalista no Supabase:', err);
   }
 }
 

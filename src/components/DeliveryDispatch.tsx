@@ -294,7 +294,7 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
             <span>3. Entregues Recentemente ({entregues.length})</span>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             {entregues.length === 0 ? (
               <div className="p-8 text-center text-xs text-neutral-500 bg-neutral-850/50 rounded-xl border border-neutral-800">
                 NENHUMA ENTREGA FINALIZADA HOJE AINDA
@@ -303,36 +303,104 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
               entregues.map((p) => (
                 <div
                   key={p.id}
-                  className="bg-neutral-850/70 rounded-xl border border-neutral-800 p-3 flex items-center justify-between text-xs"
+                  className="bg-neutral-850 rounded-xl border border-neutral-750 p-4 flex flex-col gap-3 shadow-md"
                 >
-                  <div>
+                  <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold font-mono text-emerald-400">
-                        #{p.codigo_senha}
+                      <span className="text-sm font-black text-emerald-400 font-mono">
+                        SENHA #{p.codigo_senha}
                       </span>
-                      <span className="font-semibold text-white uppercase">
-                        {p.cliente?.nome || 'CLIENTE'}
+                      <span className="text-[10px] text-neutral-400 font-mono">
+                        Pedido #{p.id}
                       </span>
                     </div>
-                    <div className="text-[11px] text-neutral-400">
-                      {p.cliente?.bairro} · {formatTime(p.atualizado_em)}
-                    </div>
+                    <span className="text-xs font-bold text-white tabular-nums">
+                      {formatBRL(p.valor_total)}
+                    </span>
                   </div>
 
-                  <div className="text-right flex flex-col items-end gap-0.5">
-                    <div className="font-bold text-white tabular-nums">
-                      {formatBRL(p.valor_total)}
+                  {p.cliente && (
+                    <div className="space-y-1 text-xs">
+                      <div className="font-bold text-neutral-100 uppercase">
+                        {p.cliente.nome}
+                      </div>
+                      <div className="flex items-center gap-1 text-neutral-400">
+                        <Phone className="w-3.5 h-3.5 text-neutral-500" />
+                        <span>{p.cliente.telefone}</span>
+                      </div>
+                      <div className="flex items-start gap-1 text-neutral-300">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                        <div>
+                          <span>
+                            {p.cliente.endereco}, Nº {p.cliente.numero}
+                          </span>
+                          {p.cliente.complemento && <span> ({p.cliente.complemento})</span>}
+                          <div className="text-[11px] text-emerald-400 font-bold">
+                            BAIRRO: {p.cliente.bairro} · CEP: {p.cliente.cep}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-[10px] text-emerald-400 font-bold uppercase">
-                      ENTREGUE
-                    </span>
+                  )}
+
+                  <div className="flex items-center gap-2 text-[11px] bg-neutral-900/80 px-2.5 py-1.5 rounded-lg border border-neutral-800 text-neutral-300">
+                    <Bike className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <span>Entregador: <strong className="text-cyan-300 font-bold">{p.entregador_nome || 'MOTOBOY PRÓPRIO'}</strong></span>
+                  </div>
+
+                  {/* Lista de Produtos com Descrição Completa e Valores */}
+                  {p.itens && p.itens.length > 0 && (
+                    <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                        <ShoppingBag className="w-3 h-3 text-emerald-500" />
+                        <span>Produtos Entregues ({p.itens.reduce((s, it) => s + it.quantidade, 0)}):</span>
+                      </div>
+                      <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
+                        {p.itens.map((it, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-xs py-0.5">
+                            <span className="text-neutral-200">
+                              <strong className="text-emerald-400 font-mono">{it.quantidade}x</strong>{' '}
+                              {getProductDescription(it)}
+                            </span>
+                            <span className="text-[11px] font-mono text-neutral-300 font-semibold tabular-nums shrink-0">
+                              {formatBRL(it.preco_unitario * it.quantidade)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="pt-1.5 border-t border-neutral-800 flex justify-between text-[10.5px] font-mono text-neutral-400">
+                        <span>Taxa Entrega: +{formatBRL(p.taxa_entrega || 0)}</span>
+                        <span className="font-bold text-white">Total: {formatBRL(p.valor_total)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                    <span>Finalizado às: {formatTime(p.atualizado_em)}</span>
+                    {p.pagamentos && p.pagamentos[0] && (
+                      <span className="uppercase font-bold text-neutral-300">
+                        {p.pagamentos[0].forma.replace('_', ' ')}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-800">
+                    <button
+                      onClick={() => onPrintReceipt(p)}
+                      className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg transition-colors cursor-pointer"
+                      title="Reimprimir Comprovante de Entrega"
+                    >
+                      <Printer className="w-4 h-4" />
+                    </button>
                     {p.conferencia_entrega === 'conferido' ? (
-                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
-                        CONFERIDO CAIXA
+                      <span className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Conferido pelo Caixa</span>
                       </span>
                     ) : (
-                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 animate-pulse">
-                        PEND. CONFERÊNCIA
+                      <span className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg bg-amber-950 text-amber-300 border border-amber-800 flex items-center gap-1.5 animate-pulse">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Pendente Conferência no Caixa</span>
                       </span>
                     )}
                   </div>
