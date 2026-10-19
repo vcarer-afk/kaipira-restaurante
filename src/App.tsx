@@ -151,10 +151,10 @@ export default function App() {
   const [isCloudConfigLoading, setIsCloudConfigLoading] = useState<boolean>(true);
   const [cloudConfigSyncedAt, setCloudConfigSyncedAt] = useState<Date | null>(null);
 
-  const [categorias, setCategorias] = useState<Categoria[]>(INITIAL_CATEGORIAS);
-  const [produtos, setProdutos] = useState<Produto[]>(INITIAL_PRODUTOS);
-  const [mesas, setMesas] = useState<Mesa[]>(INITIAL_MESAS);
-  const [clientes, setClientes] = useState<Cliente[]>(INITIAL_CLIENTES);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [mesas, setMesas] = useState<Mesa[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>(INITIAL_USUARIOS);
   const [estoque, setEstoque] = useState<ItemEstoque[]>([]); // 100% da nuvem Supabase - zero mock/local
   const [caixa, setCaixa] = useState<CaixaDiario>(INITIAL_CAIXA);
@@ -296,6 +296,8 @@ export default function App() {
 
         mappedMesas.sort((a, b) => a.numero - b.numero);
         setMesas(mappedMesas);
+      } else if (mesasRes.status === 'fulfilled') {
+        setMesas([]);
       }
       if (estoqueRes.status === 'fulfilled') {
         if (estoqueRes.value.error) {
@@ -315,7 +317,7 @@ export default function App() {
       }
       if (caixaRes.status === 'fulfilled' && caixaRes.value.data && caixaRes.value.data.length > 0) {
         const row = caixaRes.value.data[0];
-        if (row.dados) {
+        if (row.dados && typeof row.dados === 'object' && row.dados.valor_abertura !== undefined) {
           setCaixa(row.dados);
         } else {
           const valAbertura = row.valor_abertura !== undefined && row.valor_abertura !== null
@@ -323,16 +325,16 @@ export default function App() {
             : (row.valor_apertura !== undefined && row.valor_apertura !== null ? Number(row.valor_apertura) : 0);
 
           const cloudMovs: MovimentacaoCaixa[] = Array.isArray(row.movimentacoes) ? row.movimentacoes : [];
-          setCaixa((prev) => ({
-            ...prev,
-            id: row.id || prev.id,
-            data_caixa: row.data_caixa || prev.data_caixa,
-            status: row.status || 'aberto',
-            valor_abertura: valAbertura,
+          setCaixa({
+            id: row.id || 1,
+            data_caixa: row.data_caixa || new Date().toISOString().split('T')[0],
+            status: (row.status as any) || 'aberto',
+            valor_abertura: isNaN(valAbertura) ? 0 : valAbertura,
             valor_fechamento: row.valor_fechamento !== null && row.valor_fechamento !== undefined ? Number(row.valor_fechamento) : undefined,
             observacoes: row.observacoes || '',
             movimentacoes: cloudMovs,
-          }));
+            aberto_em: row.aberto_em || new Date().toISOString(),
+          });
         }
       } else {
         setCaixa({
@@ -345,32 +347,30 @@ export default function App() {
           movimentacoes: [],
         });
       }
-      if (reservasRes.status === 'fulfilled' && reservasRes.value.data && reservasRes.value.data.length > 0) {
+      if (reservasRes.status === 'fulfilled' && reservasRes.value.data) {
         setReservas(reservasRes.value.data as Reserva[]);
       }
-      if (clientesRes.status === 'fulfilled' && clientesRes.value.data && clientesRes.value.data.length > 0) {
-        setClientes(clientesRes.value.data as Cliente[]);
+      if (clientesRes.status === 'fulfilled') {
+        setClientes((clientesRes.value.data as Cliente[]) || []);
       }
 
       // Carrega categorias da nuvem Supabase (100% cloud)
       try {
         const cloudCats = await fetchCategoriasSupabase();
-        if (cloudCats && cloudCats.length > 0) {
-          setCategorias(cloudCats);
-        }
+        setCategorias(cloudCats || []);
       } catch (err) {
         console.warn('Conectando a categorias do Supabase...', err);
+        setCategorias([]);
       }
 
       // Carrega produtos da nuvem Supabase (100% cloud)
       try {
         const cloudProds = await fetchProdutosSupabase();
-        if (cloudProds && cloudProds.length > 0) {
-          setProdutos(cloudProds);
-          setPedidos((prev) => enrichPedidosWithProductNames(prev, cloudProds));
-        }
+        setProdutos(cloudProds || []);
+        setPedidos((prev) => enrichPedidosWithProductNames(prev, cloudProds || []));
       } catch (err) {
         console.warn('Conectando a produtos do Supabase...', err);
+        setProdutos([]);
       }
 
       // Carrega bairros da nuvem Supabase (100% cloud)
@@ -567,6 +567,7 @@ export default function App() {
     setIsAuthenticated(true);
     setCurrentPerfil(perfil);
     setCurrentRole(perfil.cargo);
+    fetchCloudState();
 
     if (perfil.cargo === 'master' || perfil.cargo === 'admin') {
       setActiveTab('dashboard');
@@ -877,9 +878,23 @@ export default function App() {
     });
   };
 
-  const handleDeleteCliente = async (id: string) => {
-    await excluirClienteSupabase(id);
+  const handleDeleteCliente = async (id: string): Promise<boolean> => {
+    const res = await excluirClienteSupabase(id);
+    if (!res.success) {
+      const isFk =
+        res.error?.includes('23503') ||
+        res.error?.toLowerCase().includes('foreign key') ||
+        res.error?.toLowerCase().includes('violates') ||
+        res.error?.toLowerCase().includes('referenc');
+      alert(
+        isFk
+          ? 'NÃO É POSSÍVEL EXCLUIR ESTE CLIENTE: existem pedidos ou movimentações vinculadas a ele no banco de dados da nuvem.'
+          : `Erro ao excluir cliente no Supabase: ${res.error || 'Falha na comunicação'}`
+      );
+      return false;
+    }
     setClientes((prev) => prev.filter((c) => c.id !== id));
+    return true;
   };
 
   const handleSaveProduto = async (prodData: Partial<Produto>) => {
@@ -893,6 +908,7 @@ export default function App() {
       preco_delivery: Number(prodData.preco_delivery) || Number(prodData.preco_salao) || 0,
       dia_semana: prodData.dia_semana || [1, 2, 3, 4, 5, 6],
       pausado: !!prodData.pausado,
+      url_imagem: prodData.url_imagem,
       criado_em: prodData.criado_em || new Date().toISOString(),
     };
 
@@ -905,9 +921,23 @@ export default function App() {
     });
   };
 
-  const handleDeleteProduto = async (id: number) => {
-    await excluirProdutoSupabase(id);
+  const handleDeleteProduto = async (id: number): Promise<boolean> => {
+    const res = await excluirProdutoSupabase(id);
+    if (!res.success) {
+      const isFk =
+        res.error?.includes('23503') ||
+        res.error?.toLowerCase().includes('foreign key') ||
+        res.error?.toLowerCase().includes('violates') ||
+        res.error?.toLowerCase().includes('referenc');
+      alert(
+        isFk
+          ? 'NÃO É POSSÍVEL EXCLUIR ESTE PRODUTO: existem pedidos ou itens vinculados a ele no banco de dados da nuvem.'
+          : `Erro ao excluir produto no Supabase: ${res.error || 'Falha na comunicação'}`
+      );
+      return false;
+    }
     setProdutos((prev) => prev.filter((p) => p.id !== id));
+    return true;
   };
 
   const handleSaveMesa = async (mesaData: Partial<Mesa>) => {
@@ -951,9 +981,23 @@ export default function App() {
     });
   };
 
-  const handleDeleteCategoria = async (id: number) => {
-    await excluirCategoriaSupabase(id);
+  const handleDeleteCategoria = async (id: number): Promise<boolean> => {
+    const res = await excluirCategoriaSupabase(id);
+    if (!res.success) {
+      const isFk =
+        res.error?.includes('23503') ||
+        res.error?.toLowerCase().includes('foreign key') ||
+        res.error?.toLowerCase().includes('violates') ||
+        res.error?.toLowerCase().includes('referenc');
+      alert(
+        isFk
+          ? 'NÃO É POSSÍVEL EXCLUIR ESTA CATEGORIA: existem produtos vinculados a ela no banco de dados da nuvem.'
+          : `Erro ao excluir categoria no Supabase: ${res.error || 'Falha na comunicação'}`
+      );
+      return false;
+    }
     setCategorias((prev) => prev.filter((c) => c.id !== id));
+    return true;
   };
 
   // Bairros & Taxas CRUD (100% Nuvem Supabase)

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   UsuarioSistema,
   TipoUsuario,
@@ -22,8 +22,10 @@ import {
   excluirClienteSupabase,
   salvarProdutoSupabase,
   excluirProdutoSupabase,
+  uploadFotoProdutoSupabase,
   salvarMesaSupabase,
   excluirMesaSupabase,
+  excluirCategoriaSupabase,
 } from '../services/supabaseClient';
 import {
   Users,
@@ -67,6 +69,10 @@ import {
   ArrowUpDown,
   Boxes,
   CreditCard,
+  Camera,
+  Image,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 
 interface CadastrosHubProps {
@@ -86,13 +92,13 @@ interface CadastrosHubProps {
   onOpenSupabaseModal: () => void;
   onNavigateTab: (tab: any) => void;
   onSaveCliente?: (c: Partial<Cliente>) => Promise<void>;
-  onDeleteCliente?: (id: string) => Promise<void>;
+  onDeleteCliente?: (id: string) => Promise<boolean | void>;
   onSaveProduto?: (p: Partial<Produto>) => Promise<void>;
-  onDeleteProduto?: (id: number) => Promise<void>;
+  onDeleteProduto?: (id: number) => Promise<boolean | void>;
   onSaveMesa?: (m: Partial<Mesa>) => Promise<void>;
   onDeleteMesa?: (numero: number) => Promise<void>;
   onSaveCategoria?: (cat: Partial<Categoria>) => Promise<void>;
-  onDeleteCategoria?: (id: number) => Promise<void>;
+  onDeleteCategoria?: (id: number) => Promise<boolean | void>;
   onSaveBairro?: (b: Partial<BairroTaxa>, originalNome?: string) => Promise<void>;
   onDeleteBairro?: (bairro: string) => Promise<void>;
   onSaveFormaPagamento?: (fp: Partial<FormaPagamentoConfig>) => Promise<void>;
@@ -215,6 +221,10 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const [formProdPrecoDelivery, setFormProdPrecoDelivery] = useState('');
   const [formProdDiasSemana, setFormProdDiasSemana] = useState<number[]>([1, 2, 3, 4, 5, 6]);
   const [formProdPausado, setFormProdPausado] = useState(false);
+  const [formProdUrlImagem, setFormProdUrlImagem] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadImageError, setUploadImageError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [productToDelete, setProductToDelete] = useState<Produto | null>(null);
 
   // =========================================================================
@@ -540,14 +550,18 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const handleConfirmDeleteClient = async () => {
     if (!clientToDelete) return;
     setIsSaving(true);
+    let ok: boolean | void = true;
     if (onDeleteCliente) {
-      await onDeleteCliente(clientToDelete.id);
+      ok = await onDeleteCliente(clientToDelete.id);
     } else {
-      await excluirClienteSupabase(clientToDelete.id);
+      const res = await excluirClienteSupabase(clientToDelete.id);
+      ok = res.success;
     }
     setIsSaving(false);
     setClientToDelete(null);
-    setFeedbackMessage({ type: 'success', text: 'CLIENTE EXCLUÍDO DO SUPABASE COM SUCESSO.' });
+    if (ok !== false) {
+      setFeedbackMessage({ type: 'success', text: 'CLIENTE EXCLUÍDO DO SUPABASE COM SUCESSO.' });
+    }
   };
 
   // =========================================================================
@@ -563,6 +577,8 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
     setFormProdPrecoDelivery('');
     setFormProdDiasSemana([1, 2, 3, 4, 5, 6]);
     setFormProdPausado(false);
+    setFormProdUrlImagem('');
+    setUploadImageError(null);
     setFeedbackMessage(null);
     setShowProductModal(true);
   };
@@ -577,8 +593,42 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
     setFormProdPrecoDelivery(String(p.preco_delivery || ''));
     setFormProdDiasSemana(p.dia_semana || [1, 2, 3, 4, 5, 6]);
     setFormProdPausado(!!p.pausado);
+    setFormProdUrlImagem(p.url_imagem || '');
+    setUploadImageError(null);
     setFeedbackMessage(null);
     setShowProductModal(true);
+  };
+
+  const handleUploadProductImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Selecione um arquivo de imagem válido (PNG, JPG, WEBP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('A imagem deve ter no máximo 5MB.');
+      return;
+    }
+
+    setIsUploadingImage(true);
+    setUploadImageError(null);
+    try {
+      const publicUrl = await uploadFotoProdutoSupabase(file);
+      setFormProdUrlImagem(publicUrl);
+    } catch (err: any) {
+      console.error('Erro no upload de foto do produto:', err);
+      const msg = err.message || 'Falha no upload para o bucket produtos';
+      setUploadImageError(msg);
+      alert('Erro ao enviar imagem para o Supabase Storage: ' + msg);
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleSaveProductForm = async (e: React.FormEvent) => {
@@ -606,6 +656,7 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
       preco_delivery: precoDeliv,
       dia_semana: formProdDiasSemana,
       pausado: formProdPausado,
+      url_imagem: formProdUrlImagem ? formProdUrlImagem.trim() : undefined,
     };
 
     if (onSaveProduto) {
@@ -624,14 +675,18 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const handleConfirmDeleteProduct = async () => {
     if (!productToDelete) return;
     setIsSaving(true);
+    let ok: boolean | void = true;
     if (onDeleteProduto) {
-      await onDeleteProduto(productToDelete.id);
+      ok = await onDeleteProduto(productToDelete.id);
     } else {
-      await excluirProdutoSupabase(productToDelete.id);
+      const res = await excluirProdutoSupabase(productToDelete.id);
+      ok = res.success;
     }
     setIsSaving(false);
     setProductToDelete(null);
-    setFeedbackMessage({ type: 'success', text: 'PRODUTO EXCLUÍDO DO SUPABASE COM SUCESSO.' });
+    if (ok !== false) {
+      setFeedbackMessage({ type: 'success', text: 'PRODUTO EXCLUÍDO DO SUPABASE COM SUCESSO.' });
+    }
   };
 
   // =========================================================================
@@ -749,12 +804,18 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const handleConfirmDeleteCategoria = async () => {
     if (!categoriaToDelete) return;
     setIsSaving(true);
+    let ok: boolean | void = true;
     if (onDeleteCategoria) {
-      await onDeleteCategoria(categoriaToDelete.id);
+      ok = await onDeleteCategoria(categoriaToDelete.id);
+    } else {
+      const res = await excluirCategoriaSupabase(categoriaToDelete.id);
+      ok = res.success;
     }
     setIsSaving(false);
     setCategoriaToDelete(null);
-    setFeedbackMessage({ type: 'success', text: 'CATEGORIA EXCLUÍDA COM SUCESSO.' });
+    if (ok !== false) {
+      setFeedbackMessage({ type: 'success', text: 'CATEGORIA EXCLUÍDA COM SUCESSO.' });
+    }
   };
 
   // =========================================================================
@@ -3430,6 +3491,86 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                   placeholder="44.90"
                   className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-cyan-400 font-mono font-bold rounded-lg text-xs"
                 />
+              </div>
+            </div>
+
+            {/* Campo de Upload de Foto do Produto (Supabase Storage) */}
+            <div className="bg-neutral-850/80 border border-neutral-700/80 p-3.5 rounded-xl flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-neutral-300 flex items-center gap-1.5 uppercase">
+                  <Cloud className="w-4 h-4 text-amber-500" />
+                  <span>Foto do Produto (Supabase Storage):</span>
+                </label>
+                {formProdUrlImagem && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormProdUrlImagem('');
+                      setUploadImageError(null);
+                    }}
+                    className="text-[11px] text-red-400 hover:text-red-300 font-bold underline cursor-pointer"
+                  >
+                    Remover Foto
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                {formProdUrlImagem ? (
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-900 border border-neutral-700 shrink-0 shadow-xs relative">
+                    <img
+                      src={formProdUrlImagem}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 rounded-xl bg-neutral-800 border border-dashed border-neutral-700 flex flex-col items-center justify-center shrink-0 text-neutral-500">
+                    <ShoppingBag className="w-6 h-6 text-neutral-600 mb-0.5" />
+                    <span className="text-[9px] font-bold">SEM FOTO</span>
+                  </div>
+                )}
+
+                <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/*"
+                    onChange={handleUploadProductImage}
+                    className="hidden"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isUploadingImage}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                        isUploadingImage
+                          ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
+                          : 'bg-amber-600 hover:bg-amber-500 text-white shadow-xs'
+                      }`}
+                    >
+                      <Cloud className="w-3.5 h-3.5" />
+                      <span>{isUploadingImage ? 'Enviando Imagem...' : 'Enviar Imagem'}</span>
+                    </button>
+                    {formProdUrlImagem && (
+                      <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" />
+                        Imagem Salva
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={formProdUrlImagem}
+                    onChange={(e) => setFormProdUrlImagem(e.target.value)}
+                    placeholder="URL pública da foto no Supabase ou envie pelo botão acima..."
+                    className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-lg text-[11px] truncate"
+                  />
+                  {uploadImageError && (
+                    <span className="text-[10px] text-red-400 font-semibold">{uploadImageError}</span>
+                  )}
+                </div>
               </div>
             </div>
 

@@ -320,23 +320,23 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
   const deliveryItems = selectedItems.filter((it) => it.disponivel_delivery);
   const mesasItems = selectedItems.filter((it) => it.disponivel_salao);
 
-  // Visual helper: Render icon badge without relying on missing local images
+  // Visual helper: Render product image or fallback icon badge
   const renderProductVisual = (prod: Produto) => {
-    const isMarmita = prod.categoria_id === 2;
-    const isPorcao = prod.categoria_id === 3;
+    if (prod.url_imagem && prod.url_imagem.trim().length > 0) {
+      return (
+        <img
+          src={prod.url_imagem}
+          alt={prod.nome}
+          className="w-11 h-11 rounded-xl object-cover shrink-0"
+        />
+      );
+    }
 
+    const isMarmita = prod.categoria_id === 2;
     if (isMarmita) {
       return (
         <div className="w-11 h-11 rounded-xl bg-cyan-950/80 border border-cyan-800 text-cyan-300 flex items-center justify-center shrink-0 shadow-inner">
           <Package className="w-5 h-5 text-cyan-400" />
-        </div>
-      );
-    }
-
-    if (isPorcao) {
-      return (
-        <div className="w-11 h-11 rounded-xl bg-orange-950/80 border border-orange-800 text-orange-300 flex items-center justify-center shrink-0 shadow-inner">
-          <Flame className="w-5 h-5 text-orange-400" />
         </div>
       );
     }

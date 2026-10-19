@@ -661,7 +661,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                 >
                   <div>
                     <div className="w-full h-16 rounded-lg overflow-hidden mb-2 bg-neutral-900 border border-neutral-800 flex items-center justify-center relative">
-                      {prod.url_imagem && prod.url_imagem.startsWith('http') ? (
+                      {prod.url_imagem && prod.url_imagem.trim().length > 0 ? (
                         <img
                           src={prod.url_imagem}
                           alt={prod.nome}
@@ -784,14 +784,35 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                       }`}
                     >
                       <td className="px-3 py-2.5">
-                        <div className="font-bold text-white uppercase text-xs">
-                          {prod.nome}
-                        </div>
-                        {prod.descricao && (
-                          <div className="text-[10px] text-neutral-400 line-clamp-1 uppercase">
-                            {prod.descricao}
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800 shrink-0 flex items-center justify-center">
+                            {prod.url_imagem && prod.url_imagem.trim().length > 0 ? (
+                              <img
+                                src={prod.url_imagem}
+                                alt={prod.nome}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLElement).style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <div className="text-amber-500">
+                                <Utensils className="w-4 h-4" />
+                              </div>
+                            )}
                           </div>
-                        )}
+                          <div className="min-w-0">
+                            <div className="font-bold text-white uppercase text-xs">
+                              {prod.nome}
+                            </div>
+                            {prod.descricao && (
+                              <div className="text-[10px] text-neutral-400 line-clamp-1 uppercase">
+                                {prod.descricao}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-3 py-2.5">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-neutral-800 text-neutral-300 border border-neutral-700">

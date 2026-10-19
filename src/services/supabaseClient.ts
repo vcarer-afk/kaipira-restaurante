@@ -1197,16 +1197,20 @@ export async function zerarFinanceiroDiaSupabase(
 
     // 4. Zera o caixa_diario na nuvem Supabase
     try {
-      const updateAll: Record<string, any> = {
+      await supabase.from('caixa_diario').update({
         valor_abertura: 0.00,
         valor_fechamento: null,
         status: 'aberto',
         observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
-      };
-      if (caixaAberturaCol !== 'valor_abertura') {
-        updateAll[caixaAberturaCol] = 0.00;
-      }
-      await supabase.from('caixa_diario').update(updateAll).gt('id', 0);
+      }).neq('id', 0);
+    } catch {}
+    try {
+      await supabase.from('caixa_diario').update({
+        valor_apertura: 0.00,
+        valor_fechamento: null,
+        status: 'aberto',
+        observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
+      }).neq('id', 0);
     } catch {}
 
     const { data: rows } = await supabase
@@ -1949,9 +1953,16 @@ export async function excluirClienteSupabase(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase.from('clientes').delete().eq('id', id);
+    if (isUUID(id)) {
+      const { error } = await supabase.from('clientes').delete().eq('id', id);
+      if (error) {
+        console.warn('Aviso ao excluir cliente do Supabase:', error.message);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    }
+    const { error } = await supabase.from('clientes').delete().eq('telefone', id);
     if (error) {
-      console.warn('Aviso ao excluir cliente do Supabase:', error.message);
       return { success: false, error: error.message };
     }
     return { success: true };
@@ -1965,6 +1976,34 @@ export async function excluirClienteSupabase(
  * CRUD COMPLETO: PRODUTOS & CARDÁPIO NO SUPABASE
  * =========================================================================
  */
+/**
+ * Upload de imagem de produto para o bucket público 'produtos' do Supabase Storage
+ */
+export async function uploadFotoProdutoSupabase(file: File): Promise<string> {
+  const fileExt = file.name.split('.').pop() || 'jpg';
+  const cleanExt = fileExt.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const fileName = `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${cleanExt || 'jpg'}`;
+  const filePath = `${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('produtos')
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: true,
+    });
+
+  if (uploadError) {
+    console.error('Erro no upload para o Supabase Storage (bucket produtos):', uploadError);
+    throw uploadError;
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from('produtos')
+    .getPublicUrl(filePath);
+
+  return publicUrlData.publicUrl;
+}
+
 export async function salvarProdutoSupabase(
   produto: Partial<Produto>
 ): Promise<{ success: boolean; data?: Produto; error?: string }> {
@@ -1978,6 +2017,10 @@ export async function salvarProdutoSupabase(
       dia_semana: Array.isArray(produto.dia_semana) ? produto.dia_semana : [1, 2, 3, 4, 5, 6],
       pausado: !!produto.pausado,
     };
+
+    if (produto.url_imagem !== undefined) {
+      payload.url_imagem = produto.url_imagem ? produto.url_imagem.trim() : null;
+    }
 
     if (produto.id && produto.id > 0) {
       payload.id = produto.id;
@@ -2168,29 +2211,14 @@ export async function fetchCategoriasSupabase(): Promise<Categoria[]> {
       .select('*')
       .order('ordem', { ascending: true });
 
-    if (!error && data && data.length > 0) {
+    if (!error && Array.isArray(data)) {
       return data as Categoria[];
     }
 
-    // Se a tabela estiver vazia na nuvem, faz seed inicial das categorias padrão no Supabase
-    if (!error && (!data || data.length === 0)) {
-      console.info('Categorias vazias na nuvem. Sincronizando categorias padrão no Supabase...');
-      for (const cat of INITIAL_CATEGORIAS) {
-        await supabase.from('categorias').upsert({ id: cat.id, nome: cat.nome, ordem: cat.ordem });
-      }
-      return INITIAL_CATEGORIAS;
-    }
-
-    // Se a tabela não existir, busca no JSON dados de configuracoes
-    const { data: conf } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
-    if (conf?.dados?.categorias && Array.isArray(conf.dados.categorias) && conf.dados.categorias.length > 0) {
-      return conf.dados.categorias;
-    }
-
-    return INITIAL_CATEGORIAS;
+    return [];
   } catch (err) {
     console.warn('Falha ao buscar categorias no Supabase:', err);
-    return INITIAL_CATEGORIAS;
+    return [];
   }
 }
 
@@ -2215,15 +2243,6 @@ export async function salvarCategoriaSupabase(
 
     if (error) {
       console.warn('Erro ao salvar categoria no Supabase:', error.message);
-      // Fallback em configuracoes.dados.categorias
-      try {
-        const { data: conf } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
-        const existing = conf?.dados?.categorias || INITIAL_CATEGORIAS;
-        const updated = catData.id
-          ? existing.map((c: any) => (c.id === catData.id ? { ...c, ...payload } : c))
-          : [...existing, { id: Date.now(), ...payload }];
-        await supabase.from('configuracoes').upsert({ id: 1, dados: { ...conf?.dados, categorias: updated } });
-      } catch {}
       return { success: false, error: error.message };
     }
 
@@ -2261,7 +2280,7 @@ export async function fetchProdutosSupabase(): Promise<Produto[]> {
       .select('*, opcionais(*)')
       .order('id', { ascending: true });
 
-    if (!errOpcionais && dataWithOpcionais && dataWithOpcionais.length > 0) {
+    if (!errOpcionais && Array.isArray(dataWithOpcionais)) {
       prods = dataWithOpcionais;
     } else {
       // Fallback para select simples se a tabela opcionais não estiver configurada
@@ -2270,36 +2289,27 @@ export async function fetchProdutosSupabase(): Promise<Produto[]> {
         .select('*')
         .order('id', { ascending: true });
 
-      if (!errSimple && dataSimple && dataSimple.length > 0) {
+      if (!errSimple && Array.isArray(dataSimple)) {
         prods = dataSimple;
       }
     }
 
-    if (prods.length > 0) {
-      return prods.map((p) => ({
-        id: Number(p.id),
-        categoria_id: Number(p.categoria_id) || 1,
-        nome: (p.nome || '').toUpperCase().trim(),
-        descricao: (p.descricao || '').toUpperCase().trim(),
-        preco_salao: Number(p.preco_salao) || 0,
-        preco_delivery: Number(p.preco_delivery) || Number(p.preco_salao) || 0,
-        url_imagem: p.url_imagem,
-        dia_semana: Array.isArray(p.dia_semana) ? p.dia_semana : [1, 2, 3, 4, 5, 6],
-        pausado: Boolean(p.pausado),
-        criado_em: p.criado_em || new Date().toISOString(),
-        opcionais: Array.isArray(p.opcionais) ? p.opcionais : [],
-      }));
-    }
-
-    // Se o banco na nuvem estiver sem produtos, sincroniza produtos iniciais no Supabase
-    console.info('Nenhum produto encontrado no banco na nuvem. Sincronizando produtos no Supabase...');
-    for (const p of INITIAL_PRODUTOS) {
-      await salvarProdutoSupabase(p);
-    }
-    return INITIAL_PRODUTOS;
+    return prods.map((p) => ({
+      id: Number(p.id),
+      categoria_id: Number(p.categoria_id) || 1,
+      nome: (p.nome || '').toUpperCase().trim(),
+      descricao: (p.descricao || '').toUpperCase().trim(),
+      preco_salao: Number(p.preco_salao) || 0,
+      preco_delivery: Number(p.preco_delivery) || Number(p.preco_salao) || 0,
+      url_imagem: p.url_imagem,
+      dia_semana: Array.isArray(p.dia_semana) ? p.dia_semana : [1, 2, 3, 4, 5, 6],
+      pausado: Boolean(p.pausado),
+      criado_em: p.criado_em || new Date().toISOString(),
+      opcionais: Array.isArray(p.opcionais) ? p.opcionais : [],
+    }));
   } catch (err) {
     console.warn('Erro ao carregar produtos do Supabase:', err);
-    return INITIAL_PRODUTOS;
+    return [];
   }
 }
 
