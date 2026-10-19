@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { UtensilsCrossed, Cloud, Menu, Clock, Users } from 'lucide-react';
+import { Cloud, Menu, Clock, Users } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
@@ -93,14 +93,16 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Zone 1: Brand Wordmark */}
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <div
-            className="w-9 h-9 rounded-xl border flex items-center justify-center shadow-xs shrink-0"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border flex items-center justify-center shadow-xs shrink-0 overflow-hidden bg-neutral-900/90"
             style={{
-              backgroundColor: `${theme.dotColor}20`,
               borderColor: `${theme.dotColor}50`,
-              color: theme.dotColor,
             }}
           >
-            <UtensilsCrossed className="w-5 h-5" />
+            <img
+              src="./logo.png"
+              alt="Logo Restaurante Kaipira"
+              className="w-full h-full object-contain p-0.5 rounded-lg"
+            />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">

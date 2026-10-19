@@ -85,6 +85,7 @@ export async function fetchConfiguracoesFromSupabase(
         data.horario_funcionamento || dadosObj.horarioFuncionamento || INITIAL_CONFIGURACOES.horarioFuncionamento,
       posicaoMenu: (data.posicao_menu || dadosObj.posicaoMenu || INITIAL_CONFIGURACOES.posicaoMenu) as any,
       padraoCor: (data.padrao_cor || dadosObj.padraoCor || INITIAL_CONFIGURACOES.padraoCor) as any,
+      modoOperacao: (data.modo_operacao || dadosObj.modoOperacao || 'producao') as any,
     };
   } catch (err) {
     console.warn('Falha na requisição Supabase configuracoes:', err);
@@ -114,6 +115,7 @@ export async function saveConfiguracoesToSupabase(
     horario_funcionamento: novas.horarioFuncionamento,
     posicao_menu: novas.posicaoMenu,
     padrao_cor: novas.padraoCor,
+    modo_operacao: novas.modoOperacao || 'producao',
     supabase_url: novas.supabaseUrl,
     supabase_anon_key: novas.supabaseAnonKey,
     banco_status: 'conectado',
@@ -1045,6 +1047,79 @@ export async function fecharCaixaSupabase(
   }
 
   return fechado;
+}
+
+/**
+ * Zera o financeiro do dia atual (Rotina Administrativa Restrita):
+ * Reseta as movimentações, saldo de abertura e fechamento do caixa diário atual.
+ */
+export async function zerarFinanceiroDiaSupabase(
+  caixaAtual: CaixaDiario
+): Promise<CaixaDiario> {
+  await checkCaixaSchema();
+  const dataHoje = caixaAtual.data_caixa || new Date().toISOString().split('T')[0];
+  const now = new Date().toISOString();
+
+  const zerado: CaixaDiario = {
+    ...caixaAtual,
+    data_caixa: dataHoje,
+    valor_abertura: 0,
+    valor_fechamento: undefined,
+    status: 'aberto',
+    observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
+    aberto_em: now,
+    fechado_em: undefined,
+    movimentacoes: [],
+  };
+
+  try {
+    const { data: rows } = await supabase
+      .from('caixa_diario')
+      .select('id, data_caixa')
+      .order('id', { ascending: false })
+      .limit(1);
+
+    const existingRow = rows && rows.length > 0 ? rows[0] : null;
+
+    const payload: Record<string, any> = {
+      data_caixa: existingRow?.data_caixa || dataHoje,
+      valor_abertura: 0.00,
+      valor_fechamento: null,
+      status: 'aberto',
+      observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
+    };
+
+    if (existingRow && existingRow.id) {
+      payload.id = existingRow.id;
+    } else if (caixaAtual.id && caixaAtual.id < 1000000) {
+      payload.id = caixaAtual.id;
+    }
+
+    let { data: upsertData, error: upsertError } = await supabase
+      .from('caixa_diario')
+      .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
+      .select()
+      .maybeSingle();
+
+    if (upsertError) {
+      delete payload.id;
+      const retryDate = await supabase
+        .from('caixa_diario')
+        .upsert(payload, { onConflict: 'data_caixa' })
+        .select()
+        .maybeSingle();
+
+      if (!retryDate.error && retryDate.data) {
+        zerado.id = retryDate.data.id;
+      }
+    } else if (upsertData && upsertData.id) {
+      zerado.id = upsertData.id;
+    }
+  } catch (err) {
+    console.warn('Erro ao zerar financeiro do caixa diário no Supabase:', err);
+  }
+
+  return zerado;
 }
 
 export async function registrarMultiplasMovimentacoesCaixaSupabase(

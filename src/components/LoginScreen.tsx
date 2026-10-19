@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Perfil, TipoUsuario, UsuarioSistema } from '../types';
 import { UpperInput } from './UpperInput';
 import {
-  UtensilsCrossed,
   Lock,
   User,
   ShieldCheck,
@@ -174,8 +173,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
       <div className="max-w-md w-full relative z-10">
         {/* Brand Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-600/20 border border-amber-500/40 text-amber-500 mb-4 shadow-xl">
-            <UtensilsCrossed className="w-8 h-8" />
+          <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-neutral-900 border-2 border-amber-500/50 mb-3 shadow-2xl p-1 overflow-hidden">
+            <img
+              src="./logo.png"
+              alt="Restaurante Kaipira"
+              className="w-full h-full object-contain rounded-full drop-shadow-md"
+            />
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white uppercase">
             Restaurante Kaipira

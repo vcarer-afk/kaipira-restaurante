@@ -36,6 +36,10 @@ import {
   Sliders,
   Trash2,
   X,
+  RotateCcw,
+  ToggleLeft,
+  ToggleRight,
+  FlaskConical,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -45,11 +49,14 @@ interface AdminDashboardProps {
   estoque: ItemEstoque[];
   clientes: Cliente[];
   configuracoes?: ConfiguracoesSistema;
+  currentRole?: string;
   onNavigate: (tab: ActiveTab) => void;
   onAbrirCaixa: (valor: number, observacoes?: string) => void;
   onFecharCaixa: (valor: number, observacoes?: string) => void;
   onMovimentacao: (tipo: 'suprimento' | 'sangria', forma: FormaPagamento, valor: number, descricao: string) => void;
   onUpdateStockItem?: (id: number, data: Partial<ItemEstoque>) => void;
+  onZerarFinanceiro?: () => Promise<void> | void;
+  onToggleModoOperacao?: (novoModo: 'producao' | 'testes') => Promise<void> | void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -59,12 +66,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   estoque,
   clientes,
   configuracoes,
+  currentRole = 'admin',
   onNavigate,
   onAbrirCaixa,
   onFecharCaixa,
   onMovimentacao,
   onUpdateStockItem,
+  onZerarFinanceiro,
+  onToggleModoOperacao,
 }) => {
+  const isAdminOrMaster = currentRole === 'admin' || currentRole === 'master';
   // Cash Register quick modals
   const [showAbrirModal, setShowAbrirModal] = useState(false);
   const [valorAbertura, setValorAbertura] = useState('250.00');
@@ -191,7 +202,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 relative z-10">
+        <div className="flex flex-wrap items-center gap-2.5 relative z-10">
+          {/* Rotinas Administrativas Restritas (Apenas Admin / Master) */}
+          {isAdminOrMaster && (
+            <>
+              {/* Chave Liga/Desliga "Modo Produção / Testes" */}
+              <div className="flex items-center bg-neutral-900/90 border border-neutral-700/80 p-1 rounded-xl shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const novo = configuracoes?.modoOperacao === 'testes' ? 'producao' : 'testes';
+                    if (onToggleModoOperacao) onToggleModoOperacao(novo);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all cursor-pointer ${
+                    configuracoes?.modoOperacao === 'testes'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-xs'
+                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-xs'
+                  }`}
+                  title="Alternar entre Modo Produção (Oficial) e Modo Testes (Homologação)"
+                >
+                  {configuracoes?.modoOperacao === 'testes' ? (
+                    <>
+                      <FlaskConical className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                      <span>Modo Testes</span>
+                      <ToggleLeft className="w-4 h-4 ml-0.5 text-amber-400" />
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Modo Produção</span>
+                      <ToggleRight className="w-4 h-4 ml-0.5 text-emerald-400" />
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Botão "Zerar Financeiro do Dia" */}
+              <button
+                type="button"
+                onClick={() => {
+                  const confirmou = window.confirm(
+                    '⚠️ ATENÇÃO - CONFIRMAÇÃO DE SEGURANÇA (ADMIN/MASTER):\n\nDeseja realmente ZERAR todo o financeiro e movimentações do caixa do dia atual?\n\nEsta ação resetará o saldo de abertura, lançamentos e fechamento do caixa diário tanto localmente quanto na nuvem Supabase.\n\nEsta operação é irreversível. Deseja prosseguir?'
+                  );
+                  if (confirmou && onZerarFinanceiro) {
+                    onZerarFinanceiro();
+                  }
+                }}
+                className="px-3.5 py-2 bg-red-950/80 hover:bg-red-900 border border-red-700/80 text-red-200 hover:text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-95"
+                title="Resetar financeiro, abertura e movimentações do caixa do dia (Apenas Admin/Master)"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-red-400" />
+                <span>Zerar Financeiro do Dia</span>
+              </button>
+            </>
+          )}
+
           <button
             onClick={() => onNavigate('cardapio-dia')}
             className="px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-md transition-transform hover:scale-105 active:scale-95 uppercase cursor-pointer"
@@ -210,6 +275,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Aviso de Modo Testes Ativo */}
+      {configuracoes?.modoOperacao === 'testes' && (
+        <div className="bg-amber-950/60 border border-amber-600/80 p-3.5 rounded-xl flex items-center justify-between gap-3 text-amber-200 text-xs shadow-md animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <span className="font-black uppercase tracking-wide">Atenção: Sistema Operando em Modo Testes</span>
+              <p className="text-[11px] text-amber-300/90 mt-0.5">
+                Os pedidos e registros financeiros estão sendo tratados em ambiente de testes/simulação.
+              </p>
+            </div>
+          </div>
+          {isAdminOrMaster && onToggleModoOperacao && (
+            <button
+              type="button"
+              onClick={() => onToggleModoOperacao('producao')}
+              className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold uppercase transition-colors shrink-0 cursor-pointer"
+            >
+              Ativar Produção
+            </button>
+          )}
+        </div>
+      )}
 
       {/* CASH REGISTER QUICK STATUS & ACTION BAR */}
       <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${

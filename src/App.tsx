@@ -94,6 +94,7 @@ import {
   registrarPagamentosMesaSupabase,
   conferirEntregaPedidoSupabase,
   subscribeActiveConnections,
+  zerarFinanceiroDiaSupabase,
 } from './services/supabaseClient';
 
 // Helper para enriquecer e garantir a descrição/nome completo do produto em todo o sistema
@@ -989,6 +990,22 @@ export default function App() {
     setCaixa(fechado);
   };
 
+  // Rotina Administrativa: Zerar financeiro do dia atual no caixa
+  const handleZerarFinanceiroDia = async () => {
+    try {
+      const zerado = await zerarFinanceiroDiaSupabase(caixa);
+      setCaixa(zerado);
+    } catch (err) {
+      console.error('Erro ao zerar financeiro do dia:', err);
+    }
+  };
+
+  // Rotina Administrativa: Alternar entre Modo Produção e Modo Testes
+  const handleToggleModoOperacao = async (novoModo: 'producao' | 'testes') => {
+    const novasConfig: ConfiguracoesSistema = { ...configuracoes, modoOperacao: novoModo };
+    await handleSaveConfiguracoes(novasConfig);
+  };
+
   const handleRegistrarMultiplasMovimentacoesCaixa = async (
     movsParaRegistrar: Array<{
       tipo: 'entrada_pedido' | 'suprimento' | 'sangria';
@@ -1110,6 +1127,9 @@ export default function App() {
             onFecharCaixa={handleFecharCaixa}
             onMovimentacao={handleMovimentacaoCaixa}
             onUpdateStockItem={handleUpdateStockItem}
+            currentRole={currentPerfil?.cargo || currentRole}
+            onZerarFinanceiro={handleZerarFinanceiroDia}
+            onToggleModoOperacao={handleToggleModoOperacao}
           />
         )}
 

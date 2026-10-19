@@ -216,6 +216,7 @@ export interface ConfiguracoesSistema {
   supabaseUrl: string;
   supabaseAnonKey: string;
   bancoStatus: 'conectado' | 'pendente' | 'erro';
+  modoOperacao?: 'producao' | 'testes';
   // Dados do Restaurante
   nomeRestaurante: string;
   email: string;

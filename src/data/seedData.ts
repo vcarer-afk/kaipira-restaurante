@@ -29,6 +29,7 @@ export const INITIAL_CONFIGURACOES: ConfiguracoesSistema = {
   horarioFuncionamento: 'SEGUNDA A SÁBADO, DAS 11H ÀS 14H',
   posicaoMenu: 'direita',
   padraoCor: 'ambar',
+  modoOperacao: 'producao',
 };
 
 export const BAIRROS_PIRACICABA: BairroTaxa[] = [
