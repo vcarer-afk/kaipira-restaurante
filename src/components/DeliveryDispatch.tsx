@@ -19,14 +19,21 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
   const [selectedEntregador, setSelectedEntregador] = useState<string>('RODRIGO MOTOBOY');
 
   const getProductDescription = (it: { produto_id?: number; produto_nome?: string }): string => {
-    if (it.produto_nome && !it.produto_nome.startsWith('#') && it.produto_nome !== `#${it.produto_id}`) {
+    if (
+      it.produto_nome &&
+      !it.produto_nome.startsWith('#') &&
+      !it.produto_nome.toLowerCase().startsWith('prod #') &&
+      !it.produto_nome.toLowerCase().startsWith('produto #') &&
+      it.produto_nome !== `#${it.produto_id}`
+    ) {
       return it.produto_nome;
     }
-    if (it.produto_id && produtos && produtos.length > 0) {
-      const match = produtos.find((pr) => pr.id === it.produto_id);
+    const pid = Number(it.produto_id);
+    if (pid && produtos && produtos.length > 0) {
+      const match = produtos.find((pr) => Number(pr.id) === pid);
       if (match && match.nome) return match.nome;
     }
-    return it.produto_nome || `PRODUTO #${it.produto_id}`;
+    return it.produto_nome || (pid ? `PRODUTO #${pid}` : 'REFEIÇÃO TRADICIONAL KAIPIRA');
   };
 
   // Filter only delivery orders
@@ -235,28 +242,46 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
                     </div>
                   )}
 
-                  {/* Lista de Produtos com Descrição Completa */}
-                  {p.itens && p.itens.length > 0 && (
-                    <div className="p-2 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1">
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-                        <ShoppingBag className="w-3 h-3 text-cyan-500" />
-                        <span>Itens ({p.itens.reduce((s, it) => s + it.quantidade, 0)}):</span>
-                      </div>
-                      <div className="space-y-1 max-h-28 overflow-y-auto pr-0.5">
-                        {p.itens.map((it, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-xs py-0.5">
-                            <span className="text-neutral-200">
-                              <strong className="text-cyan-400 font-mono">{it.quantidade}x</strong>{' '}
-                              {getProductDescription(it)}
-                            </span>
-                            <span className="text-[11px] font-mono text-neutral-300 font-semibold tabular-nums shrink-0">
-                              {formatBRL(it.preco_unitario * it.quantidade)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                  {/* Lista de Produtos com Descrição Completa e Valores */}
+                  <div className="p-2 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <ShoppingBag className="w-3 h-3 text-cyan-500" />
+                      <span>Itens ({p.itens && p.itens.length > 0 ? p.itens.reduce((s, it) => s + it.quantidade, 0) : 1}):</span>
                     </div>
-                  )}
+
+                    {p.itens && p.itens.length > 0 ? (
+                      <div className="space-y-1 max-h-28 overflow-y-auto pr-0.5">
+                        {p.itens.map((it, idx) => {
+                          const itemTotal = it.preco_unitario > 0
+                            ? it.preco_unitario * it.quantidade
+                            : Math.max(0, p.valor_total - (p.taxa_entrega || 0));
+
+                          return (
+                            <div key={idx} className="flex items-center justify-between text-xs py-0.5">
+                              <span className="text-neutral-200">
+                                <strong className="text-cyan-400 font-mono">{it.quantidade}x</strong>{' '}
+                                {getProductDescription(it)}
+                              </span>
+                              <span className="text-[11px] font-mono text-neutral-300 font-semibold tabular-nums shrink-0">
+                                {formatBRL(itemTotal)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="space-y-1 py-0.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-neutral-200">
+                            <strong className="text-cyan-400 font-mono">1x</strong> Pedido Delivery #{p.codigo_senha || p.id}
+                          </span>
+                          <span className="text-[11px] font-mono text-neutral-300 font-semibold tabular-nums shrink-0">
+                            {formatBRL(Math.max(0, p.valor_total - (p.taxa_entrega || 0)))}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex items-center justify-between text-[11px] text-neutral-400">
                     <span>Saiu às: {formatTime(p.atualizado_em)}</span>
@@ -349,31 +374,50 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
                   </div>
 
                   {/* Lista de Produtos com Descrição Completa e Valores */}
-                  {p.itens && p.itens.length > 0 && (
-                    <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1.5">
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-                        <ShoppingBag className="w-3 h-3 text-emerald-500" />
-                        <span>Produtos Entregues ({p.itens.reduce((s, it) => s + it.quantidade, 0)}):</span>
-                      </div>
-                      <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
-                        {p.itens.map((it, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-xs py-0.5">
-                            <span className="text-neutral-200">
-                              <strong className="text-emerald-400 font-mono">{it.quantidade}x</strong>{' '}
-                              {getProductDescription(it)}
-                            </span>
-                            <span className="text-[11px] font-mono text-neutral-300 font-semibold tabular-nums shrink-0">
-                              {formatBRL(it.preco_unitario * it.quantidade)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="pt-1.5 border-t border-neutral-800 flex justify-between text-[10.5px] font-mono text-neutral-400">
-                        <span>Taxa Entrega: +{formatBRL(p.taxa_entrega || 0)}</span>
-                        <span className="font-bold text-white">Total: {formatBRL(p.valor_total)}</span>
-                      </div>
+                  <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <ShoppingBag className="w-3 h-3 text-emerald-500" />
+                      <span>Produtos Entregues ({p.itens && p.itens.length > 0 ? p.itens.reduce((s, it) => s + it.quantidade, 0) : 1}):</span>
                     </div>
-                  )}
+
+                    {p.itens && p.itens.length > 0 ? (
+                      <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
+                        {p.itens.map((it, idx) => {
+                          const itemTotal = it.preco_unitario > 0
+                            ? it.preco_unitario * it.quantidade
+                            : Math.max(0, p.valor_total - (p.taxa_entrega || 0));
+
+                          return (
+                            <div key={idx} className="flex items-center justify-between text-xs py-0.5">
+                              <span className="text-neutral-200">
+                                <strong className="text-emerald-400 font-mono">{it.quantidade}x</strong>{' '}
+                                {getProductDescription(it)}
+                              </span>
+                              <span className="text-[11px] font-mono text-neutral-300 font-semibold tabular-nums shrink-0">
+                                {formatBRL(itemTotal)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="space-y-1 py-0.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-neutral-200">
+                            <strong className="text-emerald-400 font-mono">1x</strong> Pedido Delivery #{p.codigo_senha || p.id}
+                          </span>
+                          <span className="text-[11px] font-mono text-neutral-300 font-semibold tabular-nums shrink-0">
+                            {formatBRL(Math.max(0, p.valor_total - (p.taxa_entrega || 0)))}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-1.5 border-t border-neutral-800 flex justify-between text-[10.5px] font-mono text-neutral-400">
+                      <span>Taxa Entrega: +{formatBRL(p.taxa_entrega || 0)}</span>
+                      <span className="font-bold text-white">Total: {formatBRL(p.valor_total)}</span>
+                    </div>
+                  </div>
 
                   <div className="flex items-center justify-between text-[11px] text-neutral-400">
                     <span>Finalizado às: {formatTime(p.atualizado_em)}</span>

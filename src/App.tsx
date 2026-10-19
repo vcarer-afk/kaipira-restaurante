@@ -99,24 +99,34 @@ import {
 
 // Helper para enriquecer e garantir a descrição/nome completo do produto em todo o sistema
 export function enrichPedidosWithProductNames(peds: Pedido[], prods: Produto[]): Pedido[] {
-  const prodMap = new Map<number, string>();
-  prods.forEach((p) => prodMap.set(p.id, p.nome));
+  const prodMap = new Map<number, Produto>();
+  prods.forEach((p) => prodMap.set(Number(p.id), p));
   INITIAL_PRODUTOS.forEach((p) => {
-    if (!prodMap.has(p.id)) prodMap.set(p.id, p.nome);
+    if (!prodMap.has(Number(p.id))) prodMap.set(Number(p.id), p);
   });
 
   return peds.map((ped) => ({
     ...ped,
     itens: (ped.itens || []).map((it) => {
+      const pId = Number(it.produto_id);
+      const prod = pId ? prodMap.get(pId) : undefined;
       const isCodeOnly =
         !it.produto_nome ||
         it.produto_nome.trim().startsWith('#') ||
         it.produto_nome.toLowerCase().startsWith('prod #') ||
         it.produto_nome.toLowerCase().startsWith('produto #');
-      const foundName = it.produto_id ? prodMap.get(it.produto_id) : undefined;
+      const foundName = prod?.nome;
+      const unitPrice =
+        Number(it.preco_unitario) ||
+        (prod ? Number(prod.preco_delivery || prod.preco_salao || 0) : 0);
+
       return {
         ...it,
-        produto_nome: isCodeOnly && foundName ? foundName : (it.produto_nome || foundName || `Produto #${it.produto_id || '?'}`),
+        produto_nome:
+          isCodeOnly && foundName
+            ? foundName
+            : (it.produto_nome || foundName || `Produto #${it.produto_id || '1'}`),
+        preco_unitario: unitPrice,
       };
     }),
   }));
@@ -310,20 +320,30 @@ export default function App() {
         } else {
           const valAbertura = row.valor_abertura !== undefined && row.valor_abertura !== null
             ? Number(row.valor_abertura)
-            : (row.valor_apertura !== undefined && row.valor_apertura !== null ? Number(row.valor_apertura) : 250);
+            : (row.valor_apertura !== undefined && row.valor_apertura !== null ? Number(row.valor_apertura) : 0);
 
           const cloudMovs: MovimentacaoCaixa[] = Array.isArray(row.movimentacoes) ? row.movimentacoes : [];
           setCaixa((prev) => ({
             ...prev,
             id: row.id || prev.id,
             data_caixa: row.data_caixa || prev.data_caixa,
-            status: row.status || prev.status,
+            status: row.status || 'aberto',
             valor_abertura: valAbertura,
             valor_fechamento: row.valor_fechamento !== null && row.valor_fechamento !== undefined ? Number(row.valor_fechamento) : undefined,
-            observacoes: row.observacoes || prev.observacoes,
-            movimentacoes: cloudMovs.length > 0 ? cloudMovs : (prev.movimentacoes || []),
+            observacoes: row.observacoes || '',
+            movimentacoes: cloudMovs,
           }));
         }
+      } else {
+        setCaixa({
+          id: 1,
+          data_caixa: new Date().toISOString().split('T')[0],
+          valor_abertura: 0.0,
+          status: 'aberto',
+          observacoes: '',
+          aberto_em: new Date().toISOString(),
+          movimentacoes: [],
+        });
       }
       if (reservasRes.status === 'fulfilled' && reservasRes.value.data && reservasRes.value.data.length > 0) {
         setReservas(reservasRes.value.data as Reserva[]);

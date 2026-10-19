@@ -336,20 +336,11 @@ export const INITIAL_PERFIS: Perfil[] = [
 export const INITIAL_CAIXA: CaixaDiario = {
   id: 1,
   data_caixa: new Date().toISOString().split('T')[0],
-  valor_abertura: 250.0,
+  valor_abertura: 0.0,
   status: 'aberto',
-  observacoes: 'ABERTURA COM TROCO DE R$ 250,00 EM MOEDAS E NOTAS MIÚDAS.',
+  observacoes: '',
   aberto_em: new Date().toISOString(),
-  movimentacoes: [
-    {
-      id: 1,
-      tipo: 'suprimento',
-      valor: 250.0,
-      forma: 'dinheiro',
-      descricao: 'FUNDO DE TROCO INICIAL DO CAIXA',
-      hora: '10:45',
-    },
-  ],
+  movimentacoes: [],
 };
 
 export const INITIAL_PEDIDOS: Pedido[] = [];

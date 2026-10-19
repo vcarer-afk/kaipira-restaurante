@@ -344,7 +344,16 @@ export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
     entregador_nome: pedido.entregador_nome,
     valor_total: Number(pedido.valor_total) || 0,
     taxa_entrega: Number(pedido.taxa_entrega) || 0,
-    itens: itensFormatados.length > 0 ? itensFormatados : (pedido.itens || []),
+    itens: (pedido.itens || []).map((origIt: any, idx: number) => {
+      const insIt = itensFormatados[idx];
+      return {
+        ...origIt,
+        ...(insIt || {}),
+        produto_nome: origIt.produto_nome || (insIt as any)?.produto_nome,
+        preco_unitario: Number(origIt.preco_unitario) || Number(insIt?.preco_unitario) || 0,
+        quantidade: Number(origIt.quantidade) || Number(insIt?.quantidade) || 1,
+      };
+    }),
     pagamentos: pagamentosFormatados.length > 0 ? pagamentosFormatados : (pedido.pagamentos || []),
     criado_em: pedidoPayload.criado_em,
     atualizado_em: now,
@@ -506,8 +515,19 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
       } catch {}
 
       return simplePeds.map((p: any) => {
-        const pedItens = allItens.filter((it: any) => it.pedido_id === p.id);
-        const pedPags = allPagamentos.filter((pg: any) => pg.pedido_id === p.id);
+        const pedItens = allItens
+          .filter((it: any) => Number(it.pedido_id) === Number(p.id))
+          .map((it: any) => ({
+            id: Number(it.id),
+            pedido_id: Number(it.pedido_id),
+            produto_id: Number(it.produto_id),
+            produto_nome: it.produto_nome || it.produtos?.nome,
+            quantidade: Number(it.quantidade) || 1,
+            preco_unitario: Number(it.preco_unitario) || 0,
+            observacao: it.observacao,
+            opcionais_selecionados: it.opcionais_selecionados,
+          }));
+        const pedPags = allPagamentos.filter((pg: any) => Number(pg.pedido_id) === Number(p.id));
         const confLocal = conferidosLocais[Number(p.id)];
         const isConferido = p.conferencia_entrega === 'conferido' || !!confLocal;
         const statusConf = isConferido
@@ -1111,35 +1131,61 @@ export async function zerarFinanceiroDiaSupabase(
   try {
     // 1. Zera pedidos, itens e pagamentos na nuvem Supabase
     try {
-      await supabase.from('itens_pedido').delete().gte('id', 0);
+      const { data: allPeds } = await supabase.from('pedidos').select('id');
+      if (allPeds && allPeds.length > 0) {
+        const pedIds = allPeds.map((p) => p.id);
+        await supabase.from('pagamentos').delete().in('pedido_id', pedIds);
+        await supabase.from('itens_pedido').delete().in('pedido_id', pedIds);
+        await supabase.from('pedidos').delete().in('id', pedIds);
+      }
+    } catch (e) {
+      console.warn('Aviso ao limpar pedidos por IDs:', e);
+    }
+
+    try {
+      await supabase.from('itens_pedido').delete().gt('id', 0);
     } catch (e) {
       console.warn('Aviso ao limpar itens_pedido:', e);
     }
     try {
-      await supabase.from('pagamentos').delete().gte('id', 0);
+      await supabase.from('pagamentos').delete().gt('id', 0);
     } catch (e) {
       console.warn('Aviso ao limpar pagamentos:', e);
     }
     try {
-      await supabase.from('pedidos').delete().gte('id', 0);
+      await supabase.from('pedidos').delete().gt('id', 0);
     } catch (e) {
       console.warn('Aviso ao limpar pedidos:', e);
     }
 
+    // Se algum pedido persistir por bloqueio de RLS/FK, cancela e zera valores
+    try {
+      await supabase.from('pedidos').update({
+        status: 'cancelado',
+        valor_total: 0,
+        taxa_entrega: 0,
+        conferencia_entrega: null,
+        conferido_por: null,
+        conferido_em: null,
+      }).gt('id', 0);
+    } catch {}
+
     // 2. Libera todas as mesas no salão
     try {
-      await supabase.from('mesas').update({ status: 'livre' }).gte('id', 0);
+      await supabase.from('mesas').update({
+        status: 'livre',
+        cliente_nome: null,
+        pessoas: null,
+      }).gt('id', 0);
     } catch (e) {
       console.warn('Aviso ao liberar mesas:', e);
     }
 
     // 3. Limpa conferências de entregas salvas na nuvem
     try {
-      const { data: cfgRow } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
-      if (cfgRow?.dados) {
-        const novosDados = { ...cfgRow.dados, conferencias_entregas: {} };
-        await supabase.from('configuracoes').update({ dados: novosDados, atualizado_em: now }).eq('id', 1);
-      }
+      const { data: cfgRow } = await supabase.from('configuracoes').select('id, dados').eq('id', 1).maybeSingle();
+      const novosDados = { ...(cfgRow?.dados || {}), conferencias_entregas: {}, financeiro_zerado_em: now };
+      await supabase.from('configuracoes').upsert({ id: 1, dados: novosDados, atualizado_em: now });
     } catch (e) {
       console.warn('Aviso ao limpar conferencias em configuracoes:', e);
     }
@@ -1150,6 +1196,19 @@ export async function zerarFinanceiroDiaSupabase(
     }
 
     // 4. Zera o caixa_diario na nuvem Supabase
+    try {
+      const updateAll: Record<string, any> = {
+        valor_abertura: 0.00,
+        valor_fechamento: null,
+        status: 'aberto',
+        observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
+      };
+      if (caixaAberturaCol !== 'valor_abertura') {
+        updateAll[caixaAberturaCol] = 0.00;
+      }
+      await supabase.from('caixa_diario').update(updateAll).gt('id', 0);
+    } catch {}
+
     const { data: rows } = await supabase
       .from('caixa_diario')
       .select('id, data_caixa')
@@ -1165,6 +1224,9 @@ export async function zerarFinanceiroDiaSupabase(
       status: 'aberto',
       observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
     };
+    if (caixaAberturaCol !== 'valor_abertura') {
+      payload[caixaAberturaCol] = 0.00;
+    }
 
     if (existingRow && existingRow.id) {
       payload.id = existingRow.id;
@@ -1333,47 +1395,68 @@ export async function abaterSaldoMensalistaSupabase(
   clienteObj?: Cliente
 ): Promise<void> {
   try {
-    // 1. Tenta buscar cliente atual no Supabase por id
-    const { data: dbCli } = await supabase
-      .from('clientes')
-      .select('id, saldo_devedor, telefone, nome')
-      .eq('id', clienteId)
-      .maybeSingle();
+    let clienteEncontradoId: string | null = null;
+    let saldoAtual = 0;
 
-    if (dbCli) {
-      const atual = Number(dbCli.saldo_devedor || 0);
-      const novoSaldo = Math.max(0, atual - valor);
-      await supabase
-        .from('clientes')
-        .update({ saldo_devedor: novoSaldo, atualizado_em: new Date().toISOString() })
-        .eq('id', clienteId);
-      return;
+    // 1. Se clienteId for UUID válido, busca direto por ID
+    if (isUUID(clienteId)) {
+      try {
+        const { data: dbCli } = await supabase
+          .from('clientes')
+          .select('id, saldo_devedor, telefone, nome')
+          .eq('id', clienteId)
+          .maybeSingle();
+
+        if (dbCli) {
+          clienteEncontradoId = dbCli.id;
+          saldoAtual = Number(dbCli.saldo_devedor || 0);
+        }
+      } catch {}
     }
 
-    // 2. Se não achou por id (caso id seja temporário), busca por telefone
-    if (clienteObj?.telefone) {
-      const { data: byTel } = await supabase
+    // 2. Se não achou por ID, busca por telefone ou nome na nuvem
+    const tel = clienteObj?.telefone || '';
+    if (!clienteEncontradoId) {
+      const telDigits = tel.replace(/\D/g, '');
+      const { data: clis } = await supabase
         .from('clientes')
-        .select('id, saldo_devedor')
-        .eq('telefone', clienteObj.telefone)
-        .maybeSingle();
+        .select('id, saldo_devedor, telefone, nome')
+        .limit(200);
 
-      if (byTel) {
-        const atual = Number(byTel.saldo_devedor || 0);
-        const novoSaldo = Math.max(0, atual - valor);
-        await supabase
-          .from('clientes')
-          .update({ saldo_devedor: novoSaldo, atualizado_em: new Date().toISOString() })
-          .eq('id', byTel.id);
-        return;
+      if (clis && clis.length > 0) {
+        const match = clis.find(
+          (c) =>
+            (tel && c.telefone === tel) ||
+            (telDigits && c.telefone && c.telefone.replace(/\D/g, '') === telDigits) ||
+            (clienteObj?.nome && c.nome?.toUpperCase().trim() === clienteObj.nome.toUpperCase().trim())
+        );
+        if (match) {
+          clienteEncontradoId = match.id;
+          saldoAtual = Number(match.saldo_devedor || 0);
+        }
       }
     }
 
-    // 3. Caso o cliente ainda não esteja no Supabase, salva-o com o saldo reduzido
+    // 3. Atualiza na nuvem Supabase o saldo abatido
+    if (clienteEncontradoId) {
+      const novoSaldo = Math.max(0, saldoAtual - valor);
+      await supabase
+        .from('clientes')
+        .update({
+          saldo_devedor: novoSaldo,
+          atualizado_em: new Date().toISOString(),
+        })
+        .eq('id', clienteEncontradoId);
+      return;
+    }
+
+    // 4. Se o cliente ainda não existir no banco, salva-o na nuvem já com o saldo reduzido
     if (clienteObj) {
-      const novoSaldo = Math.max(0, (clienteObj.saldo_devedor || 0) - valor);
+      const baseSaldo = Number(clienteObj.saldo_devedor || 0);
+      const novoSaldo = Math.max(0, baseSaldo - valor);
       await salvarClienteSupabase({
         ...clienteObj,
+        eh_mensalista: true,
         saldo_devedor: novoSaldo,
       });
     }

@@ -170,16 +170,25 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
         {/* Top Drawer Header */}
         <div>
           <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-850">
-            <div>
-              <span
-                className="text-[10px] font-black uppercase tracking-widest block"
-                style={{ color: theme.dotColor }}
-              >
-                RESTAURANTE KAIPIRA
-              </span>
-              <h2 className="text-sm font-extrabold text-white uppercase tracking-tight">
-                Menu de Navegação
-              </h2>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl border border-amber-500/40 bg-neutral-900 flex items-center justify-center p-0.5 overflow-hidden shadow-xs shrink-0">
+                <img
+                  src="./logo.png"
+                  alt="Restaurante Kaipira"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <div>
+                <span
+                  className="text-[10px] font-black uppercase tracking-widest block"
+                  style={{ color: theme.dotColor }}
+                >
+                  RESTAURANTE KAIPIRA
+                </span>
+                <h2 className="text-sm font-extrabold text-white uppercase tracking-tight">
+                  Menu de Navegação
+                </h2>
+              </div>
             </div>
             <button
               onClick={onClose}

@@ -97,7 +97,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   };
   // Modal states
   const [showAbrirModal, setShowAbrirModal] = useState(false);
-  const [valorAbertura, setValorAbertura] = useState('250.00');
+  const [valorAbertura, setValorAbertura] = useState('0.00');
   const [obsAbertura, setObsAbertura] = useState('');
 
   const [showFecharModal, setShowFecharModal] = useState(false);
