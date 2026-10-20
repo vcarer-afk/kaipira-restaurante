@@ -53,6 +53,9 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
     } else if (pedido.status === 'em_preparacao') {
       onUpdateStatus(pedido.id, 'pronto');
       playAlertChime('ready');
+      if (pedido.tipo === 'delivery') {
+        setRetiradosLocais((prev) => [...prev, pedido.id]);
+      }
     }
   };
 

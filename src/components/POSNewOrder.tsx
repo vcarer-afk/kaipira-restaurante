@@ -785,13 +785,13 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                     >
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800 shrink-0 flex items-center justify-center">
+                          <div className="w-8 h-8 rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800 shrink-0 flex items-center justify-center">
                             {prod.url_imagem && prod.url_imagem.trim().length > 0 ? (
                               <img
                                 src={prod.url_imagem}
                                 alt={prod.nome}
                                 referrerPolicy="no-referrer"
-                                className="w-full h-full object-cover"
+                                className="w-8 h-8 rounded-lg object-cover"
                                 onError={(e) => {
                                   (e.target as HTMLElement).style.display = 'none';
                                 }}
@@ -1341,12 +1341,23 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                 onClick={handleSubmitOrder}
                 disabled={isSubmitting}
                 className={`w-full py-3 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-colors mt-2 cursor-pointer ${
-                  tipoPedido === 'salão'
+                  tipoPedido === 'delivery'
+                    ? 'bg-blue-600 hover:bg-blue-500'
+                    : tipoPedido === 'salão'
                     ? 'bg-amber-600 hover:bg-amber-500'
                     : 'bg-emerald-600 hover:bg-emerald-500'
                 }`}
               >
-                {tipoPedido === 'salão' ? (
+                {tipoPedido === 'delivery' ? (
+                  <>
+                    <Bike className="w-5 h-5" />
+                    <span>
+                      {isSubmitting
+                        ? `ENVIANDO PARA ENTREGA... (${formatBRL(total)})`
+                        : `ENVIAR PARA ENTREGA (${formatBRL(total)})`}
+                    </span>
+                  </>
+                ) : tipoPedido === 'salão' ? (
                   <>
                     <Utensils className="w-5 h-5" />
                     <span>
