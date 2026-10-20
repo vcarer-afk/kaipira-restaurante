@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Pedido } from '../types';
-import { playAlertChime } from '../utils/formatters';
-import { Volume2, Maximize, Minimize, BellRing, Sparkles } from 'lucide-react';
+import { Volume2, Maximize, Minimize, Bell } from 'lucide-react';
 
 interface LedPanelProps {
   pedidos: Pedido[];
@@ -9,192 +8,269 @@ interface LedPanelProps {
 
 export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [lastCalled, setLastCalled] = useState<Pedido | null>(null);
+  const [lastCalledOrder, setLastCalledOrder] = useState<Pedido | null>(null);
+  const [isBlinking, setIsBlinking] = useState(false);
+  const [isLedLit, setIsLedLit] = useState(true);
 
-  // Ready orders
+  const containerRef = useRef<HTMLDivElement>(null);
+  const blinkTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const blinkStepRef = useRef<number>(0);
+  const lastProcessedIdRef = useRef<number | null>(null);
+
+  // Ready orders sorted by most recently updated
   const readyOrders = pedidos
     .filter((p) => p.status === 'pronto')
     .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
 
-  // Preparing orders
-  const preparingOrders = pedidos
-    .filter((p) => p.status === 'em_preparacao')
-    .sort((a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime());
+  // Authentic Web Audio API "Ding-Dong" chime
+  const playDingDong = useCallback(() => {
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      const now = ctx.currentTime;
 
-  // Check if a new order becomes ready
+      // Tone 1: "Ding" (Mi5 / 659.25 Hz)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(659.25, now);
+      gain1.gain.setValueAtTime(0, now);
+      gain1.gain.linearRampToValueAtTime(0.85, now + 0.02);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.75);
+
+      // Tone 2: "Dong" (Dó5 / 523.25 Hz) playing 0.3s later with natural decay
+      const startTime2 = now + 0.3;
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(523.25, startTime2);
+      gain2.gain.setValueAtTime(0, startTime2);
+      gain2.gain.linearRampToValueAtTime(0.9, startTime2 + 0.03);
+      gain2.gain.exponentialRampToValueAtTime(0.001, startTime2 + 1.4);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(startTime2);
+      osc2.stop(startTime2 + 1.4);
+    } catch (err) {
+      console.warn('AudioContext playback notice:', err);
+    }
+  }, []);
+
+  // Trigger call: play chime and blink exactly 4 times in 4 seconds (1s cycle: 0.5s lit, 0.5s off)
+  const triggerBlinkSequence = useCallback(() => {
+    // Play chime sound
+    playDingDong();
+
+    // Reset any ongoing blink animation
+    if (blinkTimerRef.current) {
+      clearInterval(blinkTimerRef.current);
+      blinkTimerRef.current = null;
+    }
+
+    setIsBlinking(true);
+    setIsLedLit(true);
+    blinkStepRef.current = 0;
+
+    // 8 steps of 500ms = 4000ms (4 seconds).
+    // Steps 0, 2, 4, 6: lit (0.5s)
+    // Steps 1, 3, 5, 7: unlit (0.5s)
+    // Step 8: finish blinking, stay permanently lit.
+    blinkTimerRef.current = setInterval(() => {
+      blinkStepRef.current += 1;
+      const currentStep = blinkStepRef.current;
+
+      if (currentStep >= 8) {
+        if (blinkTimerRef.current) {
+          clearInterval(blinkTimerRef.current);
+          blinkTimerRef.current = null;
+        }
+        setIsBlinking(false);
+        setIsLedLit(true);
+      } else {
+        // Toggle lit state on every 500ms step
+        setIsLedLit(currentStep % 2 === 0);
+      }
+    }, 500);
+  }, [playDingDong]);
+
+  // Clean up blink timer on unmount
+  useEffect(() => {
+    return () => {
+      if (blinkTimerRef.current) {
+        clearInterval(blinkTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Sync fullscreen state with document event
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // Auto-trigger when a new order changes status to 'pronto'
   useEffect(() => {
     if (readyOrders.length > 0) {
-      const topOrder = readyOrders[0];
-      if (!lastCalled || lastCalled.id !== topOrder.id) {
-        setLastCalled(topOrder);
-        playAlertChime('ready');
+      const topReady = readyOrders[0];
+      if (lastProcessedIdRef.current !== topReady.id) {
+        lastProcessedIdRef.current = topReady.id;
+        setLastCalledOrder(topReady);
+        triggerBlinkSequence();
       }
     }
-  }, [readyOrders, lastCalled]);
+  }, [readyOrders, triggerBlinkSequence]);
 
   const toggleFullscreen = () => {
+    const target = containerRef.current || document.documentElement;
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen?.().catch(() => {});
-      setIsFullscreen(true);
+      target.requestFullscreen?.().catch(() => {});
     } else {
       document.exitFullscreen?.().catch(() => {});
-      setIsFullscreen(false);
     }
   };
 
-  const handleManualChime = (pedido: Pedido) => {
-    setLastCalled(pedido);
-    playAlertChime('ready');
+  const activeTicket = lastCalledOrder || (readyOrders.length > 0 ? readyOrders[0] : null);
+
+  const handleManualCall = () => {
+    triggerBlinkSequence();
   };
 
-  const activeTicket = lastCalled || (readyOrders.length > 0 ? readyOrders[0] : null);
+  // Format 3 digits: e.g. "042" or "---"
+  const formattedNumber = activeTicket?.codigo_senha != null
+    ? String(activeTicket.codigo_senha).padStart(3, '0')
+    : '---';
+
+  const hasActiveTicket = activeTicket?.codigo_senha != null;
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Top Action Bar */}
-      <div className="flex items-center justify-between bg-neutral-850 p-4 rounded-xl border border-neutral-800">
-        <div>
-          <h2 className="text-sm font-extrabold text-white uppercase flex items-center gap-2">
-            <BellRing className="w-5 h-5 text-emerald-400" />
-            <span>Painel de LED & Chamada de Senhas (Salão e Retirada)</span>
-          </h2>
-          <p className="text-xs text-neutral-400">
-            Projetado para telas grandes de TV no balcão de retirada e salão do Kaipira
-          </p>
-        </div>
+    <div
+      ref={containerRef}
+      className={`bg-black text-white flex flex-col items-center justify-center relative select-none overflow-hidden transition-all duration-300 ${
+        isFullscreen
+          ? 'fixed inset-0 z-50 w-screen h-screen min-h-screen p-4 sm:p-8'
+          : 'w-full min-h-[calc(100vh-140px)] rounded-3xl p-4 sm:p-8 border border-neutral-900 shadow-2xl'
+      }`}
+    >
+      {/* Subtle ambient red LED wall reflection */}
+      <div
+        className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+        style={{
+          background: hasActiveTicket && (!isBlinking || isLedLit)
+            ? 'radial-gradient(circle at 50% 50%, rgba(255, 30, 30, 0.12) 0%, rgba(0, 0, 0, 0.95) 75%)'
+            : 'radial-gradient(circle at 50% 50%, rgba(50, 10, 10, 0.05) 0%, rgba(0, 0, 0, 1) 85%)',
+        }}
+      />
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => playAlertChime('ready')}
-            className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-700"
-          >
-            <Volume2 className="w-4 h-4 text-amber-400" />
-            Testar Alerta Sonoro
-          </button>
+      {/* Discret Top-Right Control Bar (Modo TV / Fullscreen) */}
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-30 flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity duration-200">
+        <button
+          type="button"
+          onClick={handleManualCall}
+          className="px-3 py-1.5 bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-700/80 shadow-md cursor-pointer"
+          title="Chamar Senha / Testar Campainha"
+        >
+          <Bell className="w-3.5 h-3.5 text-red-500 animate-pulse" />
+          <span className="hidden sm:inline">Chamar Novamente</span>
+        </button>
 
-          <button
-            onClick={toggleFullscreen}
-            className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
-          >
-            {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-            {isFullscreen ? 'Sair da Tela Cheia' : 'Modo TV Tela Cheia'}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          className="p-2 sm:px-3 sm:py-1.5 bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-700/80 shadow-md cursor-pointer"
+          title={isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia (Modo TV)'}
+        >
+          {isFullscreen ? <Minimize className="w-4 h-4 text-amber-400" /> : <Maximize className="w-4 h-4 text-amber-400" />}
+          <span className="hidden sm:inline">{isFullscreen ? 'Sair da Tela Cheia' : 'Modo TV'}</span>
+        </button>
       </div>
 
-      {/* Main Digital LED Display Frame */}
-      <div className="bg-black rounded-2xl border-4 border-neutral-800 p-6 md:p-8 flex flex-col gap-8 shadow-2xl relative overflow-hidden">
-        {/* Subtle LED Matrix scanline effect */}
-        <div className="absolute inset-0 bg-radial from-emerald-950/20 via-transparent to-black pointer-events-none" />
+      {/* PAINEL FÍSICO DE LED (Carcaça Externa Industrial) */}
+      <div className="w-full max-w-3xl lg:max-w-4xl relative z-10 flex flex-col items-center">
+        {/* Carcaça Preta Externa de Parede */}
+        <div className="w-full bg-[#0b0b0e] border-[10px] sm:border-[16px] md:border-[20px] border-neutral-900 rounded-3xl sm:rounded-[36px] shadow-[0_20px_70px_rgba(0,0,0,0.95),inset_0_2px_6px_rgba(255,255,255,0.08),inset_0_-8px_20px_rgba(0,0,0,0.95)] p-4 sm:p-8 flex flex-col items-center justify-center relative">
+          {/* Parafusos/Fixadores nos 4 cantos da carcaça física */}
+          <div className="absolute top-2 left-2 sm:top-3 sm:left-3 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-neutral-700 border border-neutral-800 shadow-inner" />
+          <div className="absolute top-2 right-2 sm:top-3 sm:right-3 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-neutral-700 border border-neutral-800 shadow-inner" />
+          <div className="absolute bottom-2 left-2 sm:bottom-3 sm:left-3 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-neutral-700 border border-neutral-800 shadow-inner" />
+          <div className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-neutral-700 border border-neutral-800 shadow-inner" />
 
-        {/* TOP: Giant Banner for Latest Ready Ticket */}
-        <div className="bg-neutral-900/90 rounded-2xl border-2 border-emerald-500/80 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl relative">
-          <div className="text-center md:text-left flex-1">
-            <div className="flex items-center justify-center md:justify-start gap-2 text-xs font-black uppercase text-emerald-400 tracking-widest mb-1">
-              <Sparkles className="w-4 h-4 animate-pulse text-emerald-400" />
-              <span>PEDIDO PRONTO - FAVOR RETIRAR NO BALCÃO</span>
+          {/* Acrílico Fumê do Painel com Grid de Matriz LED */}
+          <div
+            className="w-full bg-black/95 border-2 border-neutral-800/80 rounded-2xl sm:rounded-3xl p-6 sm:p-10 md:p-14 flex flex-col items-center justify-center relative overflow-hidden shadow-inner"
+            style={{
+              backgroundImage: 'radial-gradient(rgba(35, 5, 5, 0.45) 1.5px, transparent 1.5px)',
+              backgroundSize: '14px 14px',
+            }}
+          >
+            {/* Scanlines sutis de acrílico fumê */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_50%,transparent_50%)] bg-[length:100%_4px] pointer-events-none opacity-40" />
+
+            {/* Cabeçalho Branco Puro em Caixa Alta: "SENHA" */}
+            <div className="w-full text-center pb-4 sm:pb-6 border-b-2 sm:border-b-4 border-neutral-800/90 relative z-10">
+              <h1 className="text-white font-black tracking-[0.25em] sm:tracking-[0.4em] md:tracking-[0.5em] text-3xl sm:text-5xl md:text-6xl uppercase leading-none drop-shadow-[0_2px_12px_rgba(255,255,255,0.35)] pl-[0.25em] sm:pl-[0.4em] md:pl-[0.5em]">
+                SENHA
+              </h1>
             </div>
 
-            {activeTicket ? (
-              <div>
-                <div className="text-6xl sm:text-8xl md:text-9xl font-black text-emerald-400 font-mono tracking-tight tabular-nums py-2 drop-shadow-[0_0_25px_rgba(16,185,129,0.45)]">
-                  SENHA #{activeTicket.codigo_senha}
-                </div>
-                <div className="text-lg sm:text-xl font-extrabold text-white uppercase tracking-wide mt-2">
-                  {activeTicket.tipo === 'salão'
-                    ? `MESA ${activeTicket.mesa_id || 'SALÃO'}`
-                    : activeTicket.tipo.toUpperCase()}{' '}
-                  {activeTicket.cliente?.nome ? `— ${activeTicket.cliente.nome}` : ''}
-                </div>
+            {/* Display Numérico Digital LED Gigante */}
+            <div className="relative py-6 sm:py-10 md:py-14 w-full flex items-center justify-center overflow-hidden">
+              {/* Fantasma dos dígitos 888 desligados (típico de displays físicos 7 segmentos) */}
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 flex items-center justify-center font-mono font-black tabular-nums tracking-widest text-7xl sm:text-9xl md:text-[13rem] lg:text-[16rem] leading-none select-none pointer-events-none text-[#1b0505] opacity-25"
+              >
+                888
               </div>
-            ) : (
-              <div className="text-3xl sm:text-5xl font-black text-neutral-600 font-mono py-6">
-                AGUARDANDO PRÓXIMA SENHA...
+
+              {/* Dígitos Ativos em LED Vermelho Brilhante */}
+              <div
+                className={`relative z-10 font-mono font-black tabular-nums tracking-widest text-center transition-all duration-100 select-none ${
+                  isBlinking && !isLedLit ? 'opacity-10 scale-[0.99]' : 'opacity-100 scale-100'
+                }`}
+                style={{
+                  color: hasActiveTicket ? '#ff2020' : '#4a0808',
+                  textShadow:
+                    hasActiveTicket && (!isBlinking || isLedLit)
+                      ? '0 0 25px #ff2020, 0 0 50px rgba(255,30,30,0.85), 0 0 80px rgba(255,0,0,0.5)'
+                      : hasActiveTicket
+                      ? '0 0 6px rgba(100,10,10,0.2)'
+                      : '0 0 10px rgba(255,0,0,0.2)',
+                }}
+              >
+                <span className="text-7xl sm:text-9xl md:text-[13rem] lg:text-[16rem] leading-none block">
+                  {formattedNumber}
+                </span>
               </div>
-            )}
-          </div>
-
-          {activeTicket && (
-            <button
-              onClick={() => handleManualChime(activeTicket)}
-              className="px-6 py-4 bg-emerald-600 hover:bg-emerald-500 text-neutral-950 font-black rounded-xl text-sm flex items-center gap-2 uppercase shadow-lg transition-transform hover:scale-105 active:scale-95"
-            >
-              <Volume2 className="w-5 h-5" />
-              Chamar Novamente
-            </button>
-          )}
-        </div>
-
-        {/* BOTTOM TWO COLUMNS: Ready Tickets List vs Preparing Tickets List */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
-          {/* Column 1: Outras Senhas Prontas */}
-          <div className="bg-neutral-900/70 rounded-xl border border-emerald-900/60 p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-emerald-900/60 pb-3">
-              <h3 className="text-sm font-black text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                <span>SENHAS PRONTAS PARA RETIRADA ({readyOrders.length})</span>
-              </h3>
             </div>
 
-            {readyOrders.length === 0 ? (
-              <div className="py-8 text-center text-xs text-neutral-600 uppercase font-mono">
-                NENHUMA SENHA PRONTA NO MOMENTO
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-72 overflow-y-auto">
-                {readyOrders.map((ord) => (
-                  <button
-                    key={ord.id}
-                    onClick={() => handleManualChime(ord)}
-                    className="p-3 bg-neutral-950 border border-emerald-600/50 hover:border-emerald-400 rounded-xl flex flex-col items-center justify-center transition-all group"
-                  >
-                    <span className="text-3xl font-black text-emerald-400 font-mono tabular-nums group-hover:scale-110 transition-transform">
-                      #{ord.codigo_senha}
-                    </span>
-                    <span className="text-[10px] text-neutral-400 uppercase font-bold mt-1">
-                      {ord.tipo === 'salão' ? `MESA ${ord.mesa_id}` : ord.tipo}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Column 2: Senhas em Preparação */}
-          <div className="bg-neutral-900/70 rounded-xl border border-amber-900/60 p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-amber-900/60 pb-3">
-              <h3 className="text-sm font-black text-amber-400 uppercase tracking-wider">
-                EM PREPARAÇÃO NA COZINHA ({preparingOrders.length})
-              </h3>
+            {/* Sutil moldura inferior fumê */}
+            <div className="w-full pt-3 sm:pt-4 border-t border-neutral-900 flex items-center justify-between text-[9px] sm:text-[10px] font-mono text-neutral-600 uppercase tracking-widest relative z-10">
+              <span>PAINEL DIGITAL GUICHÊ</span>
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isBlinking
+                      ? 'bg-red-500 animate-ping'
+                      : hasActiveTicket
+                      ? 'bg-red-600'
+                      : 'bg-neutral-800'
+                  }`}
+                />
+                <span>{isBlinking ? 'CHAMANDO...' : hasActiveTicket ? 'ONLINE' : 'STANDBY'}</span>
+              </span>
             </div>
-
-            {preparingOrders.length === 0 ? (
-              <div className="py-8 text-center text-xs text-neutral-600 uppercase font-mono">
-                NENHUM PEDIDO EM PREPARO
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-72 overflow-y-auto">
-                {preparingOrders.map((ord) => (
-                  <div
-                    key={ord.id}
-                    className="p-3 bg-neutral-950 border border-amber-700/40 rounded-xl flex flex-col items-center justify-center"
-                  >
-                    <span className="text-2xl font-black text-amber-400/90 font-mono tabular-nums">
-                      #{ord.codigo_senha}
-                    </span>
-                    <span className="text-[10px] text-neutral-500 uppercase font-bold mt-1">
-                      {ord.tipo === 'salão' ? `MESA ${ord.mesa_id}` : ord.tipo}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-        </div>
-
-        {/* Footer info strip */}
-        <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-neutral-500 border-t border-neutral-800 pt-4 font-mono">
-          <span>RESTAURANTE KAIPIRA · PIRACICABA - SP</span>
-          <span>SISTEMA DE GESTÃO E DELIVERY PRÓPRIO</span>
         </div>
       </div>
     </div>
