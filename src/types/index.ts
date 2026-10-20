@@ -1,4 +1,4 @@
-export type TipoUsuario = 'master' | 'admin' | 'atendente' | 'cozinha' | 'garcom' | 'entregador';
+export type TipoUsuario = 'master' | 'admin' | 'supervisor' | 'atendente' | 'cozinha' | 'garcom' | 'entregador';
 export type TipoPedido = 'salão' | 'retirada' | 'delivery';
 export type StatusPedido = 'pendente' | 'em_preparacao' | 'pronto' | 'a_caminho' | 'entregue' | 'cancelado';
 export type FormaPagamentoPadrao = 'dinheiro' | 'pix' | 'cartao_credito' | 'cartao_debito' | 'vale_refeicao' | 'mensalista' | 'multiplo';

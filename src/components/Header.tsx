@@ -23,9 +23,9 @@ interface HeaderProps {
   onSelectTab: (tab: ActiveTab) => void;
   currentRole: TipoUsuario;
   currentPerfil?: Perfil;
-  onChangeRole: (role: TipoUsuario) => void;
+  onChangeRole?: (role: TipoUsuario) => void;
   isLunchTime: boolean;
-  onOpenSupabaseModal: () => void;
+  onOpenSupabaseModal?: () => void;
   onOpenSlideMenu: () => void;
   pendingKdsCount: number;
   activeConnectionsCount?: number;
@@ -91,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* Zone 1: Brand Wordmark */}
-        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div
             className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border flex items-center justify-center shadow-xs shrink-0 overflow-hidden bg-neutral-900/90"
             style={{
@@ -105,15 +105,15 @@ export const Header: React.FC<HeaderProps> = ({
             />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm sm:text-base font-extrabold tracking-tight text-white truncate max-w-[160px] xs:max-w-[220px] sm:max-w-none">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <span className="text-xs sm:text-base font-extrabold tracking-tight text-white truncate max-w-[120px] xs:max-w-[180px] sm:max-w-none">
                 {configuracoes?.nomeRestaurante || 'RESTAURANTE KAIPIRA'}
               </span>
               <span className="hidden md:inline-block text-xs text-neutral-400 font-medium">
                 · {configuracoes?.cidade || 'Piracicaba'} - {configuracoes?.uf || 'SP'}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-neutral-400">
+            <div className="hidden xs:flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-neutral-400">
               <span className={isLunchTime ? 'text-emerald-400 font-semibold' : 'text-neutral-400'}>
                 {isLunchTime ? 'Almoço (11h-14h)' : 'Fora do Almoço'}
               </span>
@@ -125,20 +125,18 @@ export const Header: React.FC<HeaderProps> = ({
                 title={cloudConfigSyncedAt ? `Configurações da Nuvem Carregadas (${cloudConfigSyncedAt.toLocaleTimeString('pt-BR')}) - Clique para recarregar` : 'Sincronizar com a nuvem'}
               >
                 <Cloud className={`w-3 h-3 ${isCloudConfigLoading ? 'text-amber-400 animate-pulse' : 'text-cyan-400'}`} />
-                <span className="hidden xs:inline">{isCloudConfigLoading ? 'Carregando...' : 'Nuvem Ativa'}</span>
-                <span className="xs:hidden">{isCloudConfigLoading ? '...' : 'Nuvem'}</span>
+                <span className="hidden sm:inline">{isCloudConfigLoading ? 'Carregando...' : 'Nuvem Ativa'}</span>
+                <span className="sm:hidden">{isCloudConfigLoading ? '...' : 'Nuvem'}</span>
               </button>
             </div>
           </div>
         </div>
 
-
-
         {/* Zone 2: Realtime Clock & Admin Active Connections */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {/* Relógio em tempo real "00:00" */}
           <div
-            className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-neutral-850/90 border border-neutral-750 shadow-inner"
+            className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-neutral-850/90 border border-neutral-750 shadow-inner"
             title="Horário Oficial em Tempo Real"
           >
             <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -147,10 +145,10 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
 
-          {/* Somente na tela do Administrador/Master: Conexões Ativas "Conectados xx" */}
-          {(currentRole === 'admin' || currentRole === 'master') && (
+          {/* Somente na tela do Administrador/Master/Supervisor: Conexões Ativas "Conectados xx" (oculto em mobile < 640px) */}
+          {(currentRole === 'admin' || currentRole === 'master' || currentRole === 'supervisor') && (
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-bold shadow-xs whitespace-nowrap"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-bold shadow-xs whitespace-nowrap"
               title="Dispositivos e operadores conectados pela internet em tempo real"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
@@ -163,7 +161,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Zone 3: Slide Menu Trigger & Operator Info */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <div className="hidden sm:flex flex-col text-right">
             <span className="text-[11px] font-extrabold text-neutral-200 uppercase truncate max-w-[140px]">
               {currentPerfil?.nome?.split(' ')[0] || 'ADMIN'}
@@ -180,11 +178,11 @@ export const Header: React.FC<HeaderProps> = ({
           {posicaoMenu !== 'esquerda' && (
             <button
               onClick={onOpenSlideMenu}
-              className={`px-3.5 py-2 ${theme.primaryBg} ${theme.primaryHover} text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-md transition-all hover:scale-105 active:scale-95 uppercase`}
+              className={`px-3 py-1.5 sm:px-3.5 sm:py-2 ${theme.primaryBg} ${theme.primaryHover} text-white rounded-xl text-xs font-black flex items-center gap-1.5 sm:gap-2 shadow-md transition-all hover:scale-105 active:scale-95 uppercase cursor-pointer shrink-0`}
               title="Abrir Menu Principal"
             >
               <Menu className="w-4 h-4" />
-              <span>Menu</span>
+              <span className="hidden xs:inline">Menu</span>
               {pendingKdsCount > 0 && (
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
               )}

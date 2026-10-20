@@ -273,6 +273,16 @@ export const INITIAL_USUARIOS: UsuarioSistema[] = [
     criado_em: '2026-01-01T00:00:00Z',
   },
   {
+    id: 'usr-sup-vlademir',
+    nome: 'VLADEMIR (SUPERVISOR)',
+    email: 'vlademir@kaipira.com',
+    telefone: '(19) 9-8888-7777',
+    cargo: 'supervisor',
+    status: 'ativo',
+    senha: '071276',
+    criado_em: '2026-01-01T00:00:00Z',
+  },
+  {
     id: 'usr-admin-1',
     nome: 'DONA BENEDITA (ADMIN / GERENTE)',
     email: 'benedita@kaipira.com',

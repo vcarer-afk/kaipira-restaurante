@@ -1549,15 +1549,30 @@ export async function fetchUsuariosSupabase(): Promise<UsuarioSistema[]> {
     }
 
     // Garante que o Master sempre conste na lista
-    const hasMaster = data.some(
+    let finalUsers = data as UsuarioSistema[];
+    const hasMaster = finalUsers.some(
       (u: any) => u.email === 'master@kaipira.com' || u.cargo === 'master'
     );
     if (!hasMaster) {
       const master = await garantirMasterSupabase();
-      if (master) return [master, ...data];
+      if (master) finalUsers = [master, ...finalUsers];
     }
 
-    return data as UsuarioSistema[];
+    // Garante que VLADEMIR (Supervisor) sempre conste na lista
+    const hasVlademir = finalUsers.some(
+      (u: any) =>
+        (u.email && u.email.toLowerCase() === 'vlademir@kaipira.com') ||
+        (u.nome && u.nome.toUpperCase().includes('VLADEMIR'))
+    );
+    if (!hasVlademir) {
+      const vlademirUser = INITIAL_USUARIOS.find((u) => u.id === 'usr-sup-vlademir');
+      if (vlademirUser) {
+        finalUsers = [...finalUsers, vlademirUser];
+        supabase.from('usuarios').upsert([vlademirUser]).then(() => {}, () => {});
+      }
+    }
+
+    return finalUsers;
   } catch (err) {
     console.warn('Erro ao carregar usuários do Supabase:', err);
     return INITIAL_USUARIOS;

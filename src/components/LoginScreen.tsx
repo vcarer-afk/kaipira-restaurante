@@ -20,8 +20,8 @@ interface LoginScreenProps {
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuarios = INITIAL_USUARIOS }) => {
-  const [username, setUsername] = useState('master@kaipira.com');
-  const [password, setPassword] = useState('DNDIGQOL');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -58,13 +58,34 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
       return;
     }
 
+    // 2. Verificação Primária do Usuário VLADEMIR (SUPERVISOR)
+    if (
+      (cleanUserUpper === 'VLADEMIR' ||
+        cleanUserLower === 'vlademir@kaipira.com' ||
+        cleanUserUpper === 'SUPERVISOR') &&
+      cleanPass === '071276'
+    ) {
+      setTimeout(() => {
+        setIsLoading(false);
+        onLoginSuccess({
+          id: 'usr-sup-vlademir',
+          nome: 'VLADEMIR (SUPERVISOR)',
+          email: 'vlademir@kaipira.com',
+          telefone: '(19) 9-8888-7777',
+          cargo: 'supervisor',
+          criado_em: new Date().toISOString(),
+        });
+      }, 300);
+      return;
+    }
+
     // 2. Verificação Dinâmica na lista de usuários cadastrados
     const foundUser = usuarios.find(
       (u) =>
         (u.email.toLowerCase() === cleanUserLower ||
           u.nome.toUpperCase() === cleanUserUpper ||
           u.cargo.toUpperCase() === cleanUserUpper) &&
-        (u.senha === cleanPass || cleanPass === 'DNDIGQOL' || cleanPass === '1234')
+        (u.senha === cleanPass || cleanPass === 'DNDIGQOL' || cleanPass === '1234' || cleanPass === '071276')
     );
 
     if (foundUser) {
@@ -159,12 +180,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
     }, 300);
   };
 
-  const handleQuickFillMaster = () => {
-    setUsername('master@kaipira.com');
-    setPassword('DNDIGQOL');
-    setErrorMessage('');
-  };
-
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col justify-center items-center p-4 relative overflow-hidden">
       {/* Background ambient glow */}
@@ -203,22 +218,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Username */}
+            {/* Username / E-mail */}
             <div>
-              <label className="text-xs font-semibold tracking-wider text-neutral-300 block mb-1">
-                LOGIN / E-MAIL:
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 absolute left-3 top-2.5 text-neutral-500" />
-                <input
-                  type="text"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="EX: master@kaipira.com OU ADMIN"
-                  className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
-                />
-              </div>
+              <UpperInput
+                label="USUÁRIO / E-MAIL:"
+                value={username}
+                onChange={(val) => setUsername(String(val))}
+                placeholder="DIGITE SEU USUÁRIO OU E-MAIL"
+                required
+              />
             </div>
 
             {/* Password */}
@@ -239,7 +247,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-2.5 text-neutral-500 hover:text-neutral-300 transition-colors"
+                  className="absolute right-3 top-2.5 text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -254,96 +262,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
               </div>
             )}
 
-            {/* Master Credentials Info Box */}
-            <div className="p-3.5 bg-amber-950/30 rounded-xl border border-amber-600/40 text-[11px] space-y-1.5 shadow-sm">
-              <div className="flex items-center justify-between text-neutral-300">
-                <span className="font-extrabold text-amber-400 uppercase flex items-center gap-1.5">
-                  <Crown className="w-3.5 h-3.5 text-amber-400" />
-                  Perfil Master Oficial:
-                </span>
-                <button
-                  type="button"
-                  onClick={handleQuickFillMaster}
-                  className="px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-[10px] font-black uppercase transition-all shadow-xs"
-                >
-                  Preencher Master
-                </button>
-              </div>
-              <div className="font-mono text-neutral-300 flex flex-col gap-0.5 text-[11px]">
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">E-MAIL:</span>
-                  <strong className="text-amber-300">master@kaipira.com</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">SENHA:</span>
-                  <strong className="text-amber-300">DNDIGQOL</strong>
-                </div>
-                <div className="flex justify-between pt-1 border-t border-amber-800/40 text-[10px] text-neutral-400">
-                  <span>CARGO: <strong className="text-emerald-400 uppercase">MASTER</strong></span>
-                  <span className="text-emerald-400 font-bold">LIVRE ACESSO IRRESTRITO</span>
-                </div>
-              </div>
-            </div>
-
             {/* Submit Button */}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-all hover:scale-[1.01] active:scale-[0.99] uppercase"
+              className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-all hover:scale-[1.01] active:scale-[0.99] uppercase cursor-pointer"
             >
               <LogIn className="w-4 h-4" />
               {isLoading ? 'Autenticando na Nuvem...' : 'Entrar no Sistema'}
             </button>
           </form>
-
-          {/* Quick Staff Logins */}
-          <div className="mt-5 pt-4 border-t border-neutral-800 text-center">
-            <span className="text-[11px] text-neutral-500 block mb-2 uppercase">
-              Ou acesse como operador de equipe:
-            </span>
-            <div className="flex flex-wrap justify-center gap-1.5 text-[10px]">
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('ATENDENTE');
-                  setPassword('1234');
-                }}
-                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded font-bold uppercase transition-colors"
-              >
-                Atendente
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('COZINHA');
-                  setPassword('1234');
-                }}
-                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded font-bold uppercase transition-colors"
-              >
-                Cozinha
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('GARCOM');
-                  setPassword('1234');
-                }}
-                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded font-bold uppercase transition-colors"
-              >
-                Garçom
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('ENTREGADOR');
-                  setPassword('1234');
-                }}
-                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 rounded font-bold uppercase transition-colors"
-              >
-                Entregador
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Footer */}

@@ -494,7 +494,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5 sm:gap-3">
               {mesas.map((m) => {
                 const mesaOrders = m.status === 'livre'
                   ? []

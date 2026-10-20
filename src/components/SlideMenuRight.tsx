@@ -30,8 +30,8 @@ interface SlideMenuRightProps {
   onSelectTab: (tab: ActiveTab) => void;
   currentRole: TipoUsuario;
   currentPerfil?: Perfil;
-  onChangeRole: (role: TipoUsuario) => void;
-  onOpenSupabaseModal: () => void;
+  onChangeRole?: (role: TipoUsuario) => void;
+  onOpenSupabaseModal?: () => void;
   onLogout: () => void;
   pendingKdsCount: number;
   posicaoMenu?: PosicaoMenu;
@@ -225,24 +225,6 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
                 </div>
               </div>
             </div>
-
-            {/* Profile Switcher dropdown */}
-            <div className="mt-3 pt-2 border-t border-neutral-850 flex items-center justify-between text-[11px]">
-              <span className="text-neutral-400">Alternar Perfil:</span>
-              <select
-                value={currentRole}
-                onChange={(e) => onChangeRole(e.target.value as TipoUsuario)}
-                className="bg-neutral-800 border border-neutral-700 font-bold rounded px-2 py-1 uppercase text-[10px] focus:outline-none"
-                style={{ color: theme.dotColor }}
-              >
-                <option value="master">MASTER (LIVRE ACESSO TOTAL)</option>
-                <option value="admin">ADMIN (DONA BENEDITA)</option>
-                <option value="atendente">ATENDENTE (JULIANA)</option>
-                <option value="cozinha">COZINHA (CHEF TIÃO)</option>
-                <option value="garcom">GARÇOM (MARCELO)</option>
-                <option value="entregador">ENTREGADOR (RODRIGO)</option>
-              </select>
-            </div>
           </div>
         </div>
 
@@ -251,8 +233,8 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
-            // Master tem livre acesso irrestrito a todas as telas (bypass)
-            const hasAccess = currentRole === 'master' || currentRole === 'admin' || item.roles.includes(currentRole);
+            // Master e Supervisor têm livre acesso a todas as telas
+            const hasAccess = currentRole === 'master' || currentRole === 'admin' || currentRole === 'supervisor' || item.roles.includes(currentRole);
 
             return (
               <button
@@ -299,30 +281,6 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
               </button>
             );
           })}
-
-          {/* Supabase SQL button */}
-          <button
-            onClick={() => {
-              onOpenSupabaseModal();
-              onClose();
-            }}
-            className="w-full p-2.5 rounded-xl flex items-center justify-between text-left hover:bg-neutral-800/80 text-neutral-300 transition-colors mt-2 border-t border-neutral-800/60"
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-neutral-800 text-emerald-400">
-                <Database className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-xs font-extrabold uppercase block leading-tight text-white">
-                  SUPABASE SQL SCHEMA
-                </span>
-                <span className="text-[10px] text-neutral-500 block">
-                  Script PostgreSQL e Realtime
-                </span>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-neutral-600" />
-          </button>
         </div>
 
         {/* Drawer Bottom Footer with Logout */}

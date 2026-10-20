@@ -1507,6 +1507,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
               <option value="todos">TODOS OS CARGOS ({usuarios.length})</option>
               <option value="master">MASTER</option>
               <option value="admin">ADMINISTRADOR</option>
+              <option value="supervisor">SUPERVISOR</option>
               <option value="atendente">ATENDENTE</option>
               <option value="cozinha">COZINHA</option>
               <option value="garcom">GARÇOM</option>
@@ -3161,6 +3162,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                 <option value="garcom">GARÇOM (SALÃO & 20 MESAS)</option>
                 <option value="cozinha">COZINHA (KDS)</option>
                 <option value="entregador">ENTREGADOR (MOTOBOYS & ROTAS)</option>
+                <option value="supervisor">SUPERVISOR (SUPERVISÃO GERAL / EXPEDIÇÃO / CAIXA)</option>
                 <option value="admin">ADMIN (GERENTE / CAIXA / RELATÓRIOS)</option>
                 <option value="master">MASTER (LIVRE ACESSO IRRESTRITO A TUDO)</option>
               </select>

@@ -75,7 +75,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onZerarFinanceiro,
   onToggleModoOperacao,
 }) => {
-  const isAdminOrMaster = currentRole === 'admin' || currentRole === 'master';
+  const isAdminOrMaster = currentRole === 'admin' || currentRole === 'master' || currentRole === 'supervisor';
   // Cash Register quick modals
   const [showAbrirModal, setShowAbrirModal] = useState(false);
   const [valorAbertura, setValorAbertura] = useState('0.00');

@@ -569,7 +569,7 @@ export default function App() {
     setCurrentRole(perfil.cargo);
     fetchCloudState();
 
-    if (perfil.cargo === 'master' || perfil.cargo === 'admin') {
+    if (perfil.cargo === 'master' || perfil.cargo === 'admin' || perfil.cargo === 'supervisor') {
       setActiveTab('dashboard');
     } else if (perfil.cargo === 'cozinha') {
       setActiveTab('kds');
@@ -594,7 +594,7 @@ export default function App() {
     if (currentPerfil) {
       setCurrentPerfil({ ...currentPerfil, cargo: role });
     }
-    if (role === 'master' || role === 'admin') setActiveTab('dashboard');
+    if (role === 'master' || role === 'admin' || role === 'supervisor') setActiveTab('dashboard');
     else if (role === 'cozinha') setActiveTab('kds');
     else if (role === 'garcom') setActiveTab('mesas');
     else if (role === 'entregador') setActiveTab('expedicao');
@@ -1157,7 +1157,7 @@ export default function App() {
   const currentTheme = THEMES[configuracoes.padraoCor] || THEMES.ambar;
 
   return (
-    <div className={`min-h-screen ${currentTheme.bgTone || 'bg-neutral-900'} ${currentTheme.fontStyle || 'font-sans'} text-neutral-100 flex flex-col transition-colors duration-200`}>
+    <div className={`min-h-screen w-full max-w-full overflow-x-hidden ${currentTheme.bgTone || 'bg-neutral-900'} ${currentTheme.fontStyle || 'font-sans'} text-neutral-100 flex flex-col transition-colors duration-200`}>
       {/* Top Bar Header with Configurable Menu Position and Theme */}
       <Header
         activeTab={activeTab}
@@ -1167,9 +1167,7 @@ export default function App() {
         }}
         currentRole={currentRole}
         currentPerfil={currentPerfil}
-        onChangeRole={handleRoleChange}
         isLunchTime={isLunchTime}
-        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         onOpenSlideMenu={() => setIsSlideMenuOpen(true)}
         pendingKdsCount={pendingKdsCount}
         activeConnectionsCount={activeConnectionsCount}
@@ -1182,7 +1180,7 @@ export default function App() {
       />
 
       {/* Main Viewport Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+      <main className="flex-1 max-w-7xl w-full max-w-full mx-auto p-4 sm:p-6 overflow-x-hidden">
         {/* Admin Dashboard */}
         {activeTab === 'dashboard' && (
           <AdminDashboard
@@ -1418,8 +1416,6 @@ export default function App() {
         }}
         currentRole={currentRole}
         currentPerfil={currentPerfil}
-        onChangeRole={handleRoleChange}
-        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         onLogout={handleLogout}
         pendingKdsCount={pendingKdsCount}
         posicaoMenu={configuracoes.posicaoMenu}

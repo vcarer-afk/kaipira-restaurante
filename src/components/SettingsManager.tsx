@@ -24,16 +24,260 @@ import {
   Phone,
   Clock,
   Sparkles,
+  Copy,
+  Code2,
 } from 'lucide-react';
 
 interface SettingsManagerProps {
   configuracoes: ConfiguracoesSistema;
   onSaveConfiguracoes: (novasConfiguracoes: ConfiguracoesSistema) => Promise<void>;
-  onOpenSupabaseModal: () => void;
+  onOpenSupabaseModal?: () => void;
   onReloadCloudConfig?: () => Promise<void>;
   isCloudConfigLoading?: boolean;
   cloudConfigSyncedAt?: Date | null;
 }
+
+const SUPABASE_SCHEMA_SQL = `-- =========================================================================
+-- SUPABASE POSTGRESQL SCHEMA COMPLETO - RESTAURANTE KAIPIRA (PIRACICABA - SP)
+-- Execute no SQL Editor do seu projeto Supabase (https://app.supabase.com)
+-- =========================================================================
+
+-- 1. TIPOS ENUM
+DO $$ BEGIN
+    CREATE TYPE tipo_usuario AS ENUM ('master', 'admin', 'atendente', 'cozinha', 'garcom', 'entregador');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+ALTER TYPE tipo_usuario ADD VALUE IF NOT EXISTS 'master';
+
+DO $$ BEGIN
+    CREATE TYPE tipo_pedido AS ENUM ('salão', 'retirada', 'delivery');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE status_pedido AS ENUM ('pendente', 'em_preparacao', 'pronto', 'a_caminho', 'entregue', 'cancelado');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE forma_pagamento AS ENUM ('dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'mensalista');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- 2. TABELA DE USUÁRIOS & FUNCIONÁRIOS (COM USUÁRIO MASTER INICIAL)
+CREATE TABLE IF NOT EXISTS usuarios (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome VARCHAR(150) NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    telefone VARCHAR(25) NOT NULL,
+    cargo VARCHAR(50) NOT NULL DEFAULT 'atendente',
+    status VARCHAR(20) NOT NULL DEFAULT 'ativo',
+    senha VARCHAR(100) NOT NULL DEFAULT 'DNDIGQOL',
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- SEED DO USUÁRIO MASTER INICIAL (master@kaipira.com / DNDIGQOL / CARGO: master)
+INSERT INTO usuarios (nome, email, telefone, cargo, status, senha)
+VALUES (
+    'ADMINISTRADOR MASTER GERAL',
+    'master@kaipira.com',
+    '(19) 9-9999-9999',
+    'master',
+    'ativo',
+    'DNDIGQOL'
+)
+ON CONFLICT (email) DO UPDATE 
+SET cargo = 'master',
+    senha = 'DNDIGQOL',
+    status = 'ativo',
+    atualizado_em = NOW();
+
+ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acesso publico usuarios" ON usuarios;
+CREATE POLICY "Acesso publico usuarios" ON usuarios FOR ALL USING (true) WITH CHECK (true);
+
+-- 3. CLIENTES & MENSALISTAS (PIRACICABA)
+CREATE TABLE IF NOT EXISTS clientes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome VARCHAR(100) NOT NULL,
+    telefone VARCHAR(20) UNIQUE NOT NULL,
+    cep VARCHAR(10) NOT NULL,
+    endereco VARCHAR(200) NOT NULL,
+    numero VARCHAR(20) NOT NULL,
+    bairro VARCHAR(100) NOT NULL,
+    complemento VARCHAR(100),
+    eh_mensalista BOOLEAN DEFAULT FALSE,
+    saldo_devedor DECIMAL(10,2) DEFAULT 0.00,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. CATEGORIAS & PRODUTOS (COM URL_IMAGEM PARA SUPABASE STORAGE)
+CREATE TABLE IF NOT EXISTS categorias (
+    id SERIAL PRIMARY KEY,
+    nome VARCHAR(50) NOT NULL,
+    ordem INT DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS produtos (
+    id SERIAL PRIMARY KEY,
+    categoria_id INT REFERENCES categorias(id),
+    nome VARCHAR(100) NOT NULL,
+    descricao TEXT,
+    preco_salao DECIMAL(10,2) NOT NULL,
+    preco_delivery DECIMAL(10,2),
+    url_imagem TEXT,
+    dia_semana INT[],
+    pausado BOOLEAN DEFAULT FALSE,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS opcionais (
+    id SERIAL PRIMARY KEY,
+    produto_id INT REFERENCES produtos(id) ON DELETE CASCADE,
+    nome VARCHAR(100) NOT NULL,
+    preco_adicional DECIMAL(10,2) DEFAULT 0.00
+);
+
+-- 5. ESTOQUE BÁSICO
+CREATE TABLE IF NOT EXISTS estoque (
+    id SERIAL PRIMARY KEY,
+    item_nome VARCHAR(100) NOT NULL,
+    quantidade_atual DECIMAL(10,2) NOT NULL DEFAULT 0,
+    unidade_medida VARCHAR(20) DEFAULT 'un',
+    estoque_minimo DECIMAL(10,2) DEFAULT 5.00,
+    fornecedor_info TEXT,
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 6. MESAS & RESERVAS (20 MESAS)
+CREATE TABLE IF NOT EXISTS mesas (
+    id SERIAL PRIMARY KEY,
+    numero INT UNIQUE NOT NULL,
+    status VARCHAR(20) DEFAULT 'livre'
+);
+
+CREATE TABLE IF NOT EXISTS reservas (
+    id SERIAL PRIMARY KEY,
+    cliente_nome VARCHAR(100) NOT NULL,
+    telefone VARCHAR(20) NOT NULL,
+    mesa_id INT REFERENCES mesas(id),
+    data_hora TIMESTAMP WITH TIME ZONE NOT NULL,
+    status VARCHAR(20) DEFAULT 'confirmada'
+);
+
+-- 7. PEDIDOS & ITENS (COM CONFERÊNCIA DE DELIVERY PELO CAIXA)
+CREATE TABLE IF NOT EXISTS pedidos (
+    id SERIAL PRIMARY KEY,
+    codigo_senha SERIAL,
+    tipo tipo_pedido NOT NULL,
+    status status_pedido DEFAULT 'pendente',
+    cliente_id UUID REFERENCES clientes(id),
+    mesa_id INT REFERENCES mesas(id),
+    precisa_troco BOOLEAN DEFAULT FALSE,
+    troco_para DECIMAL(10,2),
+    motoboy_tipo VARCHAR(20),
+    entregador_nome VARCHAR(150),
+    conferencia_entrega VARCHAR(20) DEFAULT NULL,
+    conferido_por VARCHAR(150) DEFAULT NULL,
+    conferido_em TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    valor_total DECIMAL(10,2) DEFAULT 0.00,
+    taxa_entrega DECIMAL(10,2) DEFAULT 0.00,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS conferencia_entrega VARCHAR(20) DEFAULT NULL;
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS conferido_por VARCHAR(150) DEFAULT NULL;
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS conferido_em TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS entregador_nome VARCHAR(150) DEFAULT NULL;
+
+CREATE TABLE IF NOT EXISTS itens_pedido (
+    id SERIAL PRIMARY KEY,
+    pedido_id INT REFERENCES pedidos(id) ON DELETE CASCADE,
+    produto_id INT REFERENCES produtos(id),
+    quantidade INT NOT NULL DEFAULT 1,
+    observacao TEXT,
+    preco_unitario DECIMAL(10,2) NOT NULL,
+    opcionais_selecionados JSONB
+);
+
+-- 8. CAIXA & PAGAMENTOS
+CREATE TABLE IF NOT EXISTS pagamentos (
+    id SERIAL PRIMARY KEY,
+    pedido_id INT REFERENCES pedidos(id) ON DELETE CASCADE,
+    forma forma_pagamento NOT NULL,
+    valor DECIMAL(10,2) NOT NULL,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS caixa_diario (
+    id SERIAL PRIMARY KEY,
+    data_caixa DATE UNIQUE DEFAULT CURRENT_DATE,
+    valor_abertura DECIMAL(10,2) DEFAULT 0.00,
+    valor_fechamento DECIMAL(10,2),
+    status VARCHAR(20) DEFAULT 'aberto',
+    observacoes TEXT,
+    aberto_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    fechado_em TIMESTAMP WITH TIME ZONE
+);
+
+-- 9. CONFIGURAÇÕES GERAIS DO RESTAURANTE (100% NUVEM SUPABASE)
+CREATE TABLE IF NOT EXISTS configuracoes (
+    id INT PRIMARY KEY DEFAULT 1,
+    nome_restaurante VARCHAR(100),
+    email VARCHAR(100),
+    telefone VARCHAR(30),
+    cep VARCHAR(10),
+    endereco VARCHAR(200),
+    numero VARCHAR(20),
+    bairro VARCHAR(100),
+    cidade VARCHAR(100) DEFAULT 'PIRACICABA',
+    uf VARCHAR(2) DEFAULT 'SP',
+    horario_funcionamento VARCHAR(150),
+    posicao_menu VARCHAR(20) DEFAULT 'direita',
+    padrao_cor VARCHAR(20) DEFAULT 'ambar',
+    supabase_url TEXT,
+    supabase_anon_key TEXT,
+    banco_status VARCHAR(30) DEFAULT 'conectado',
+    dados JSONB,
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 10. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (MONTAGEM DO DIA)
+CREATE TABLE IF NOT EXISTS cardapio_diario (
+    id SERIAL PRIMARY KEY,
+    data DATE NOT NULL DEFAULT CURRENT_DATE,
+    produto_id INT NOT NULL,
+    canal VARCHAR(30) NOT NULL,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT uk_cardapio_data_produto_canal UNIQUE (data, produto_id, canal)
+);
+
+ALTER TABLE cardapio_diario ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acesso publico cardapio_diario" ON cardapio_diario;
+CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING (true) WITH CHECK (true);
+
+-- 11. BUCKET DE STORAGE PARA FOTOS DE PRODUTOS ('produtos')
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('produtos', 'produtos', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public Access produtos" ON storage.objects;
+CREATE POLICY "Public Access produtos" ON storage.objects FOR SELECT USING (bucket_id = 'produtos');
+
+DROP POLICY IF EXISTS "Public Upload produtos" ON storage.objects;
+CREATE POLICY "Public Upload produtos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'produtos');
+
+DROP POLICY IF EXISTS "Public Update produtos" ON storage.objects;
+CREATE POLICY "Public Update produtos" ON storage.objects FOR UPDATE USING (bucket_id = 'produtos');
+
+-- 12. ATIVAÇÃO DO SUPABASE REALTIME
+ALTER PUBLICATION supabase_realtime ADD TABLE configuracoes;
+ALTER PUBLICATION supabase_realtime ADD TABLE usuarios;
+ALTER PUBLICATION supabase_realtime ADD TABLE cardapio_diario;
+ALTER PUBLICATION supabase_realtime ADD TABLE pedidos;
+ALTER PUBLICATION supabase_realtime ADD TABLE mesas;
+ALTER PUBLICATION supabase_realtime ADD TABLE estoque;
+ALTER PUBLICATION supabase_realtime ADD TABLE caixa_diario;
+`;
 
 export const SettingsManager: React.FC<SettingsManagerProps> = ({
   configuracoes,
@@ -50,6 +294,13 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
   const [isTestingDb, setIsTestingDb] = useState(false);
   const [dbTestMessage, setDbTestMessage] = useState<string | null>(null);
   const [isCepLoading, setIsCepLoading] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2500);
+  };
 
   // Sync state whenever configuracoes is updated from the cloud
   React.useEffect(() => {
@@ -128,7 +379,11 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
       if (isMissingTable) {
         // Still update local memory so the user doesn't lose their edits while creating the table
         await onSaveConfiguracoes(formData);
-        onOpenSupabaseModal();
+        if (onOpenSupabaseModal) {
+          onOpenSupabaseModal();
+        } else {
+          document.getElementById('supabase-schema-section')?.scrollIntoView({ behavior: 'smooth' });
+        }
         alert(
           'TABELA "configuracoes" AINDA NÃO CRIADA NO SEU SUPABASE!\n\n' +
           'A tabela "configuracoes" não foi encontrada no seu banco Supabase. O script SQL foi aberto na tela:\n' +
@@ -282,8 +537,11 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
 
                 <button
                   type="button"
-                  onClick={onOpenSupabaseModal}
-                  className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-750 text-emerald-400 border border-neutral-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
+                  onClick={() => {
+                    const el = document.getElementById('supabase-schema-section');
+                    el?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-750 text-emerald-400 border border-neutral-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Database className="w-3.5 h-3.5" />
                   Ver / Copiar SQL do Supabase
@@ -604,6 +862,58 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                 );
               })}
             </div>
+          </div>
+        </div>
+
+        {/* FULL WIDTH DEDICATED SECTION: ESTRUTURA DO BANCO (SUPABASE SQL SCHEMA) */}
+        <div
+          id="supabase-schema-section"
+          className="lg:col-span-12 bg-neutral-850 p-6 rounded-2xl border border-neutral-800 shadow-md flex flex-col gap-4"
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-950 border border-emerald-800 rounded-xl text-emerald-400">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-white uppercase tracking-tight flex items-center gap-2">
+                  <span>Estrutura do Banco (Supabase SQL Schema)</span>
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                    PostgreSQL DDL
+                  </span>
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Script DDL de tabelas, enums, bucket público de fotos ('produtos') e policies de Realtime para o SQL Editor do Supabase
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCopySql}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer uppercase ${
+                copiedSql
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-emerald-700 hover:bg-emerald-600 text-white hover:scale-105 active:scale-95'
+              }`}
+            >
+              {copiedSql ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              <span>{copiedSql ? 'Código SQL Copiado!' : 'Copiar Código SQL'}</span>
+            </button>
+          </div>
+
+          {/* Formatted Code Block */}
+          <div className="relative rounded-xl border border-neutral-800 bg-neutral-950 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2 bg-neutral-900 border-b border-neutral-800 text-xs text-neutral-400 font-mono">
+              <div className="flex items-center gap-2">
+                <Code2 className="w-4 h-4 text-emerald-400" />
+                <span>schema_restaurante_kaipira.sql</span>
+              </div>
+              <span className="text-[11px] text-neutral-500 hidden sm:inline">12 Módulos · 100% Compatível com Supabase Realtime & Storage</span>
+            </div>
+            <pre className="p-4 text-[11px] font-mono text-emerald-300 max-h-[380px] overflow-y-auto overflow-x-auto leading-relaxed select-all">
+              {SUPABASE_SCHEMA_SQL}
+            </pre>
           </div>
         </div>
       </form>

@@ -761,7 +761,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
             })}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-neutral-800 bg-neutral-900 max-h-[560px] overflow-y-auto">
+          <div className="table-responsive-touch overflow-x-auto rounded-xl border border-neutral-800 bg-neutral-900 max-h-[560px] overflow-y-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-neutral-850 text-neutral-400 uppercase text-[11px] font-bold border-b border-neutral-800 sticky top-0 z-10">
                 <tr>

@@ -70,6 +70,31 @@ interface CashRegisterProps {
   onConferirEntrega?: (pedidoId: number, conferidoPor: string) => void;
 }
 
+export function getFormaCanonica(forma: string): string {
+  const f = (forma || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+  if (f.includes('pix')) return 'pix';
+  if (f.includes('dinheiro') || f.includes('especie')) return 'dinheiro';
+  if (f.includes('debito')) return 'cartao_debito';
+  if (f.includes('credito')) return 'cartao_credito';
+  if (f.includes('vale') || f.includes('vr') || f.includes('refeicao') || f.includes('ticket')) return 'vale_refeicao';
+  if (f.includes('mensalista')) return 'mensalista';
+  return f || 'outro';
+}
+
+const CANONICAL_NAMES: Record<string, string> = {
+  pix: 'PIX (CHAVE / QR CODE)',
+  dinheiro: 'DINHEIRO (ESPÉCIE)',
+  cartao_debito: 'CARTÃO DE DÉBITO',
+  cartao_credito: 'CARTÃO DE CRÉDITO',
+  vale_refeicao: 'VALE REFEIÇÃO / VR',
+  mensalista: 'MENSALISTA (FATURADO)',
+  outro: 'OUTROS / DIVERSOS',
+};
+
 export const CashRegister: React.FC<CashRegisterProps> = ({
   caixa,
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
@@ -154,7 +179,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     return deliveryOrdersConferidos.reduce((sum, p) => sum + p.valor_total, 0);
   }, [deliveryOrdersConferidos]);
 
-  // Dynamic dictionary of payment methods (registered + any other found in movements)
+  // Dynamic dictionary of payment methods (canonical, deduplicated)
   const paymentStats = useMemo(() => {
     const statsMap: Record<
       string,
@@ -168,16 +193,37 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       }
     > = {};
 
-    // 1. Initialize with all registered active formas
-    formasPagamento.forEach((fp) => {
-      statsMap[fp.id.toLowerCase()] = {
-        id: fp.id,
-        nome: fp.nome,
-        tipo: fp.tipo,
+    // 1. Initialize with standard canonical forms
+    const standardKeys = ['dinheiro', 'pix', 'cartao_debito', 'cartao_credito', 'vale_refeicao', 'mensalista'];
+    standardKeys.forEach((key) => {
+      statsMap[key] = {
+        id: key,
+        nome: CANONICAL_NAMES[key] || key.toUpperCase(),
+        tipo: key,
         total: 0,
         qtd: 0,
-        taxa_operadora: fp.taxa_operadora || 0,
+        taxa_operadora: 0,
       };
+    });
+
+    // Merge registered formasPagamento using getFormaCanonica
+    formasPagamento.forEach((fp) => {
+      if (fp.ativo === false) return;
+      const canonicalKey = getFormaCanonica(fp.id || fp.nome);
+      if (!statsMap[canonicalKey]) {
+        statsMap[canonicalKey] = {
+          id: canonicalKey,
+          nome: CANONICAL_NAMES[canonicalKey] || fp.nome.toUpperCase(),
+          tipo: fp.tipo || canonicalKey,
+          total: 0,
+          qtd: 0,
+          taxa_operadora: fp.taxa_operadora || 0,
+        };
+      } else {
+        if (fp.taxa_operadora && statsMap[canonicalKey].taxa_operadora === 0) {
+          statsMap[canonicalKey].taxa_operadora = fp.taxa_operadora;
+        }
+      }
     });
 
     // 2. Aggregate movements with tipo === 'entrada_pedido'
@@ -199,44 +245,15 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       );
       if (isDeliveryNaoConferido) return;
 
-      const rawForma = String(m.forma || 'outro').toLowerCase().trim();
-      const formaKey =
-        rawForma === 'pix' || rawForma.includes('pix')
-          ? 'pix'
-          : rawForma === 'dinheiro' || rawForma.includes('dinheiro') || rawForma.includes('espécie') || rawForma.includes('especie')
-          ? 'dinheiro'
-          : rawForma === 'cartao_debito' || rawForma.includes('debito') || rawForma.includes('débito')
-          ? 'cartao_debito'
-          : rawForma === 'cartao_credito' || rawForma.includes('credito') || rawForma.includes('crédito')
-          ? 'cartao_credito'
-          : rawForma === 'vale_refeicao' || rawForma.includes('vale') || rawForma.includes('vr')
-          ? 'vale_refeicao'
-          : rawForma === 'mensalista' || rawForma.includes('mensalista')
-          ? 'mensalista'
-          : rawForma;
+      const formaKey = getFormaCanonica(m.forma || 'outro');
 
       if (m.tipo === 'entrada_pedido') {
         totalEntradasGerais += m.valor;
 
         if (!statsMap[formaKey]) {
-          const guessedNome =
-            formaKey === 'dinheiro'
-              ? 'DINHEIRO (ESPÉCIE)'
-              : formaKey === 'pix'
-              ? 'PIX (CHAVE / QR CODE)'
-              : formaKey === 'cartao_debito'
-              ? 'CARTÃO DE DÉBITO'
-              : formaKey === 'cartao_credito'
-              ? 'CARTÃO DE CRÉDITO'
-              : formaKey === 'vale_refeicao'
-              ? 'VALE REFEIÇÃO / VR'
-              : formaKey === 'mensalista'
-              ? 'MENSALISTA (FATURADO)'
-              : formaKey.toUpperCase();
-
           statsMap[formaKey] = {
             id: formaKey,
-            nome: guessedNome,
+            nome: CANONICAL_NAMES[formaKey] || formaKey.toUpperCase(),
             tipo: 'outro',
             total: 0,
             qtd: 0,
@@ -285,43 +302,14 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
           );
 
           if (!alreadyInMovs) {
-            const rawForma = String(pg.forma || 'outro').toLowerCase().trim();
-            const formaKey =
-              rawForma === 'pix' || rawForma.includes('pix')
-                ? 'pix'
-                : rawForma === 'dinheiro' || rawForma.includes('dinheiro') || rawForma.includes('espécie') || rawForma.includes('especie')
-                ? 'dinheiro'
-                : rawForma === 'cartao_debito' || rawForma.includes('debito') || rawForma.includes('débito')
-                ? 'cartao_debito'
-                : rawForma === 'cartao_credito' || rawForma.includes('credito') || rawForma.includes('crédito')
-                ? 'cartao_credito'
-                : rawForma === 'vale_refeicao' || rawForma.includes('vale') || rawForma.includes('vr')
-                ? 'vale_refeicao'
-                : rawForma === 'mensalista' || rawForma.includes('mensalista')
-                ? 'mensalista'
-                : rawForma;
+            const formaKey = getFormaCanonica(pg.forma || 'outro');
 
             totalEntradasGerais += pg.valor;
 
             if (!statsMap[formaKey]) {
-              const guessedNome =
-                formaKey === 'dinheiro'
-                  ? 'DINHEIRO (ESPÉCIE)'
-                  : formaKey === 'pix'
-                  ? 'PIX (CHAVE / QR CODE)'
-                  : formaKey === 'cartao_debito'
-                  ? 'CARTÃO DE DÉBITO'
-                  : formaKey === 'cartao_credito'
-                  ? 'CARTÃO DE CRÉDITO'
-                  : formaKey === 'vale_refeicao'
-                  ? 'VALE REFEIÇÃO / VR'
-                  : formaKey === 'mensalista'
-                  ? 'MENSALISTA (FATURADO)'
-                  : formaKey.toUpperCase();
-
               statsMap[formaKey] = {
                 id: formaKey,
-                nome: guessedNome,
+                nome: CANONICAL_NAMES[formaKey] || formaKey.toUpperCase(),
                 tipo: 'outro',
                 total: 0,
                 qtd: 0,
@@ -345,8 +333,12 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     const dinheiroGavetaEsperado =
       fundoAbertura + totalDinheiroEntradas + suprimentosDinheiro - sangriasDinheiro;
 
-    // Convert statsMap to sorted list
+    // Convert statsMap to sorted list, eliminating any duplicated or ghost entries
     const statsList = Object.values(statsMap)
+      .filter((item) => {
+        // Exibir sempre se tiver faturamento (> 0) OU se for uma das 4 formas principais ativas
+        return item.total > 0 || ['dinheiro', 'pix', 'cartao_debito', 'cartao_credito'].includes(item.id);
+      })
       .map((item) => ({
         ...item,
         percentual:
