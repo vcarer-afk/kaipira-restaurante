@@ -36,6 +36,7 @@ interface HeaderProps {
   isCloudConfigLoading?: boolean;
   cloudConfigSyncedAt?: Date | null;
   onRefreshCloudConfig?: () => void;
+  syncStatus?: 'sincronizado' | 'reconectando';
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -56,6 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
   isCloudConfigLoading = false,
   cloudConfigSyncedAt,
   onRefreshCloudConfig,
+  syncStatus = 'sincronizado',
 }) => {
   const theme = THEMES[padraoCor] || THEMES.ambar;
 
@@ -120,16 +122,32 @@ export const Header: React.FC<HeaderProps> = ({
                 {isLunchTime ? 'Almoço (11h-14h)' : 'Fora do Almoço'}
               </span>
               <span aria-hidden="true">·</span>
-              <button
-                type="button"
-                onClick={onRefreshCloudConfig}
-                className="text-neutral-400 flex items-center gap-1 hover:text-cyan-300 transition-colors cursor-pointer"
-                title={cloudConfigSyncedAt ? `Configurações da Nuvem Carregadas (${cloudConfigSyncedAt.toLocaleTimeString('pt-BR')}) - Clique para recarregar` : 'Sincronizar com a nuvem'}
-              >
-                <Cloud className={`w-3 h-3 ${isCloudConfigLoading ? 'text-amber-400 animate-pulse' : 'text-cyan-400'}`} />
-                <span className="hidden sm:inline">{isCloudConfigLoading ? 'Carregando...' : 'Nuvem Ativa'}</span>
-                <span className="sm:hidden">{isCloudConfigLoading ? '...' : 'Nuvem'}</span>
-              </button>
+              {syncStatus === 'reconectando' ? (
+                <button
+                  type="button"
+                  onClick={onRefreshCloudConfig}
+                  className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] font-black text-amber-300 animate-pulse bg-amber-950/80 border border-amber-600 px-2 sm:px-2.5 py-0.5 rounded-full cursor-pointer shadow-sm"
+                  title="Conexão oscilando. Clique para forçar reconexão à nuvem."
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                  <span>Reconectando à Nuvem...</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onRefreshCloudConfig}
+                  className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold text-emerald-300 bg-emerald-950/70 border border-emerald-800 px-2 sm:px-2.5 py-0.5 rounded-full hover:bg-emerald-900/60 transition-colors cursor-pointer"
+                  title={
+                    cloudConfigSyncedAt
+                      ? `Sincronizado via Nuvem (${cloudConfigSyncedAt.toLocaleTimeString('pt-BR')}) - Clique para atualizar`
+                      : 'Sincronizado via Nuvem'
+                  }
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span className="hidden sm:inline">Sincronizado via Nuvem</span>
+                  <span className="sm:hidden">Nuvem OK</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -40,16 +40,9 @@ import { SupabaseInfoModal } from './components/SupabaseInfoModal';
 import { playAlertChime } from './utils/formatters';
 import { THEMES } from './utils/theme';
 
-// Seed data fallbacks if server offline
+// Configurações e dados estáticos essenciais
 import {
-  INITIAL_CATEGORIAS,
-  INITIAL_PRODUTOS,
-  INITIAL_MESAS,
-  INITIAL_CLIENTES,
-  INITIAL_PERFIS,
   INITIAL_USUARIOS,
-  INITIAL_CAIXA,
-  INITIAL_PEDIDOS,
   BAIRROS_PIRACICABA,
   INITIAL_CONFIGURACOES,
   INITIAL_FORMAS_PAGAMENTO,
@@ -97,13 +90,10 @@ import {
   zerarFinanceiroDiaSupabase,
 } from './services/supabaseClient';
 
-// Helper para enriquecer e garantir a descrição/nome completo do produto em todo o sistema
+// Helper para enriquecer a descrição/nome completo do produto usando estritamente os produtos cadastrados na nuvem
 export function enrichPedidosWithProductNames(peds: Pedido[], prods: Produto[]): Pedido[] {
   const prodMap = new Map<number, Produto>();
   prods.forEach((p) => prodMap.set(Number(p.id), p));
-  INITIAL_PRODUTOS.forEach((p) => {
-    if (!prodMap.has(Number(p.id))) prodMap.set(Number(p.id), p);
-  });
 
   return peds.map((ped) => ({
     ...ped,
@@ -151,14 +141,25 @@ export default function App() {
   const [isCloudConfigLoading, setIsCloudConfigLoading] = useState<boolean>(true);
   const [cloudConfigSyncedAt, setCloudConfigSyncedAt] = useState<Date | null>(null);
 
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [produtos, setProdutos] = useState<Produto[]>([]);
+  // Status de sincronização em tempo real com a nuvem ('sincronizado' | 'reconectando')
+  const [syncStatus, setSyncStatus] = useState<'sincronizado' | 'reconectando'>('sincronizado');
+
+  const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [mesas, setMesas] = useState<Mesa[]>([]);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [estoque, setEstoque] = useState<ItemEstoque[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>(INITIAL_USUARIOS);
-  const [estoque, setEstoque] = useState<ItemEstoque[]>([]); // 100% da nuvem Supabase - zero mock/local
-  const [caixa, setCaixa] = useState<CaixaDiario>(INITIAL_CAIXA);
-  const [pedidos, setPedidos] = useState<Pedido[]>([]); // 100% da nuvem - sem pedidos mock locais em mesas
+  const [caixa, setCaixa] = useState<CaixaDiario>({
+    id: 1,
+    data_caixa: new Date().toISOString().split('T')[0],
+    valor_abertura: 0.0,
+    status: 'aberto',
+    observacoes: '',
+    aberto_em: new Date().toISOString(),
+    movimentacoes: [],
+  });
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [bairros, setBairros] = useState<BairroTaxa[]>(BAIRROS_PIRACICABA);
   const [cardapioDiario, setCardapioDiario] = useState<CardapioDiarioConfig>({
@@ -226,6 +227,7 @@ export default function App() {
   // Fetch full cloud state from Supabase on load
   const fetchCloudState = useCallback(async () => {
     try {
+      setSyncStatus('sincronizado');
       await fetchCloudConfiguracoes();
 
       // Query Supabase tables directly (100% cloud, no static /api 405 error)
@@ -414,6 +416,7 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Conectando às tabelas em nuvem do Supabase...', err);
+      setSyncStatus('reconectando');
     } finally {
       setIsCloudConfigLoading(false);
     }
@@ -505,6 +508,17 @@ export default function App() {
           }
         )
         .on(
+          'broadcast',
+          { event: 'novo_pedido' },
+          (payload: any) => {
+            if (payload.payload) {
+              const novoPedido: Pedido = payload.payload;
+              setPedidos((prev) => [novoPedido, ...prev.filter((p) => p.id !== novoPedido.id)]);
+              playAlertChime('order');
+            }
+          }
+        )
+        .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'mesas' },
           (payload: any) => {
@@ -543,16 +557,20 @@ export default function App() {
         )
         .subscribe(async (status: string) => {
           if (status === 'SUBSCRIBED') {
+            setSyncStatus('sincronizado');
             try {
               await channel.track({
                 online_em: new Date().toISOString(),
                 device: navigator.userAgent.slice(0, 30),
               });
             } catch {}
+          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            setSyncStatus('reconectando');
           }
         });
     } catch (err) {
       console.warn('Supabase Realtime não disponível:', err);
+      setSyncStatus('reconectando');
     }
 
     return () => {
@@ -561,6 +579,54 @@ export default function App() {
       }
     };
   }, [fetchCloudConfiguracoes, fetchCloudState]);
+
+  // 1. Blindagem de Conexão Mobile (Tratamento de Tela Bloqueada e Segundo Plano)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isAuthenticated) {
+        // Ao reabrir o celular ou voltar para a aba, força atualização imediata da nuvem
+        fetchCloudState();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isAuthenticated, fetchCloudState]);
+
+  // 2. Timer de contingência (polling) de segurança a cada 6 segundos
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = setInterval(async () => {
+      try {
+        const peds = await fetchPedidosSupabase();
+        if (peds) {
+          setPedidos((prev) => enrichPedidosWithProductNames(peds, produtos));
+          setSyncStatus('sincronizado');
+        }
+        await fetchCloudState();
+      } catch (err) {
+        console.warn('Oscilação na conexão com a nuvem:', err);
+        setSyncStatus('reconectando');
+      }
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, fetchCloudState, produtos]);
+
+  // 3. Detecção de conexão de rede do navegador (online/offline)
+  useEffect(() => {
+    const handleOnline = () => {
+      setSyncStatus('sincronizado');
+      fetchCloudState();
+    };
+    const handleOffline = () => {
+      setSyncStatus('reconectando');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [fetchCloudState]);
 
   // Handle Login Success
   const handleLoginSuccess = (perfil: Perfil) => {
@@ -1231,6 +1297,7 @@ export default function App() {
         isCloudConfigLoading={isCloudConfigLoading}
         cloudConfigSyncedAt={cloudConfigSyncedAt}
         onRefreshCloudConfig={fetchCloudConfiguracoes}
+        syncStatus={syncStatus}
       />
 
       {/* Main Viewport Container */}
@@ -1473,6 +1540,29 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Rodapé com Indicador Visual Discreto de Sincronização em Nuvem (Mobile & Desktop) */}
+      <footer className="w-full bg-neutral-900/90 border-t border-neutral-800/80 px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-neutral-400">
+        <div className="flex items-center gap-2">
+          {syncStatus === 'sincronizado' ? (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/70 border border-emerald-800 text-emerald-300 font-bold text-[11px] shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+              <span>Sincronizado via Nuvem</span>
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-950/90 border border-amber-600 text-amber-300 font-black text-[11px] animate-pulse shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+              <span>Reconectando à Nuvem...</span>
+            </div>
+          )}
+          <span className="text-[10px] text-neutral-500 font-mono hidden md:inline">
+            · Conexão direta Supabase Realtime
+          </span>
+        </div>
+        <div className="text-[10px] text-neutral-500 font-mono text-center sm:text-right">
+          <span>{configuracoes.nomeRestaurante || 'RESTAURANTE KAIPIRA'} · {configuracoes.cidade || 'PIRACICABA'} - {configuracoes.uf || 'SP'}</span>
+        </div>
+      </footer>
 
       {/* Slide Navigation Menu (Configurable Left or Right) */}
       <SlideMenuRight

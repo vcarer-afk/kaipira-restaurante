@@ -197,12 +197,14 @@ export async function testarConexaoSupabase(
 
 /**
 /**
- * Pedidos operations via Supabase (Estrutura Relacional estrita em 2 etapas:
+/**
+ * Inserção direta de pedido no Supabase (Estrutura relacional estrita sem coluna itens em pedidos)
  * 1. Insere dados gerais na tabela 'pedidos' SEM a coluna 'itens' e recupera data[0].id
  * 2. Com o id em mãos, insere em lote (ou sequencial) na tabela 'itens_pedido'
  * 3. Se houver pagamentos imediatos (balcão/delivery), insere na tabela 'pagamentos'
+ * 4. Dispara notificação no canal Realtime para sincronizar imediatamente as telas do PC (KDS, LED, Caixa, Expedição)
  */
-export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
+export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
   const now = new Date().toISOString();
   const idFallback = pedido.id || Date.now();
   const codigoSenhaFallback = pedido.codigo_senha || Math.floor(100 + Math.random() * 900);
@@ -359,12 +361,27 @@ export async function salvarPedidoSupabase(pedido: any): Promise<Pedido> {
       };
     }),
     pagamentos: pagamentosFormatados.length > 0 ? pagamentosFormatados : (pedido.pagamentos || []),
+    pagamento_confirmado: !!pedido.pagamento_confirmado,
     criado_em: pedidoPayload.criado_em,
     atualizado_em: now,
   };
 
+  // Disparo de notificação imediata via canal Realtime para sincronizar telas do PC (KDS, LED, Caixa, Expedição)
+  try {
+    const syncChannel = supabase.channel('restaurante_kaipira_cloud_sync');
+    syncChannel.send({
+      type: 'broadcast',
+      event: 'novo_pedido',
+      payload: novoPedidoCompleto,
+    });
+  } catch (rtErr) {
+    console.warn('Aviso ao disparar broadcast realtime:', rtErr);
+  }
+
   return novoPedidoCompleto;
 }
+
+export const salvarPedidoSupabase = criarPedidoSupabase;
 
 // Estado de conferências mantido exclusivamente em nuvem Supabase e sincronizado em memória
 const conferenciasSessao: Record<number, { conferido_por: string; conferido_em: string }> = {};
@@ -479,6 +496,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           taxa_entrega: Number(p.taxa_entrega) || 0,
           itens: Array.isArray(p.itens) ? p.itens : [],
           pagamentos: Array.isArray(p.pagamentos) ? p.pagamentos : [],
+          pagamento_confirmado: Boolean(p.pagamento_confirmado),
           conferencia_entrega: statusConf,
           conferido_por: p.conferido_por || confLocal?.conferido_por || undefined,
           conferido_em: p.conferido_em || confLocal?.conferido_em || undefined,
@@ -554,6 +572,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           taxa_entrega: Number(p.taxa_entrega) || 0,
           itens: pedItens.length > 0 ? pedItens : (Array.isArray(p.itens) ? p.itens : []),
           pagamentos: pedPags.length > 0 ? pedPags : (Array.isArray(p.pagamentos) ? p.pagamentos : []),
+          pagamento_confirmado: Boolean(p.pagamento_confirmado),
           conferencia_entrega: statusConf,
           conferido_por: p.conferido_por || confLocal?.conferido_por || undefined,
           conferido_em: p.conferido_em || confLocal?.conferido_em || undefined,

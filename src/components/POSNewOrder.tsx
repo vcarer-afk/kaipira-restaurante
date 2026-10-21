@@ -13,7 +13,7 @@ import {
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { UpperInput, UpperTextarea } from './UpperInput';
 import { formatBRL, consultarViaCep, cleanDigits, playAlertChime } from '../utils/formatters';
-import { salvarPedidoSupabase } from '../services/supabaseClient';
+import { criarPedidoSupabase } from '../services/supabaseClient';
 import {
   Bike,
   Store,
@@ -378,7 +378,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
               },
             ];
 
-      const novoPedido = await salvarPedidoSupabase({
+      const novoPedido = await criarPedidoSupabase({
         ...payload,
         status: 'pendente',
         valor_total: total,
