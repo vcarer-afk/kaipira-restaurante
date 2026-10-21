@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { Cloud, Menu, Clock, Users } from 'lucide-react';
+import { Cloud, Menu, Clock, Users, ChefHat, Bike } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
@@ -28,6 +28,7 @@ interface HeaderProps {
   onOpenSupabaseModal?: () => void;
   onOpenSlideMenu: () => void;
   pendingKdsCount: number;
+  deliveryProntosCount?: number;
   activeConnectionsCount?: number;
   posicaoMenu?: PosicaoMenu;
   padraoCor?: PadraoCor;
@@ -47,6 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSupabaseModal,
   onOpenSlideMenu,
   pendingKdsCount,
+  deliveryProntosCount = 0,
   activeConnectionsCount = 1,
   posicaoMenu = 'direita',
   padraoCor = 'ambar',
@@ -132,8 +134,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Zone 2: Realtime Clock & Admin Active Connections */}
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        {/* Zone 2: Realtime Clock & Quick Nav for KDS & Expedição */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           {/* Relógio em tempo real "00:00" */}
           <div
             className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-neutral-850/90 border border-neutral-750 shadow-inner"
@@ -145,16 +147,68 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
 
+          {/* Quick Nav: KDS COZINHA (Pisca em vermelho quando houver pedidos pendentes/em_preparacao) */}
+          <button
+            type="button"
+            onClick={() => onSelectTab('kds')}
+            className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+              pendingKdsCount > 0
+                ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
+                : activeTab === 'kds'
+                ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
+                : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
+            }`}
+            title={
+              pendingKdsCount > 0
+                ? `${pendingKdsCount} pedido(s) pendente(s) na cozinha!`
+                : 'KDS Cozinha'
+            }
+          >
+            <ChefHat className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline uppercase">KDS</span>
+            {pendingKdsCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
+                {pendingKdsCount}
+              </span>
+            )}
+          </button>
+
+          {/* Quick Nav: EXPEDIÇÃO DELIVERY (Pisca em vermelho quando houver pedidos prontos aguardando entrega) */}
+          <button
+            type="button"
+            onClick={() => onSelectTab('expedicao')}
+            className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+              deliveryProntosCount > 0
+                ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
+                : activeTab === 'expedicao'
+                ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
+                : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
+            }`}
+            title={
+              deliveryProntosCount > 0
+                ? `${deliveryProntosCount} entrega(s) pronta(s) aguardando despacho!`
+                : 'Expedição & Delivery'
+            }
+          >
+            <Bike className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline uppercase">Expedição</span>
+            {deliveryProntosCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
+                {deliveryProntosCount}
+              </span>
+            )}
+          </button>
+
           {/* Somente na tela do Administrador/Master/Supervisor: Conexões Ativas "Conectados xx" (oculto em mobile < 640px) */}
           {(currentRole === 'admin' || currentRole === 'master' || currentRole === 'supervisor') && (
             <div
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-bold shadow-xs whitespace-nowrap"
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-bold shadow-xs whitespace-nowrap"
               title="Dispositivos e operadores conectados pela internet em tempo real"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
               <Users className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="font-mono font-black tracking-tight">
-                Conectados {String(activeConnectionsCount || 1).padStart(2, '0')}
+                {String(activeConnectionsCount || 1).padStart(2, '0')}
               </span>
             </div>
           )}
@@ -178,13 +232,17 @@ export const Header: React.FC<HeaderProps> = ({
           {posicaoMenu !== 'esquerda' && (
             <button
               onClick={onOpenSlideMenu}
-              className={`px-3 py-1.5 sm:px-3.5 sm:py-2 ${theme.primaryBg} ${theme.primaryHover} text-white rounded-xl text-xs font-black flex items-center gap-1.5 sm:gap-2 shadow-md transition-all hover:scale-105 active:scale-95 uppercase cursor-pointer shrink-0`}
+              className={`px-3 py-1.5 sm:px-3.5 sm:py-2 ${
+                pendingKdsCount > 0 || deliveryProntosCount > 0
+                  ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse border border-red-400'
+                  : `${theme.primaryBg} ${theme.primaryHover} text-white`
+              } rounded-xl text-xs font-black flex items-center gap-1.5 sm:gap-2 shadow-md transition-all hover:scale-105 active:scale-95 uppercase cursor-pointer shrink-0`}
               title="Abrir Menu Principal"
             >
               <Menu className="w-4 h-4" />
               <span className="hidden xs:inline">Menu</span>
-              {pendingKdsCount > 0 && (
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+              {(pendingKdsCount > 0 || deliveryProntosCount > 0) && (
+                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
               )}
             </button>
           )}

@@ -86,6 +86,10 @@ export async function fetchConfiguracoesFromSupabase(
       posicaoMenu: (data.posicao_menu || dadosObj.posicaoMenu || INITIAL_CONFIGURACOES.posicaoMenu) as any,
       padraoCor: (data.padrao_cor || dadosObj.padraoCor || INITIAL_CONFIGURACOES.padraoCor) as any,
       modoOperacao: (data.modo_operacao || dadosObj.modoOperacao || 'producao') as any,
+      ledCor: dadosObj.ledCor || (data as any).led_cor || 'vermelho',
+      ledFonte: dadosObj.ledFonte || (data as any).led_fonte || 'mono',
+      ledVoz: dadosObj.ledVoz || (data as any).led_voz || 'padrao',
+      ledCampainha: dadosObj.ledCampainha || (data as any).led_campainha || 'ding_dong',
     };
   } catch (err) {
     console.warn('Falha na requisição Supabase configuracoes:', err);

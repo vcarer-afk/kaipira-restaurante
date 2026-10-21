@@ -34,6 +34,7 @@ interface SlideMenuRightProps {
   onOpenSupabaseModal?: () => void;
   onLogout: () => void;
   pendingKdsCount: number;
+  deliveryProntosCount?: number;
   posicaoMenu?: PosicaoMenu;
   padraoCor?: PadraoCor;
 }
@@ -49,6 +50,7 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
   onOpenSupabaseModal,
   onLogout,
   pendingKdsCount,
+  deliveryProntosCount = 0,
   posicaoMenu = 'direita',
   padraoCor = 'ambar',
 }) => {
@@ -110,6 +112,7 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
       label: 'EXPEDIÇÃO DELIVERY',
       desc: 'Controle de motoboys e rotas',
       icon: Bike,
+      badge: deliveryProntosCount > 0 ? deliveryProntosCount : undefined,
       roles: ['admin', 'atendente', 'entregador'],
     },
     {
@@ -235,13 +238,18 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
             const isActive = activeTab === item.id;
             // Master e Supervisor têm livre acesso a todas as telas
             const hasAccess = currentRole === 'master' || currentRole === 'admin' || currentRole === 'supervisor' || item.roles.includes(currentRole);
+            const isPulsingRed =
+              (item.id === 'kds' && pendingKdsCount > 0) ||
+              (item.id === 'expedicao' && deliveryProntosCount > 0);
 
             return (
               <button
                 key={item.id}
                 onClick={() => handleItemClick(item.id)}
-                className={`w-full p-2.5 rounded-xl flex items-center justify-between text-left transition-all ${
-                  isActive
+                className={`w-full p-2.5 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer ${
+                  isPulsingRed
+                    ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/50'
+                    : isActive
                     ? `${theme.primaryBg} text-white font-bold shadow-md`
                     : hasAccess
                     ? 'hover:bg-neutral-800/80 text-neutral-300 hover:text-white'
@@ -251,7 +259,11 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
                 <div className="flex items-center gap-3">
                   <div
                     className={`p-2 rounded-lg ${
-                      isActive ? 'bg-black/20 text-white' : 'bg-neutral-800 text-neutral-300'
+                      isPulsingRed
+                        ? 'bg-white/20 text-white'
+                        : isActive
+                        ? 'bg-black/20 text-white'
+                        : 'bg-neutral-800 text-neutral-300'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
@@ -262,7 +274,11 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
                     </span>
                     <span
                       className={`text-[10px] block ${
-                        isActive ? 'text-white/80' : 'text-neutral-500'
+                        isPulsingRed
+                          ? 'text-red-100 font-bold'
+                          : isActive
+                          ? 'text-white/80'
+                          : 'text-neutral-500'
                       }`}
                     >
                       {item.desc}
@@ -272,11 +288,17 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
 
                 <div className="flex items-center gap-1.5">
                   {item.badge && (
-                    <span className="px-1.5 py-0.5 text-[10px] bg-red-600 text-white font-black rounded-sm tabular-nums">
+                    <span
+                      className={`px-1.5 py-0.5 text-[10px] font-black rounded-sm tabular-nums ${
+                        isPulsingRed
+                          ? 'bg-white text-red-700'
+                          : 'bg-red-600 text-white'
+                      }`}
+                    >
                       {item.badge}
                     </span>
                   )}
-                  <ChevronRight className={`w-4 h-4 ${isActive ? 'text-white' : 'text-neutral-600'}`} />
+                  <ChevronRight className={`w-4 h-4 ${isPulsingRed || isActive ? 'text-white' : 'text-neutral-600'}`} />
                 </div>
               </button>
             );

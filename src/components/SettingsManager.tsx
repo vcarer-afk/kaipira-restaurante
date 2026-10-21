@@ -26,6 +26,10 @@ import {
   Sparkles,
   Copy,
   Code2,
+  Tv,
+  Bell,
+  Volume2,
+  Type,
 } from 'lucide-react';
 
 interface SettingsManagerProps {
@@ -353,6 +357,88 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     } finally {
       setIsTestingDb(false);
     }
+  };
+
+  const testarCampainhaSintetizada = (tipo: string) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+      const now = ctx.currentTime;
+
+      const playTone = (freq: number, start: number, duration: number, gainPeak = 0.85, type: OscillatorType = 'sine') => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(gainPeak, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + duration);
+      };
+
+      if (tipo === 'carrilhao') {
+        playTone(523.25, now, 0.7, 0.75);
+        playTone(659.25, now + 0.22, 0.8, 0.85);
+        playTone(783.99, now + 0.44, 1.2, 0.95);
+      } else if (tipo === 'bip_duplo') {
+        playTone(880, now, 0.12, 0.8, 'square');
+        playTone(880, now + 0.16, 0.16, 0.8, 'square');
+      } else if (tipo === 'marimba') {
+        playTone(440, now, 0.6, 0.85, 'triangle');
+        playTone(880, now + 0.05, 0.4, 0.4, 'sine');
+        playTone(554.37, now + 0.15, 0.7, 0.8, 'triangle');
+      } else if (tipo === 'gongo') {
+        playTone(220, now, 2.5, 0.95, 'sine');
+        playTone(110, now, 2.8, 0.6, 'sine');
+      } else {
+        // ding_dong
+        playTone(659.25, now, 0.75, 0.85, 'sine');
+        playTone(523.25, now + 0.3, 1.4, 0.9, 'sine');
+      }
+    } catch (e) {
+      console.warn('Audio test error:', e);
+    }
+  };
+
+  const testarVozSintetizada = (tipo: string) => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.resume();
+    const utterance = new SpeechSynthesisUtterance('Senha número 42');
+    utterance.lang = 'pt-BR';
+    if (tipo === 'pausada') {
+      utterance.rate = 0.85;
+      utterance.pitch = 1.0;
+    } else if (tipo === 'rapida') {
+      utterance.rate = 1.1;
+      utterance.pitch = 1.0;
+    } else if (tipo === 'grave') {
+      utterance.rate = 0.92;
+      utterance.pitch = 0.8;
+    } else if (tipo === 'aguda') {
+      utterance.rate = 0.95;
+      utterance.pitch = 1.25;
+    } else {
+      utterance.rate = 0.92;
+      utterance.pitch = 1.0;
+    }
+    const vozes = window.speechSynthesis.getVoices();
+    const vozPt = vozes.find((v) => v.lang.includes('pt-BR') || v.lang.includes('pt'));
+    if (vozPt) utterance.voice = vozPt;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleUpdateLedConfig = (field: 'ledCor' | 'ledFonte' | 'ledCampainha' | 'ledVoz', value: string) => {
+    const updated = { ...formData, [field]: value };
+    setFormData(updated);
+    onSaveConfiguracoes(updated);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -861,6 +947,226 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+
+        {/* FULL WIDTH DEDICATED SECTION: PERSONALIZAÇÃO DO PAINEL LED DE SENHAS */}
+        <div className="lg:col-span-12 bg-neutral-850 p-6 rounded-2xl border border-neutral-800 shadow-md flex flex-col gap-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-red-950 border border-red-800 rounded-xl text-red-400">
+                <Tv className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-white uppercase tracking-tight flex items-center gap-2">
+                  <span>Personalização do Painel LED de Senhas</span>
+                  <span className="text-[10px] font-mono font-bold text-red-400 bg-red-950 px-2 py-0.5 rounded border border-red-800">
+                    Modo TV
+                  </span>
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Configure a cor do LED, a tipografia digital, o som da campainha sintetizada e a entonação da voz para a TV do salão
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 1. Cores de LED */}
+            <div className="bg-neutral-900 p-4 rounded-xl border border-neutral-800 flex flex-col justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-mono font-black uppercase text-neutral-400 flex items-center gap-1.5 mb-1">
+                  <Palette className="w-3.5 h-3.5 text-red-400" />
+                  1. Cor do LED
+                </span>
+                <p className="text-[11px] text-neutral-500 mb-2">
+                  Brilho fluorescente dos dígitos gigantes na tela
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                {[
+                  { id: 'vermelho', nome: 'Vermelho Vivo', hex: '#ff2020' },
+                  { id: 'verde', nome: 'Verde Fósforo Matrix', hex: '#22ff44' },
+                  { id: 'ambar', nome: 'Âmbar / Laranja Clássico', hex: '#ff9900' },
+                  { id: 'ciano', nome: 'Ciano / Azul Elétrico', hex: '#00eeff' },
+                  { id: 'branco', nome: 'Branco Gelo Puro', hex: '#ffffff' },
+                ].map((c) => {
+                  const isSel = (formData.ledCor || 'vermelho') === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => handleUpdateLedConfig('ledCor', c.id)}
+                      className={`w-full px-3 py-2 rounded-lg text-left text-xs font-bold flex items-center justify-between border transition-all cursor-pointer ${
+                        isSel
+                          ? 'bg-neutral-800 border-white/40 ring-1 ring-white/30 text-white'
+                          : 'bg-neutral-850 border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-3.5 h-3.5 rounded-full border border-black/40 shadow-xs shrink-0"
+                          style={{ backgroundColor: c.hex }}
+                        />
+                        <span className="truncate">{c.nome}</span>
+                      </div>
+                      {isSel && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Fontes de LED */}
+            <div className="bg-neutral-900 p-4 rounded-xl border border-neutral-800 flex flex-col justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-mono font-black uppercase text-neutral-400 flex items-center gap-1.5 mb-1">
+                  <Type className="w-3.5 h-3.5 text-cyan-400" />
+                  2. Fonte dos Dígitos
+                </span>
+                <p className="text-[11px] text-neutral-500 mb-2">
+                  Estilo tipográfico do display numérico
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                {[
+                  { id: 'mono', nome: '7-Segmentos Digital', preview: 'font-mono tracking-widest' },
+                  { id: 'jetbrains', nome: 'JetBrains Tech', preview: 'font-mono font-black' },
+                  { id: 'grotesca', nome: 'Grotesca / Impact', preview: 'font-sans font-black' },
+                  { id: 'orbitron', nome: 'Orbitron Sci-Fi', preview: 'font-mono uppercase' },
+                  { id: 'classico', nome: 'Display Clássico', preview: 'font-sans uppercase font-bold' },
+                ].map((f) => {
+                  const isSel = (formData.ledFonte || 'mono') === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => handleUpdateLedConfig('ledFonte', f.id)}
+                      className={`w-full px-3 py-2 rounded-lg text-left text-xs font-bold flex items-center justify-between border transition-all cursor-pointer ${
+                        isSel
+                          ? 'bg-neutral-800 border-white/40 ring-1 ring-white/30 text-white'
+                          : 'bg-neutral-850 border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'
+                      }`}
+                    >
+                      <span className={`truncate ${f.preview}`}>{f.nome}</span>
+                      {isSel && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. Campainhas Sintetizadas */}
+            <div className="bg-neutral-900 p-4 rounded-xl border border-neutral-800 flex flex-col justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-mono font-black uppercase text-neutral-400 flex items-center gap-1.5 mb-1">
+                  <Bell className="w-3.5 h-3.5 text-amber-400" />
+                  3. Campainha de Chamada
+                </span>
+                <p className="text-[11px] text-neutral-500 mb-2">
+                  Efeito sonoro que soa antes da voz
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                {[
+                  { id: 'ding_dong', nome: 'Ding-Dong Tradicional', desc: '659Hz -> 523Hz' },
+                  { id: 'carrilhao', nome: 'Carrilhão Triplo', desc: '523Hz -> 659Hz -> 784Hz' },
+                  { id: 'bip_duplo', nome: 'Bip Eletrônico Duplo', desc: 'Pulso rápido 880Hz' },
+                  { id: 'marimba', nome: 'Marimba Aconchegante', desc: 'Harmônicos orgânicos' },
+                  { id: 'gongo', nome: 'Gongo Profundo', desc: 'Ressonância grave 220Hz' },
+                ].map((camp) => {
+                  const isSel = (formData.ledCampainha || 'ding_dong') === camp.id;
+                  return (
+                    <div
+                      key={camp.id}
+                      className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between border transition-all ${
+                        isSel
+                          ? 'bg-neutral-800 border-white/40 ring-1 ring-white/30 text-white'
+                          : 'bg-neutral-850 border-neutral-800 text-neutral-400'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateLedConfig('ledCampainha', camp.id)}
+                        className="flex-1 text-left cursor-pointer"
+                      >
+                        <span className="text-xs font-bold block truncate">{camp.nome}</span>
+                        <span className="text-[10px] text-neutral-500 block">{camp.desc}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          testarCampainhaSintetizada(camp.id);
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-amber-400 hover:bg-neutral-700/80 rounded-md cursor-pointer transition-colors shrink-0"
+                        title="Ouvir amostra desta campainha"
+                      >
+                        <Volume2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 4. Variações de Voz */}
+            <div className="bg-neutral-900 p-4 rounded-xl border border-neutral-800 flex flex-col justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-mono font-black uppercase text-neutral-400 flex items-center gap-1.5 mb-1">
+                  <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                  4. Variação de Voz
+                </span>
+                <p className="text-[11px] text-neutral-500 mb-2">
+                  Locução automática de "Senha número..."
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                {[
+                  { id: 'padrao', nome: 'Voz Padrão pt-BR', desc: 'Cadência natural' },
+                  { id: 'pausada', nome: 'Voz Pausada', desc: 'Velocidade 0.85x' },
+                  { id: 'rapida', nome: 'Voz Rápida / Ágil', desc: 'Velocidade 1.1x' },
+                  { id: 'grave', nome: 'Voz Grave', desc: 'Tom encorpado (pitch 0.8)' },
+                  { id: 'aguda', nome: 'Voz Aguda / Chamativa', desc: 'Tom vibrante (pitch 1.25)' },
+                ].map((v) => {
+                  const isSel = (formData.ledVoz || 'padrao') === v.id;
+                  return (
+                    <div
+                      key={v.id}
+                      className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between border transition-all ${
+                        isSel
+                          ? 'bg-neutral-800 border-white/40 ring-1 ring-white/30 text-white'
+                          : 'bg-neutral-850 border-neutral-800 text-neutral-400'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateLedConfig('ledVoz', v.id)}
+                        className="flex-1 text-left cursor-pointer"
+                      >
+                        <span className="text-xs font-bold block truncate">{v.nome}</span>
+                        <span className="text-[10px] text-neutral-500 block">{v.desc}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          testarVozSintetizada(v.id);
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-emerald-400 hover:bg-neutral-700/80 rounded-md cursor-pointer transition-colors shrink-0"
+                        title="Ouvir amostra desta voz"
+                      >
+                        <Volume2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

@@ -1,12 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Pedido } from '../types';
-import { Volume2, VolumeX, Maximize, Minimize, Bell } from 'lucide-react';
+import { Pedido, ConfiguracoesSistema } from '../types';
+import { Volume2, VolumeX, Maximize, Minimize, Bell, Sliders, ArrowLeft } from 'lucide-react';
 
 interface LedPanelProps {
   pedidos: Pedido[];
+  configuracoes?: ConfiguracoesSistema;
+  onOpenSettings?: () => void;
+  onBack?: () => void;
 }
 
-export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
+export const LedPanel: React.FC<LedPanelProps> = ({
+  pedidos,
+  configuracoes,
+  onOpenSettings,
+  onBack,
+}) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lastCalledOrder, setLastCalledOrder] = useState<Pedido | null>(null);
   const [isBlinking, setIsBlinking] = useState(false);
@@ -19,6 +27,54 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
   const speechTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastProcessedIdRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Settings
+  const ledCor = configuracoes?.ledCor || 'vermelho';
+  const ledFonte = configuracoes?.ledFonte || 'mono';
+  const ledCampainha = configuracoes?.ledCampainha || 'ding_dong';
+  const ledVoz = configuracoes?.ledVoz || 'padrao';
+
+  // Color Styles Configuration
+  const COLOR_STYLES: Record<string, { color: string; glow: string; unlit: string }> = {
+    vermelho: {
+      color: '#ff2020',
+      glow: '0 0 50px rgba(255,32,32,0.9), 0 0 90px rgba(255,0,0,0.6)',
+      unlit: '#3b0808',
+    },
+    verde: {
+      color: '#22ff44',
+      glow: '0 0 50px rgba(34,255,68,0.9), 0 0 90px rgba(0,255,50,0.6)',
+      unlit: '#07360e',
+    },
+    ambar: {
+      color: '#ff9900',
+      glow: '0 0 50px rgba(255,153,0,0.9), 0 0 90px rgba(255,130,0,0.6)',
+      unlit: '#3b2200',
+    },
+    ciano: {
+      color: '#00eeff',
+      glow: '0 0 50px rgba(0,238,255,0.9), 0 0 90px rgba(0,200,255,0.6)',
+      unlit: '#022933',
+    },
+    branco: {
+      color: '#ffffff',
+      glow: '0 0 50px rgba(255,255,255,0.9), 0 0 90px rgba(200,220,255,0.6)',
+      unlit: '#262626',
+    },
+  };
+
+  const activeColor = COLOR_STYLES[ledCor] || COLOR_STYLES.vermelho;
+
+  // Font Styles Configuration
+  const FONT_CLASSES: Record<string, string> = {
+    mono: 'font-mono tracking-widest',
+    jetbrains: 'font-mono font-black tracking-normal',
+    grotesca: 'font-sans font-black tracking-tighter',
+    orbitron: 'font-mono font-black uppercase tracking-wider',
+    classico: 'font-sans font-black uppercase tracking-tight',
+  };
+
+  const activeFontClass = FONT_CLASSES[ledFonte] || FONT_CLASSES.mono;
 
   // Ready orders sorted by most recently updated
   const readyOrders = pedidos
@@ -61,46 +117,61 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
     }
   }, [getAudioContext]);
 
-  // Authentic Web Audio API "Ding-Dong" chime
-  const playDingDong = useCallback(() => {
-    try {
-      const ctx = getAudioContext();
-      if (!ctx) return;
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
+  // Play synthesized Chimes (5 types)
+  const tocarCampainha = useCallback(
+    (tipoCampainha: string) => {
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+        const now = ctx.currentTime;
+
+        const playTone = (freq: number, start: number, duration: number, gainPeak = 0.85, type: OscillatorType = 'sine') => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0, start);
+          gain.gain.linearRampToValueAtTime(gainPeak, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + duration);
+        };
+
+        if (tipoCampainha === 'carrilhao') {
+          // Carrilhão Triplo: 523Hz -> 659Hz -> 784Hz
+          playTone(523.25, now, 0.7, 0.75);
+          playTone(659.25, now + 0.22, 0.8, 0.85);
+          playTone(783.99, now + 0.44, 1.2, 0.95);
+        } else if (tipoCampainha === 'bip_duplo') {
+          // Bip Eletrônico Duplo: 880Hz rápido
+          playTone(880, now, 0.12, 0.8, 'square');
+          playTone(880, now + 0.16, 0.16, 0.8, 'square');
+        } else if (tipoCampainha === 'marimba') {
+          // Marimba Aconchegante: harmônicos orgânicos
+          playTone(440, now, 0.6, 0.85, 'triangle');
+          playTone(880, now, 0.4, 0.4, 'sine');
+          playTone(554.37, now + 0.15, 0.7, 0.8, 'triangle');
+        } else if (tipoCampainha === 'gongo') {
+          // Gongo Profundo: ressonância senoidal grave 220Hz com fade longo
+          playTone(220, now, 2.5, 0.95, 'sine');
+          playTone(110, now, 2.8, 0.6, 'sine');
+          playTone(440, now, 1.2, 0.35, 'triangle');
+        } else {
+          // ding_dong (padrão)
+          playTone(659.25, now, 0.75, 0.85, 'sine'); // Ding (Mi5)
+          playTone(523.25, now + 0.3, 1.4, 0.9, 'sine'); // Dong (Dó5)
+        }
+      } catch (err) {
+        console.warn('AudioContext notice:', err);
       }
-      const now = ctx.currentTime;
-
-      // Tone 1: "Ding" (Mi5 / 659.25 Hz)
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(659.25, now);
-      gain1.gain.setValueAtTime(0, now);
-      gain1.gain.linearRampToValueAtTime(0.85, now + 0.02);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.75);
-
-      // Tone 2: "Dong" (Dó5 / 523.25 Hz) playing 0.3s later with natural decay
-      const startTime2 = now + 0.3;
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(523.25, startTime2);
-      gain2.gain.setValueAtTime(0, startTime2);
-      gain2.gain.linearRampToValueAtTime(0.9, startTime2 + 0.03);
-      gain2.gain.exponentialRampToValueAtTime(0.001, startTime2 + 1.4);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start(startTime2);
-      osc2.stop(startTime2 + 1.4);
-    } catch (err) {
-      console.warn('AudioContext playback notice:', err);
-    }
-  }, [getAudioContext]);
+    },
+    [getAudioContext]
+  );
 
   // Blink sequence: exactly 4 times in 4 seconds (1s cycle: 0.5s lit, 0.5s off)
   const triggerBlinkSequence = useCallback(() => {
@@ -113,10 +184,6 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
     setIsLedLit(true);
     blinkStepRef.current = 0;
 
-    // 8 steps of 500ms = 4000ms (4 seconds).
-    // Steps 0, 2, 4, 6: lit (0.5s)
-    // Steps 1, 3, 5, 7: unlit (0.5s)
-    // Step 8: finish blinking, stay permanently lit.
     blinkTimerRef.current = setInterval(() => {
       blinkStepRef.current += 1;
       const currentStep = blinkStepRef.current;
@@ -134,56 +201,71 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
     }, 500);
   }, []);
 
-  // Web Speech API: tratamento assíncrono e carregamento dinâmico de vozes
-  const falarSenha = useCallback((numero: number) => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.resume();
+  // Web Speech API: tratamento assíncrono com variações de voz configuráveis
+  const falarSenha = useCallback(
+    (numero: number, variacaoVoz: string) => {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
 
-    const texto = `Senha número ${numero}`;
-    const utterance = new SpeechSynthesisUtterance(texto);
-    utterance.lang = 'pt-BR';
-    utterance.rate = 0.92;
-    utterance.pitch = 1.0;
+      const texto = `Senha número ${numero}`;
+      const utterance = new SpeechSynthesisUtterance(texto);
+      utterance.lang = 'pt-BR';
 
-    const carregarEFalar = () => {
-      const vozes = window.speechSynthesis.getVoices();
-      const vozPt = vozes.find((v) => v.lang.includes('pt-BR') || v.lang.includes('pt'));
-      if (vozPt) utterance.voice = vozPt;
-      window.speechSynthesis.speak(utterance);
-    };
+      // Configurações de voz
+      if (variacaoVoz === 'pausada') {
+        utterance.rate = 0.85;
+        utterance.pitch = 1.0;
+      } else if (variacaoVoz === 'rapida') {
+        utterance.rate = 1.1;
+        utterance.pitch = 1.0;
+      } else if (variacaoVoz === 'grave') {
+        utterance.rate = 0.92;
+        utterance.pitch = 0.8;
+      } else if (variacaoVoz === 'aguda') {
+        utterance.rate = 0.95;
+        utterance.pitch = 1.25;
+      } else {
+        // padrao
+        utterance.rate = 0.92;
+        utterance.pitch = 1.0;
+      }
 
-    if (window.speechSynthesis.getVoices().length === 0) {
-      window.speechSynthesis.onvoiceschanged = carregarEFalar;
-    } else {
-      carregarEFalar();
-    }
-  }, []);
+      const carregarEFalar = () => {
+        const vozes = window.speechSynthesis.getVoices();
+        const vozPt = vozes.find((v) => v.lang.includes('pt-BR') || v.lang.includes('pt'));
+        if (vozPt) utterance.voice = vozPt;
+        window.speechSynthesis.speak(utterance);
+      };
+
+      if (window.speechSynthesis.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = carregarEFalar;
+      } else {
+        carregarEFalar();
+      }
+    },
+    []
+  );
 
   // Sincronização Exata:
-  // 1. Toca som de campainha ("Ding-Dong")
+  // 1. Toca campainha
   // 2. Aciona o efeito de piscar os dígitos vermelhos 4 vezes durante 4 segundos
-  // 3. Após 800ms (ao término do ding-dong), dispara falarSenha(numero)
+  // 3. Após 800ms, dispara falarSenha(numero)
   const anunciarSenha = useCallback(
     (numero: number) => {
-      // 1. Toca som de campainha
-      playDingDong();
-
-      // 2. Aciona piscar 4x durante 4s
+      tocarCampainha(ledCampainha);
       triggerBlinkSequence();
 
-      // 3. Cancela agendamentos anteriores
       if (speechTimeoutRef.current) {
         clearTimeout(speechTimeoutRef.current);
         speechTimeoutRef.current = null;
       }
 
-      // Após 800ms, dispara a fala
       speechTimeoutRef.current = setTimeout(() => {
-        falarSenha(numero);
+        falarSenha(numero, ledVoz);
       }, 800);
     },
-    [playDingDong, triggerBlinkSequence, falarSenha]
+    [tocarCampainha, ledCampainha, triggerBlinkSequence, falarSenha, ledVoz]
   );
 
   // Pre-load voices for SpeechSynthesis
@@ -200,7 +282,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
     }
   }, []);
 
-  // Clean up timers & speech on unmount
+  // Clean up timers on unmount
   useEffect(() => {
     return () => {
       if (blinkTimerRef.current) {
@@ -215,7 +297,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
     };
   }, []);
 
-  // Sync fullscreen state with document event
+  // Sync fullscreen state
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
@@ -248,14 +330,12 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
 
   const activeTicket = lastCalledOrder || (readyOrders.length > 0 ? readyOrders[0] : null);
 
-  // Trigger manual recall
   const handleManualCall = () => {
     if (!audioAtivado) ativarAudio();
     const numero = activeTicket?.codigo_senha != null ? activeTicket.codigo_senha : 1;
     anunciarSenha(numero);
   };
 
-  // Trigger test sound & voice announcement
   const handleTestSound = () => {
     if (!audioAtivado) ativarAudio();
     const testNumber = activeTicket?.codigo_senha != null ? activeTicket.codigo_senha : 42;
@@ -276,179 +356,108 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
       onClick={() => {
         if (!audioAtivado) ativarAudio();
       }}
-      className={`bg-black text-white flex flex-col items-center justify-center relative select-none overflow-hidden transition-all duration-300 ${
-        isFullscreen
-          ? 'fixed inset-0 z-50 w-screen h-screen min-h-screen p-4 sm:p-8'
-          : 'w-full min-h-[calc(100vh-140px)] rounded-3xl p-4 sm:p-8 border border-neutral-900 shadow-2xl'
-      }`}
+      className="bg-black w-screen h-screen fixed inset-0 overflow-hidden flex items-center justify-center select-none z-50"
     >
-      {/* Subtle ambient red LED wall reflection */}
+      {/* NÚMERO GIGANTE MINIMALISTA (100% livre de molduras e caixas) */}
       <div
-        className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+        className={`text-[26vw] sm:text-[30vw] font-black leading-none text-center select-none transition-all duration-100 ${activeFontClass} ${
+          isBlinking && !isLedLit ? 'opacity-10 scale-[0.99]' : 'opacity-100 scale-100'
+        }`}
         style={{
-          background:
+          color: hasActiveTicket ? activeColor.color : activeColor.unlit,
+          textShadow:
             hasActiveTicket && (!isBlinking || isLedLit)
-              ? 'radial-gradient(circle at 50% 50%, rgba(255, 30, 30, 0.12) 0%, rgba(0, 0, 0, 0.95) 75%)'
-              : 'radial-gradient(circle at 50% 50%, rgba(50, 10, 10, 0.05) 0%, rgba(0, 0, 0, 1) 85%)',
+              ? activeColor.glow
+              : 'none',
         }}
-      />
-
-      {/* Faixa / Botão Superior de Destravamento de Autoplay da TV */}
-      {!audioAtivado && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              ativarAudio();
-              handleTestSound();
-            }}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase rounded-full shadow-[0_0_20px_rgba(245,158,11,0.6)] flex items-center gap-2 cursor-pointer transition-transform hover:scale-105 animate-pulse"
-            title="Clique para habilitar som e voz na TV"
-          >
-            <span>🔊 Clique aqui para Ativar o Áudio da TV</span>
-          </button>
-        </div>
-      )}
-
-      {/* Discret Top-Right Control Bar (Modo TV / Fullscreen) */}
-      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-30 flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity duration-200">
-        {!audioAtivado ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              ativarAudio();
-              handleTestSound();
-            }}
-            className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/60 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md cursor-pointer animate-pulse"
-            title="Clique para habilitar áudio e voz no navegador"
-          >
-            <VolumeX className="w-3.5 h-3.5 text-amber-400" />
-            <span>Ativar Som</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleTestSound();
-            }}
-            className="px-3 py-1.5 bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-700/80 shadow-md cursor-pointer"
-            title="Testar Campainha e Voz Sintetizada"
-          >
-            <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">Testar Som</span>
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleManualCall();
-          }}
-          className="px-3 py-1.5 bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-700/80 shadow-md cursor-pointer"
-          title="Chamar Senha / Repetir Chamada com Voz"
-        >
-          <Bell className="w-3.5 h-3.5 text-red-500 animate-pulse" />
-          <span className="hidden sm:inline">Chamar Novamente</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleFullscreen();
-          }}
-          className="p-2 sm:px-3 sm:py-1.5 bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-700/80 shadow-md cursor-pointer"
-          title={isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia (Modo TV)'}
-        >
-          {isFullscreen ? (
-            <Minimize className="w-4 h-4 text-amber-400" />
-          ) : (
-            <Maximize className="w-4 h-4 text-amber-400" />
-          )}
-          <span className="hidden sm:inline">{isFullscreen ? 'Sair da Tela Cheia' : 'Modo TV'}</span>
-        </button>
+      >
+        {formattedNumber}
       </div>
 
-      {/* PAINEL FÍSICO DE LED (Carcaça Externa Industrial) */}
-      <div className="w-full max-w-3xl lg:max-w-4xl relative z-10 flex flex-col items-center">
-        {/* Carcaça Preta Externa de Parede */}
-        <div className="w-full bg-[#0b0b0e] border-[10px] sm:border-[16px] md:border-[20px] border-neutral-900 rounded-3xl sm:rounded-[36px] shadow-[0_20px_70px_rgba(0,0,0,0.95),inset_0_2px_6px_rgba(255,255,255,0.08),inset_0_-8px_20px_rgba(0,0,0,0.95)] p-4 sm:p-8 flex flex-col items-center justify-center relative">
-          {/* Parafusos/Fixadores nos 4 cantos da carcaça física */}
-          <div className="absolute top-2 left-2 sm:top-3 sm:left-3 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-neutral-700 border border-neutral-800 shadow-inner" />
-          <div className="absolute top-2 right-2 sm:top-3 sm:right-3 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-neutral-700 border border-neutral-800 shadow-inner" />
-          <div className="absolute bottom-2 left-2 sm:bottom-3 sm:left-3 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-neutral-700 border border-neutral-800 shadow-inner" />
-          <div className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-neutral-700 border border-neutral-800 shadow-inner" />
+      {/* CONTROLES OCULTOS NA BASE (revelam-se suavemente ao aproximar o mouse) */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 opacity-0 hover:opacity-100 transition-opacity duration-300 pointer-events-auto">
+        <div className="flex items-center gap-2 p-2 bg-neutral-900/90 backdrop-blur-md rounded-2xl border border-neutral-800 shadow-2xl">
+          {!audioAtivado ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                ativarAudio();
+                handleTestSound();
+              }}
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg animate-pulse"
+              title="Ativar Áudio e Voz da TV"
+            >
+              <VolumeX className="w-4 h-4" />
+              <span>Ativar Áudio TV</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleTestSound();
+              }}
+              className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs uppercase rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Testar Campainha e Voz Sintetizada"
+            >
+              <Volume2 className="w-4 h-4 text-emerald-400" />
+              <span>Testar Som</span>
+            </button>
+          )}
 
-          {/* Acrílico Fumê do Painel com Grid de Matriz LED */}
-          <div
-            className="w-full bg-black/95 border-2 border-neutral-800/80 rounded-2xl sm:rounded-3xl p-6 sm:p-10 md:p-14 flex flex-col items-center justify-center relative overflow-hidden shadow-inner"
-            style={{
-              backgroundImage: 'radial-gradient(rgba(35, 5, 5, 0.45) 1.5px, transparent 1.5px)',
-              backgroundSize: '14px 14px',
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleManualCall();
             }}
+            className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs uppercase rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Repetir Chamada da Senha Atual"
           >
-            {/* Scanlines sutis de acrílico fumê */}
-            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_50%,transparent_50%)] bg-[length:100%_4px] pointer-events-none opacity-40" />
+            <Bell className="w-4 h-4 text-red-500 animate-pulse" />
+            <span>Chamar Novamente</span>
+          </button>
 
-            {/* Cabeçalho Branco Puro em Caixa Alta: "SENHA" */}
-            <div className="w-full text-center pb-4 sm:pb-6 border-b-2 sm:border-b-4 border-neutral-800/90 relative z-10">
-              <h1 className="text-white font-black tracking-[0.25em] sm:tracking-[0.4em] md:tracking-[0.5em] text-3xl sm:text-5xl md:text-6xl uppercase leading-none drop-shadow-[0_2px_12px_rgba(255,255,255,0.35)] pl-[0.25em] sm:pl-[0.4em] md:pl-[0.5em]">
-                SENHA
-              </h1>
-            </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFullscreen();
+            }}
+            className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl transition-colors cursor-pointer"
+            title={isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia (Modo TV)'}
+          >
+            {isFullscreen ? <Minimize className="w-4 h-4 text-amber-400" /> : <Maximize className="w-4 h-4 text-amber-400" />}
+          </button>
 
-            {/* Display Numérico Digital LED Gigante */}
-            <div className="relative py-6 sm:py-10 md:py-14 w-full flex items-center justify-center overflow-hidden">
-              {/* Fantasma dos dígitos 888 desligados (típico de displays físicos 7 segmentos) */}
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 flex items-center justify-center font-mono font-black tabular-nums tracking-widest text-7xl sm:text-9xl md:text-[13rem] lg:text-[16rem] leading-none select-none pointer-events-none text-[#1b0505] opacity-25"
-              >
-                888
-              </div>
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenSettings();
+              }}
+              className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl transition-colors cursor-pointer"
+              title="Configurar Cor, Fonte, Som e Voz do Painel"
+            >
+              <Sliders className="w-4 h-4 text-cyan-400" />
+            </button>
+          )}
 
-              {/* Dígitos Ativos em LED Vermelho Brilhante */}
-              <div
-                className={`relative z-10 font-mono font-black tabular-nums tracking-widest text-center transition-all duration-100 select-none ${
-                  isBlinking && !isLedLit ? 'opacity-10 scale-[0.99]' : 'opacity-100 scale-100'
-                }`}
-                style={{
-                  color: hasActiveTicket ? '#ff2020' : '#4a0808',
-                  textShadow:
-                    hasActiveTicket && (!isBlinking || isLedLit)
-                      ? '0 0 25px #ff2020, 0 0 50px rgba(255,30,30,0.85), 0 0 80px rgba(255,0,0,0.5)'
-                      : hasActiveTicket
-                      ? '0 0 6px rgba(100,10,10,0.2)'
-                      : '0 0 10px rgba(255,0,0,0.2)',
-                }}
-              >
-                <span className="text-7xl sm:text-9xl md:text-[13rem] lg:text-[16rem] leading-none block">
-                  {formattedNumber}
-                </span>
-              </div>
-            </div>
-
-            {/* Sutil moldura inferior fumê */}
-            <div className="w-full pt-3 sm:pt-4 border-t border-neutral-900 flex items-center justify-between text-[9px] sm:text-[10px] font-mono text-neutral-600 uppercase tracking-widest relative z-10">
-              <span>PAINEL DIGITAL GUICHÊ</span>
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    isBlinking
-                      ? 'bg-red-500 animate-ping'
-                      : hasActiveTicket
-                      ? 'bg-red-600'
-                      : 'bg-neutral-800'
-                  }`}
-                />
-                <span>{isBlinking ? 'CHAMANDO...' : hasActiveTicket ? 'ONLINE' : 'STANDBY'}</span>
-              </span>
-            </div>
-          </div>
+          {onBack && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onBack();
+              }}
+              className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl transition-colors cursor-pointer"
+              title="Voltar ao Sistema"
+            >
+              <ArrowLeft className="w-4 h-4 text-neutral-400" />
+            </button>
+          )}
         </div>
       </div>
     </div>

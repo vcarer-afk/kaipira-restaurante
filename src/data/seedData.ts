@@ -30,6 +30,10 @@ export const INITIAL_CONFIGURACOES: ConfiguracoesSistema = {
   posicaoMenu: 'direita',
   padraoCor: 'ambar',
   modoOperacao: 'producao',
+  ledCor: 'vermelho',
+  ledFonte: 'mono',
+  ledVoz: 'padrao',
+  ledCampainha: 'ding_dong',
 };
 
 export const BAIRROS_PIRACICABA: BairroTaxa[] = [

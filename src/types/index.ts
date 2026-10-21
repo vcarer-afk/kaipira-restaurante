@@ -163,6 +163,7 @@ export interface Pedido {
   taxa_entrega: number;
   itens: ItemPedido[];
   pagamentos: Pagamento[];
+  pagamento_confirmado?: boolean;
   conferencia_entrega?: 'pendente' | 'conferido';
   conferido_por?: string;
   conferido_em?: string;
@@ -231,4 +232,9 @@ export interface ConfiguracoesSistema {
   // Tela e Layout
   posicaoMenu: PosicaoMenu;
   padraoCor: PadraoCor;
+  // Personalização do Painel LED de Senhas
+  ledCor?: string;
+  ledFonte?: string;
+  ledVoz?: string;
+  ledCampainha?: string;
 }

@@ -68,6 +68,7 @@ interface CashRegisterProps {
     descricao: string
   ) => void;
   onConferirEntrega?: (pedidoId: number, conferidoPor: string) => void;
+  onConfirmarPagamento?: (pedidoId: number, forma?: FormaPagamento, conferidoPor?: string) => void;
 }
 
 export function getFormaCanonica(forma: string): string {
@@ -108,6 +109,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   onFecharCaixa,
   onMovimentacao,
   onConferirEntrega,
+  onConfirmarPagamento,
 }) => {
   // Helper para garantir exibição da descrição completa do produto em todas as telas
   const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
@@ -145,9 +147,37 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   const [conferenciaFiltro, setConferenciaFiltro] = useState<'pendentes' | 'conferidos' | 'todos'>('pendentes');
   const [conferenciaViewMode, setConferenciaViewMode] = useState<'blocos' | 'lista'>('blocos');
   const [conferindoPedido, setConferindoPedido] = useState<Pedido | null>(null);
+
+  // Usuários com perfil de supervisão ou gerência para conferência
+  const supervisoresCadastrados = useMemo(() => {
+    const list = (usuarios || []).filter(
+      (u) => ['supervisor', 'admin', 'master'].includes(u.cargo) && u.status === 'ativo'
+    );
+    if (list.length === 0) {
+      return [{ id: 'sup-vlademir', nome: 'VLADEMIR (SUPERVISOR)', cargo: 'supervisor' as const }];
+    }
+    return list;
+  }, [usuarios]);
+
   const [responsavelConferencia, setResponsavelConferencia] = useState(
-    currentPerfil?.nome || 'GERENTE GERAL'
+    () => supervisoresCadastrados[0]?.nome || currentPerfil?.nome || 'VLADEMIR (SUPERVISOR)'
   );
+
+  // Pedidos sob a categoria "A Faturar / A Receber" (não confirmados pelo caixa)
+  const pedidosAFaturar = useMemo(() => {
+    return pedidos.filter(
+      (p) =>
+        p.status !== 'cancelado' &&
+        !(
+          p.pagamento_confirmado === true ||
+          (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido')
+        )
+    );
+  }, [pedidos]);
+
+  const totalAFaturar = useMemo(() => {
+    return pedidosAFaturar.reduce((acc, p) => acc + p.valor_total, 0);
+  }, [pedidosAFaturar]);
 
   // Filter & Search in movements ledger
   const [searchMov, setSearchMov] = useState('');
@@ -284,10 +314,11 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     // para garantir que nenhuma forma (como PIX ou Dinheiro) deixe de constar no faturamento do dia
     pedidos.forEach((p) => {
       if (p.status === 'cancelado') return;
-      // REGRA: Entregas confirmadas por motoboys só entram no faturamento diário se conferidas pelo gerente ou supervisor!
-      if (p.tipo === 'delivery' && p.conferencia_entrega !== 'conferido') {
-        return;
-      }
+      // REGRA MANDATÓRIA: Somente entra no faturamento se pagamento confirmado ou delivery conferido!
+      const isConfirmado =
+        p.pagamento_confirmado === true ||
+        (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido');
+      if (!isConfirmado) return;
 
       if (p.pagamentos && p.pagamentos.length > 0) {
         p.pagamentos.forEach((pg) => {
@@ -359,7 +390,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     };
   }, [formasPagamento, movs, pedidos, caixa.valor_abertura]);
 
-  // Breakdown by channel from orders
+  // Breakdown by channel from orders (Apenas pedidos confirmados no caixa)
   const channelStats = useMemo(() => {
     let salaoTotal = 0;
     let salaoQtd = 0;
@@ -370,15 +401,17 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
     pedidos.forEach((p) => {
       if (p.status === 'cancelado') return;
+      const isConfirmado =
+        p.pagamento_confirmado === true ||
+        (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido');
+      if (!isConfirmado) return;
+
       if (p.tipo === 'salão') {
         salaoTotal += p.valor_total;
         salaoQtd += 1;
       } else if (p.tipo === 'delivery') {
-        // REGRA MANDATÓRIA: Somente entra no faturamento se conferido pelo gerente ou supervisor
-        if (p.conferencia_entrega === 'conferido') {
-          deliveryTotal += p.valor_total;
-          deliveryQtd += 1;
-        }
+        deliveryTotal += p.valor_total;
+        deliveryQtd += 1;
       } else if (p.tipo === 'retirada') {
         balcaoTotal += p.valor_total;
         balcaoQtd += 1;
@@ -715,6 +748,38 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
       {caixaTab === 'resumo' && (
         <>
+          {/* Card Resumo A Faturar / A Receber */}
+          {totalAFaturar > 0 && (
+            <div className="p-4 bg-amber-950/30 border border-amber-800/80 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm animate-in fade-in">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 shrink-0">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                      A Faturar / A Receber: {formatBRL(totalAFaturar)}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-black">
+                      {pedidosAFaturar.length} pendente{pedidosAFaturar.length > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-400 mt-0.5">
+                    Comandas abertas no salão, entregas não auditadas e pedidos de balcão pendentes. Não inflam o saldo consolidado do dia até confirmação pelo caixa.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCaixaTab('conferencia_entregas')}
+                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-sm"
+              >
+                <span>Auditar Entregas</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* KPI Cards: Visão Geral em Tempo Real */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* Total Faturamento Geral do Dia */}
@@ -1223,16 +1288,23 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 </button>
               </div>
 
-              {/* Input Responsável */}
+              {/* Select Responsável Supervisor / Gerente */}
               <div className="flex items-center gap-1.5 text-xs">
                 <span className="text-neutral-400 font-bold uppercase hidden md:inline">Supervisor:</span>
-                <input
-                  type="text"
+                <select
                   value={responsavelConferencia}
                   onChange={(e) => setResponsavelConferencia(e.target.value.toUpperCase())}
-                  placeholder="SUPERVISOR"
-                  className="px-2.5 py-1 bg-neutral-900 border border-neutral-700 text-amber-400 font-bold rounded-lg text-xs uppercase focus:outline-none max-w-[150px] sm:max-w-none"
-                />
+                  className="px-2.5 py-1 bg-neutral-900 border border-neutral-700 text-amber-400 font-bold rounded-lg text-xs uppercase focus:outline-none cursor-pointer max-w-[200px]"
+                >
+                  {supervisoresCadastrados.map((u) => (
+                    <option key={u.id} value={u.nome} className="bg-neutral-850 text-white">
+                      {u.nome} ({u.cargo.toUpperCase()})
+                    </option>
+                  ))}
+                  <option value={currentPerfil?.nome || 'GERENTE GERAL'} className="bg-neutral-850 text-white">
+                    {currentPerfil?.nome || 'GERENTE GERAL'} (ATUAL)
+                  </option>
+                </select>
               </div>
             </div>
           </div>

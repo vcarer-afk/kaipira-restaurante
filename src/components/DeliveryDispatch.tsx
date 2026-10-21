@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Pedido, Produto } from '../types';
+import { Pedido, Produto, UsuarioSistema } from '../types';
 import { formatBRL, formatTime } from '../utils/formatters';
 import { Bike, Navigation, CheckCircle2, Clock, Printer, MapPin, Phone, AlertCircle, ShoppingBag, LayoutGrid, List, Send, Check } from 'lucide-react';
 
 interface DeliveryDispatchProps {
   pedidos: Pedido[];
   produtos?: Produto[];
+  usuarios?: UsuarioSistema[];
   onUpdateStatus: (id: number, status: 'a_caminho' | 'entregue', entregador?: string) => void;
   onPrintReceipt: (pedido: Pedido) => void;
 }
@@ -13,11 +14,38 @@ interface DeliveryDispatchProps {
 export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
   pedidos,
   produtos = [],
+  usuarios = [],
   onUpdateStatus,
   onPrintReceipt,
 }) => {
   const [viewMode, setViewMode] = useState<'blocos' | 'lista'>('blocos');
-  const [selectedEntregador, setSelectedEntregador] = useState<string>('RODRIGO MOTOBOY');
+
+  // Filtra entregadores cadastrados e ativos no sistema
+  const entregadoresCadastrados = (usuarios || []).filter(
+    (u) => u.cargo === 'entregador' && u.status === 'ativo'
+  );
+
+  const listaEntregadores =
+    entregadoresCadastrados.length > 0
+      ? entregadoresCadastrados.map((u) => ({
+          id: u.id,
+          nome: u.nome,
+          display: `${u.nome}${u.telefone ? ` · ${u.telefone}` : ''}`,
+        }))
+      : [
+          { id: '1', nome: 'RODRIGO MOTOBOY', display: 'RODRIGO (MOTOBOY PRÓPRIO KAIPIRA)' },
+          { id: '2', nome: 'MOTOBOY TERCEIRIZADO (APP)', display: 'MOTOBOY TERCEIRIZADO / APP' },
+          { id: '3', nome: 'MARCOS EXPRESS', display: 'MARCOS EXPRESS' },
+        ];
+
+  const [selectedEntregador, setSelectedEntregador] = useState<string>(() => {
+    if (entregadoresCadastrados.length > 0) {
+      return entregadoresCadastrados[0].nome;
+    }
+    return 'RODRIGO MOTOBOY';
+  });
+
+  const [cardEntregador, setCardEntregador] = useState<Record<number, string>>({});
 
   const getProductDescription = (it: { produto_id?: number; produto_nome?: string }): string => {
     if (
@@ -44,8 +72,13 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
   const aCaminho = deliveryOrders.filter((p) => p.status === 'a_caminho');
   const entregues = deliveryOrders.filter((p) => p.status === 'entregue').slice(0, 10);
 
-  const handleDespachar = (pedido: Pedido) => {
-    onUpdateStatus(pedido.id, 'a_caminho', selectedEntregador);
+  const handleDespachar = (pedido: Pedido, entregadorEspecifico?: string) => {
+    const entregadorFinal = (
+      entregadorEspecifico ||
+      cardEntregador[pedido.id] ||
+      selectedEntregador
+    ).toUpperCase();
+    onUpdateStatus(pedido.id, 'a_caminho', entregadorFinal);
   };
 
   const handleConfirmarEntrega = (pedido: Pedido) => {
@@ -95,7 +128,7 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
             </button>
           </div>
 
-          {/* Motoboy selector */}
+          {/* Motoboy selector com usuários cadastrados como entregador */}
           <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-700 px-3 py-1.5 rounded-lg text-xs">
             <span className="text-neutral-400 font-medium hidden sm:inline">Entregador Padrão:</span>
             <select
@@ -103,15 +136,11 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
               onChange={(e) => setSelectedEntregador(e.target.value.toUpperCase())}
               className="bg-transparent text-amber-400 font-bold focus:outline-none cursor-pointer uppercase text-xs"
             >
-              <option value="RODRIGO MOTOBOY" className="bg-neutral-800 text-white">
-                RODRIGO (MOTOBOY PRÓPRIO KAIPIRA)
-              </option>
-              <option value="MOTOBOY TERCERIZADO (APP)" className="bg-neutral-800 text-white">
-                MOTOBOY TERCEIRIZADO / APP
-              </option>
-              <option value="MARCOS EXPRESS" className="bg-neutral-800 text-white">
-                MARCOS EXPRESS
-              </option>
+              {listaEntregadores.map((ent) => (
+                <option key={ent.id} value={ent.nome} className="bg-neutral-800 text-white">
+                  {ent.display}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -207,20 +236,42 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
                     </div>
                   )}
 
+                  {/* Seletor de Entregador para este Pedido */}
+                  <div className="flex items-center gap-1.5 bg-neutral-900/80 px-2.5 py-1.5 rounded-lg border border-neutral-750 text-xs">
+                    <Bike className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span className="text-[10px] text-neutral-400 font-bold uppercase shrink-0">Motoboy:</span>
+                    <select
+                      value={cardEntregador[p.id] || selectedEntregador}
+                      onChange={(e) =>
+                        setCardEntregador((prev) => ({
+                          ...prev,
+                          [p.id]: e.target.value.toUpperCase(),
+                        }))
+                      }
+                      className="bg-transparent text-amber-300 font-bold focus:outline-none cursor-pointer uppercase text-xs w-full"
+                    >
+                      {listaEntregadores.map((ent) => (
+                        <option key={ent.id} value={ent.nome} className="bg-neutral-800 text-white">
+                          {ent.display}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="flex items-center gap-2 pt-2 border-t border-neutral-800">
                     <button
                       onClick={() => onPrintReceipt(p)}
                       title="Imprimir Comanda de Entrega"
-                      className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg transition-colors"
+                      className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg transition-colors cursor-pointer"
                     >
                       <Printer className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDespachar(p)}
-                      className="flex-1 py-2 px-3 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors uppercase"
+                      className="flex-1 py-2 px-3 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors uppercase cursor-pointer"
                     >
                       <Navigation className="w-3.5 h-3.5" />
-                      Despachar ({selectedEntregador.split(' ')[0]})
+                      Despachar ({(cardEntregador[p.id] || selectedEntregador).split(' ')[0]})
                     </button>
                   </div>
                 </div>
@@ -611,10 +662,32 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
 
                       {/* 6. Entregador / Motoboy */}
                       <td className="px-3.5 py-3">
-                        <span className="text-xs font-bold text-cyan-300 uppercase flex items-center gap-1">
-                          <Bike className="w-3.5 h-3.5 shrink-0" />
-                          <span>{p.entregador_nome || 'NÃO ATRIBUÍDO'}</span>
-                        </span>
+                        {p.status === 'pronto' ? (
+                          <div className="flex items-center gap-1.5">
+                            <Bike className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <select
+                              value={cardEntregador[p.id] || selectedEntregador}
+                              onChange={(e) =>
+                                setCardEntregador((prev) => ({
+                                  ...prev,
+                                  [p.id]: e.target.value.toUpperCase(),
+                                }))
+                              }
+                              className="bg-neutral-900 border border-neutral-700 text-amber-300 font-bold rounded px-2 py-1 text-xs uppercase focus:outline-none cursor-pointer max-w-[180px]"
+                            >
+                              {listaEntregadores.map((ent) => (
+                                <option key={ent.id} value={ent.nome} className="bg-neutral-800 text-white">
+                                  {ent.nome}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <span className="text-xs font-bold text-cyan-300 uppercase flex items-center gap-1">
+                            <Bike className="w-3.5 h-3.5 shrink-0" />
+                            <span>{p.entregador_nome || 'NÃO ATRIBUÍDO'}</span>
+                          </span>
+                        )}
                       </td>
 
                       {/* 7. Valor Total */}

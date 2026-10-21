@@ -41,6 +41,7 @@ import {
   ToggleRight,
   FlaskConical,
   PieChart,
+  ChevronRight,
 } from 'lucide-react';
 
 function describeArc(
@@ -93,6 +94,7 @@ interface AdminDashboardProps {
   onUpdateStockItem?: (id: number, data: Partial<ItemEstoque>) => void;
   onZerarFinanceiro?: () => Promise<void> | void;
   onToggleModoOperacao?: (novoModo: 'producao' | 'testes') => Promise<void> | void;
+  onConfirmarPagamento?: (pedidoId: number, forma?: FormaPagamento, conferidoPor?: string) => Promise<void> | void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -110,6 +112,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateStockItem,
   onZerarFinanceiro,
   onToggleModoOperacao,
+  onConfirmarPagamento,
 }) => {
   const isAdminOrMaster = currentRole === 'admin' || currentRole === 'master' || currentRole === 'supervisor';
   // Cash Register quick modals
@@ -127,24 +130,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newStockQty, setNewStockQty] = useState('');
   const [newStockMin, setNewStockMin] = useState('');
 
-  // Financial metrics
+  // Financial metrics - REGRA ESTRITA: Faturamento Condicionado à Confirmação do Caixa
+  // Somente somar pedidos com pagamento_confirmado === true ou entregas conferidas pelo supervisor
   const activeAndCompletedOrders = pedidos.filter((p) => p.status !== 'cancelado');
-  const totalFaturamento = activeAndCompletedOrders.reduce((acc, p) => acc + p.valor_total, 0);
-  const ticketMedio = activeAndCompletedOrders.length > 0
-    ? totalFaturamento / activeAndCompletedOrders.length
+  const pedidosConfirmados = activeAndCompletedOrders.filter(
+    (p) =>
+      p.pagamento_confirmado === true ||
+      (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido')
+  );
+  const pedidosAFaturar = activeAndCompletedOrders.filter(
+    (p) =>
+      !(
+        p.pagamento_confirmado === true ||
+        (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido')
+      )
+  );
+
+  const totalFaturamento = pedidosConfirmados.reduce((acc, p) => acc + p.valor_total, 0);
+  const totalAFaturar = pedidosAFaturar.reduce((acc, p) => acc + p.valor_total, 0);
+
+  const ticketMedio = pedidosConfirmados.length > 0
+    ? totalFaturamento / pedidosConfirmados.length
     : 0;
 
-  // Breakdown by channel
-  const deliveryOrders = activeAndCompletedOrders.filter((p) => p.tipo === 'delivery');
-  const salaoOrders = activeAndCompletedOrders.filter((p) => p.tipo === 'salão');
-  const retiradaOrders = activeAndCompletedOrders.filter((p) => p.tipo === 'retirada');
+  // Breakdown by channel - somente faturados/confirmados
+  const deliveryOrders = pedidosConfirmados.filter((p) => p.tipo === 'delivery');
+  const salaoOrders = pedidosConfirmados.filter((p) => p.tipo === 'salão');
+  const retiradaOrders = pedidosConfirmados.filter((p) => p.tipo === 'retirada');
 
   const faturamentoDelivery = deliveryOrders.reduce((acc, p) => acc + p.valor_total, 0);
   const faturamentoSalao = salaoOrders.reduce((acc, p) => acc + p.valor_total, 0);
   const faturamentoRetirada = retiradaOrders.reduce((acc, p) => acc + p.valor_total, 0);
   const totalTaxasEntrega = deliveryOrders.reduce((acc, p) => acc + p.taxa_entrega, 0);
 
-  // Payment totals for 3D Pie Chart (real positive values only)
+  // Pedidos a faturar por canal
+  const deliveryAFaturar = pedidosAFaturar.filter((p) => p.tipo === 'delivery');
+  const salaoAFaturar = pedidosAFaturar.filter((p) => p.tipo === 'salão');
+  const retiradaAFaturar = pedidosAFaturar.filter((p) => p.tipo === 'retirada');
+
+  // Payment totals for 3D Pie Chart (real positive values only from confirmed orders)
   const paymentSlices = useMemo(() => {
     const CANONICAL_CONFIG: Record<
       string,
@@ -162,7 +186,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const totals: Record<string, number> = {};
 
-    activeAndCompletedOrders.forEach((p) => {
+    pedidosConfirmados.forEach((p) => {
       if (p.pagamentos && p.pagamentos.length > 0) {
         p.pagamentos.forEach((pg) => {
           if (pg.valor && pg.valor > 0) {
@@ -508,8 +532,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-neutral-400 pt-2 border-t border-neutral-800">
-            <span>{activeAndCompletedOrders.length} pedidos hoje</span>
-            <span className="text-emerald-400 font-bold">100% Nuvem</span>
+            <span>{pedidosConfirmados.length} pedidos confirmados</span>
+            <span className="text-emerald-400 font-bold">Auditado</span>
           </div>
         </div>
 
@@ -526,7 +550,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
           <div className="flex items-center justify-between text-[11px] text-neutral-400 pt-2 border-t border-neutral-800">
             <span>Média por comanda</span>
-            <span>Salão + Delivery</span>
+            <span>Confirmadas</span>
           </div>
         </div>
 
@@ -562,13 +586,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <span>Status: {caixa.status.toUpperCase()}</span>
             <button
               onClick={() => onNavigate('caixa')}
-              className="text-amber-400 hover:underline font-bold"
+              className="text-amber-400 hover:underline font-bold cursor-pointer"
             >
               Conferir
             </button>
           </div>
         </div>
       </div>
+
+      {/* Alerta / Resumo de Pedidos A Faturar / A Receber (Comandas abertas, entregas não auditadas) */}
+      {totalAFaturar > 0 && (
+        <div className="p-4 bg-amber-950/30 border border-amber-800/70 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 shrink-0">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                  A Faturar / A Receber: {formatBRL(totalAFaturar)}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-black">
+                  {pedidosAFaturar.length} pendente{pedidosAFaturar.length > 1 ? 's' : ''}
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-0.5">
+                {salaoAFaturar.length > 0 && `${salaoAFaturar.length} comanda(s) aberta(s) no salão`}
+                {salaoAFaturar.length > 0 && (deliveryAFaturar.length > 0 || retiradaAFaturar.length > 0) && ' · '}
+                {deliveryAFaturar.length > 0 && `${deliveryAFaturar.length} entrega(s) aguardando conferência`}
+                {deliveryAFaturar.length > 0 && retiradaAFaturar.length > 0 && ' · '}
+                {retiradaAFaturar.length > 0 && `${retiradaAFaturar.length} pedido(s) balcão`}
+                {' — não somam no faturamento até confirmação no caixa.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate('caixa')}
+            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-sm"
+          >
+            <span>Conferir no Caixa</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Main Grid: Operational Panels */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -578,10 +639,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-xs">
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-4">
               <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                <span>Desempenho por Canal de Venda</span>
+                <span>Desempenho por Canal de Venda (Confirmados)</span>
               </h3>
               <span className="text-[11px] font-mono text-neutral-400">
-                TOTAL: {formatBRL(totalFaturamento)}
+                FATURADO: <strong className="text-amber-400">{formatBRL(totalFaturamento)}</strong>
               </span>
             </div>
 
@@ -600,7 +661,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-neutral-500">
-                  {deliveryOrders.length} pedidos · Taxas: {formatBRL(totalTaxasEntrega)}
+                  {deliveryOrders.length} confirmados · Taxas: {formatBRL(totalTaxasEntrega)}
+                  {deliveryAFaturar.length > 0 && (
+                    <span className="block text-amber-400/90 font-bold mt-0.5">
+                      +{deliveryAFaturar.length} a conferir
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -618,7 +684,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-neutral-500">
-                  {salaoOrders.length} comandas lançadas
+                  {salaoOrders.length} contas pagas
+                  {salaoAFaturar.length > 0 && (
+                    <span className="block text-amber-400/90 font-bold mt-0.5">
+                      +{salaoAFaturar.length} comandas abertas
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -636,7 +707,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-neutral-500">
-                  {retiradaOrders.length} pedidos no balcão
+                  {retiradaOrders.length} confirmados no balcão
+                  {retiradaAFaturar.length > 0 && (
+                    <span className="block text-amber-400/90 font-bold mt-0.5">
+                      +{retiradaAFaturar.length} a conferir
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

@@ -647,6 +647,7 @@ export default function App() {
               conferencia_entrega: 'conferido',
               conferido_por: conferidoPor,
               conferido_em: agora,
+              pagamento_confirmado: true,
             }
           : p
       )
@@ -671,6 +672,52 @@ export default function App() {
           descricao: `PEDIDO #${pedidoAlvo.id} (DELIVERY CONFERIDO - ${conferidoPor.toUpperCase()})`,
         }))
       );
+    }
+
+    playAlertChime();
+  };
+
+  // Confirmação de recebimento/pagamento de pedido (Balcão, Salão ou Delivery)
+  const handleConfirmarPagamentoPedido = async (
+    pedidoId: number,
+    forma?: FormaPagamento,
+    conferidoPor?: string
+  ) => {
+    const pedidoAlvo = pedidos.find((p) => p.id === pedidoId);
+    if (!pedidoAlvo) return;
+
+    const agora = new Date().toISOString();
+    const responsavel = conferidoPor || currentPerfil?.nome || 'OPERADOR CAIXA';
+
+    setPedidos((prev) =>
+      prev.map((p) =>
+        p.id === pedidoId
+          ? {
+              ...p,
+              pagamento_confirmado: true,
+              conferencia_entrega: p.tipo === 'delivery' ? 'conferido' : p.conferencia_entrega,
+              conferido_por: responsavel,
+              conferido_em: agora,
+            }
+          : p
+      )
+    );
+
+    if (pedidoAlvo.tipo === 'delivery') {
+      await conferirEntregaPedidoSupabase(pedidoId, responsavel);
+    }
+
+    // Registra entrada no caixa se ainda não constava
+    if (caixa && caixa.status === 'aberto') {
+      const formaUsada = forma || pedidoAlvo.pagamentos?.[0]?.forma || 'dinheiro';
+      await handleRegistrarMultiplasMovimentacoesCaixa([
+        {
+          tipo: 'entrada_pedido' as const,
+          forma: formaUsada,
+          valor: pedidoAlvo.valor_total,
+          descricao: `PEDIDO #${pedidoAlvo.id} (${pedidoAlvo.tipo.toUpperCase()} CONFIRMADO CAIXA - ${responsavel.toUpperCase()})`,
+        },
+      ]);
     }
 
     playAlertChime();
@@ -720,7 +767,12 @@ export default function App() {
                 criado_em: new Date().toISOString(),
               }))
             : p.pagamentos;
-          return { ...p, status: 'entregue' as StatusPedido, pagamentos: formattedPagamentos };
+          return {
+            ...p,
+            status: 'entregue' as StatusPedido,
+            pagamentos: formattedPagamentos,
+            pagamento_confirmado: true,
+          };
         })
       );
       for (const pId of pedidosIds) {
@@ -1148,6 +1200,7 @@ export default function App() {
   };
 
   const pendingKdsCount = pedidos.filter((p) => ['pendente', 'em_preparacao'].includes(p.status)).length;
+  const deliveryProntosCount = pedidos.filter((p) => p.tipo === 'delivery' && p.status === 'pronto').length;
 
   // IF NOT AUTHENTICATED -> SHOW LOGIN SCREEN FIRST
   if (!isAuthenticated) {
@@ -1170,6 +1223,7 @@ export default function App() {
         isLunchTime={isLunchTime}
         onOpenSlideMenu={() => setIsSlideMenuOpen(true)}
         pendingKdsCount={pendingKdsCount}
+        deliveryProntosCount={deliveryProntosCount}
         activeConnectionsCount={activeConnectionsCount}
         posicaoMenu={configuracoes.posicaoMenu}
         padraoCor={configuracoes.padraoCor}
@@ -1201,6 +1255,7 @@ export default function App() {
             currentRole={currentPerfil?.cargo || currentRole}
             onZerarFinanceiro={handleZerarFinanceiroDia}
             onToggleModoOperacao={handleToggleModoOperacao}
+            onConfirmarPagamento={handleConfirmarPagamentoPedido}
           />
         )}
 
@@ -1283,8 +1338,20 @@ export default function App() {
             selectedMesaNumber={selectedMesaNumber}
             formasPagamento={formasPagamento}
             onOrderCreated={async (novo) => {
+              // Se for retirada (balcão) com pagamento imediato e caixa aberto, confirma pagamento no ato
+              const isConfirmadoBalcao =
+                novo.tipo === 'retirada' &&
+                caixa &&
+                caixa.status === 'aberto' &&
+                novo.pagamentos &&
+                novo.pagamentos.length > 0;
+
               const enrichedNovo = enrichPedidosWithProductNames([novo], produtos)[0] || novo;
-              setPedidos((prev) => [enrichedNovo, ...prev.filter((p) => p.id !== novo.id)]);
+              const finalNovo = isConfirmadoBalcao
+                ? { ...enrichedNovo, pagamento_confirmado: true }
+                : enrichedNovo;
+
+              setPedidos((prev) => [finalNovo, ...prev.filter((p) => p.id !== novo.id)]);
 
               // Toda vez que lançado um pedido na mesa, marca a mesa como ocupada no estado e no Supabase
               if (novo.tipo === 'salão' && novo.mesa_id) {
@@ -1362,6 +1429,7 @@ export default function App() {
           <DeliveryDispatch
             pedidos={pedidos}
             produtos={produtos}
+            usuarios={usuarios}
             onUpdateStatus={handleUpdateOrderStatus}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}
           />
@@ -1401,6 +1469,7 @@ export default function App() {
             onFecharCaixa={handleFecharCaixa}
             onMovimentacao={handleMovimentacaoCaixa}
             onConferirEntrega={handleConferirEntrega}
+            onConfirmarPagamento={handleConfirmarPagamentoPedido}
           />
         )}
       </main>
@@ -1418,6 +1487,7 @@ export default function App() {
         currentPerfil={currentPerfil}
         onLogout={handleLogout}
         pendingKdsCount={pendingKdsCount}
+        deliveryProntosCount={deliveryProntosCount}
         posicaoMenu={configuracoes.posicaoMenu}
         padraoCor={configuracoes.padraoCor}
       />
