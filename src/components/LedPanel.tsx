@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Pedido } from '../types';
-import { Volume2, Maximize, Minimize, Bell } from 'lucide-react';
+import { Volume2, VolumeX, Maximize, Minimize, Bell } from 'lucide-react';
 
 interface LedPanelProps {
   pedidos: Pedido[];
@@ -11,25 +11,59 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
   const [lastCalledOrder, setLastCalledOrder] = useState<Pedido | null>(null);
   const [isBlinking, setIsBlinking] = useState(false);
   const [isLedLit, setIsLedLit] = useState(true);
+  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const blinkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const blinkStepRef = useRef<number>(0);
+  const speechTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastProcessedIdRef = useRef<number | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Ready orders sorted by most recently updated
   const readyOrders = pedidos
     .filter((p) => p.status === 'pronto')
     .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
 
+  // Helper to retrieve/resume AudioContext
+  const getAudioContext = useCallback(() => {
+    try {
+      if (!audioCtxRef.current) {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx) {
+          audioCtxRef.current = new AudioCtx();
+        }
+      }
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
+      return audioCtxRef.current;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Unlock browser audio permissions on user gesture
+  const unlockAudio = useCallback(() => {
+    setIsAudioUnlocked(true);
+    const ctx = getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.resume?.();
+    }
+  }, [getAudioContext]);
+
   // Authentic Web Audio API "Ding-Dong" chime
   const playDingDong = useCallback(() => {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      const ctx = getAudioContext();
+      if (!ctx) return;
       if (ctx.state === 'suspended') {
-        ctx.resume();
+        ctx.resume().catch(() => {});
       }
       const now = ctx.currentTime;
 
@@ -62,14 +96,10 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
     } catch (err) {
       console.warn('AudioContext playback notice:', err);
     }
-  }, []);
+  }, [getAudioContext]);
 
-  // Trigger call: play chime and blink exactly 4 times in 4 seconds (1s cycle: 0.5s lit, 0.5s off)
+  // Blink sequence: exactly 4 times in 4 seconds (1s cycle: 0.5s lit, 0.5s off)
   const triggerBlinkSequence = useCallback(() => {
-    // Play chime sound
-    playDingDong();
-
-    // Reset any ongoing blink animation
     if (blinkTimerRef.current) {
       clearInterval(blinkTimerRef.current);
       blinkTimerRef.current = null;
@@ -95,17 +125,77 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
         setIsBlinking(false);
         setIsLedLit(true);
       } else {
-        // Toggle lit state on every 500ms step
         setIsLedLit(currentStep % 2 === 0);
       }
     }, 500);
-  }, [playDingDong]);
+  }, []);
 
-  // Clean up blink timer on unmount
+  // Main Announce Function: Ding-Dong + Blink + Web Speech API (900ms delay)
+  const anunciarSenha = useCallback(
+    (numero: number) => {
+      // 1. Toca campainha bitonal ("Ding-Dong")
+      playDingDong();
+
+      // 2. Dispara o efeito de piscar os dígitos vermelhos (4x em 4s)
+      triggerBlinkSequence();
+
+      // 3. Cancela agendamentos anteriores de fala
+      if (speechTimeoutRef.current) {
+        clearTimeout(speechTimeoutRef.current);
+        speechTimeoutRef.current = null;
+      }
+
+      // Aguarda 900ms (tempo do ding-dong soar) e aciona a síntese de voz nativa
+      speechTimeoutRef.current = setTimeout(() => {
+        try {
+          if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel(); // Cancela chamadas anteriores pendentes
+            const texto = `Senha número ${numero}`;
+            const utterance = new SpeechSynthesisUtterance(texto);
+            utterance.lang = 'pt-BR';
+            utterance.rate = 0.95; // Cadência clara e natural para salão
+            utterance.pitch = 1.0;
+
+            // Seleciona voz em português se disponível no navegador
+            const voices = window.speechSynthesis.getVoices();
+            const ptVoice = voices.find((v) => v.lang.includes('pt-BR') || v.lang.includes('pt'));
+            if (ptVoice) utterance.voice = ptVoice;
+
+            window.speechSynthesis.speak(utterance);
+          }
+        } catch (err) {
+          console.warn('SpeechSynthesis error:', err);
+        }
+      }, 900);
+    },
+    [playDingDong, triggerBlinkSequence]
+  );
+
+  // Pre-load voices for SpeechSynthesis
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.getVoices();
+      const handleVoicesChanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+      window.speechSynthesis.onvoiceschanged = handleVoicesChanged;
+      return () => {
+        window.speechSynthesis.onvoiceschanged = null;
+      };
+    }
+  }, []);
+
+  // Clean up timers & speech on unmount
   useEffect(() => {
     return () => {
       if (blinkTimerRef.current) {
         clearInterval(blinkTimerRef.current);
+      }
+      if (speechTimeoutRef.current) {
+        clearTimeout(speechTimeoutRef.current);
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
       }
     };
   }, []);
@@ -126,10 +216,11 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
       if (lastProcessedIdRef.current !== topReady.id) {
         lastProcessedIdRef.current = topReady.id;
         setLastCalledOrder(topReady);
-        triggerBlinkSequence();
+        const numero = topReady.codigo_senha != null ? topReady.codigo_senha : 1;
+        anunciarSenha(numero);
       }
     }
-  }, [readyOrders, triggerBlinkSequence]);
+  }, [readyOrders, anunciarSenha]);
 
   const toggleFullscreen = () => {
     const target = containerRef.current || document.documentElement;
@@ -142,20 +233,34 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
 
   const activeTicket = lastCalledOrder || (readyOrders.length > 0 ? readyOrders[0] : null);
 
+  // Trigger manual recall
   const handleManualCall = () => {
-    triggerBlinkSequence();
+    unlockAudio();
+    const numero = activeTicket?.codigo_senha != null ? activeTicket.codigo_senha : 1;
+    anunciarSenha(numero);
+  };
+
+  // Trigger test sound & voice announcement
+  const handleTestSound = () => {
+    unlockAudio();
+    const testNumber = activeTicket?.codigo_senha != null ? activeTicket.codigo_senha : 42;
+    anunciarSenha(testNumber);
   };
 
   // Format 3 digits: e.g. "042" or "---"
-  const formattedNumber = activeTicket?.codigo_senha != null
-    ? String(activeTicket.codigo_senha).padStart(3, '0')
-    : '---';
+  const formattedNumber =
+    activeTicket?.codigo_senha != null
+      ? String(activeTicket.codigo_senha).padStart(3, '0')
+      : '---';
 
   const hasActiveTicket = activeTicket?.codigo_senha != null;
 
   return (
     <div
       ref={containerRef}
+      onClick={() => {
+        if (!isAudioUnlocked) unlockAudio();
+      }}
       className={`bg-black text-white flex flex-col items-center justify-center relative select-none overflow-hidden transition-all duration-300 ${
         isFullscreen
           ? 'fixed inset-0 z-50 w-screen h-screen min-h-screen p-4 sm:p-8'
@@ -166,19 +271,52 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
       <div
         className="absolute inset-0 pointer-events-none transition-opacity duration-300"
         style={{
-          background: hasActiveTicket && (!isBlinking || isLedLit)
-            ? 'radial-gradient(circle at 50% 50%, rgba(255, 30, 30, 0.12) 0%, rgba(0, 0, 0, 0.95) 75%)'
-            : 'radial-gradient(circle at 50% 50%, rgba(50, 10, 10, 0.05) 0%, rgba(0, 0, 0, 1) 85%)',
+          background:
+            hasActiveTicket && (!isBlinking || isLedLit)
+              ? 'radial-gradient(circle at 50% 50%, rgba(255, 30, 30, 0.12) 0%, rgba(0, 0, 0, 0.95) 75%)'
+              : 'radial-gradient(circle at 50% 50%, rgba(50, 10, 10, 0.05) 0%, rgba(0, 0, 0, 1) 85%)',
         }}
       />
 
       {/* Discret Top-Right Control Bar (Modo TV / Fullscreen) */}
       <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-30 flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity duration-200">
+        {/* Fallback button to unlock audio/speech permissions */}
+        {!isAudioUnlocked ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleTestSound();
+            }}
+            className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/60 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md cursor-pointer animate-pulse"
+            title="Clique para habilitar áudio e voz no navegador"
+          >
+            <VolumeX className="w-3.5 h-3.5 text-amber-400" />
+            <span>Ativar Som</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleTestSound();
+            }}
+            className="px-3 py-1.5 bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-700/80 shadow-md cursor-pointer"
+            title="Testar Campainha e Voz Sintetizada"
+          >
+            <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Testar Som</span>
+          </button>
+        )}
+
         <button
           type="button"
-          onClick={handleManualCall}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleManualCall();
+          }}
           className="px-3 py-1.5 bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-700/80 shadow-md cursor-pointer"
-          title="Chamar Senha / Testar Campainha"
+          title="Chamar Senha / Repetir Chamada com Voz"
         >
           <Bell className="w-3.5 h-3.5 text-red-500 animate-pulse" />
           <span className="hidden sm:inline">Chamar Novamente</span>
@@ -186,11 +324,18 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
 
         <button
           type="button"
-          onClick={toggleFullscreen}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFullscreen();
+          }}
           className="p-2 sm:px-3 sm:py-1.5 bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-700/80 shadow-md cursor-pointer"
           title={isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia (Modo TV)'}
         >
-          {isFullscreen ? <Minimize className="w-4 h-4 text-amber-400" /> : <Maximize className="w-4 h-4 text-amber-400" />}
+          {isFullscreen ? (
+            <Minimize className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Maximize className="w-4 h-4 text-amber-400" />
+          )}
           <span className="hidden sm:inline">{isFullscreen ? 'Sair da Tela Cheia' : 'Modo TV'}</span>
         </button>
       </div>
