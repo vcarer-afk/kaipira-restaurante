@@ -11,7 +11,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
   const [lastCalledOrder, setLastCalledOrder] = useState<Pedido | null>(null);
   const [isBlinking, setIsBlinking] = useState(false);
   const [isLedLit, setIsLedLit] = useState(true);
-  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
+  const [audioAtivado, setAudioAtivado] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const blinkTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -46,14 +46,18 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
   }, []);
 
   // Unlock browser audio permissions on user gesture
-  const unlockAudio = useCallback(() => {
-    setIsAudioUnlocked(true);
-    const ctx = getAudioContext();
-    if (ctx && ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
-    }
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.resume?.();
+  const ativarAudio = useCallback(() => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.resume?.();
+      }
+      setAudioAtivado(true);
+    } catch (err) {
+      console.warn('Erro ao ativar áudio:', err);
     }
   }, [getAudioContext]);
 
@@ -130,45 +134,56 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
     }, 500);
   }, []);
 
-  // Main Announce Function: Ding-Dong + Blink + Web Speech API (900ms delay)
+  // Web Speech API: tratamento assíncrono e carregamento dinâmico de vozes
+  const falarSenha = useCallback((numero: number) => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.resume();
+
+    const texto = `Senha número ${numero}`;
+    const utterance = new SpeechSynthesisUtterance(texto);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 0.92;
+    utterance.pitch = 1.0;
+
+    const carregarEFalar = () => {
+      const vozes = window.speechSynthesis.getVoices();
+      const vozPt = vozes.find((v) => v.lang.includes('pt-BR') || v.lang.includes('pt'));
+      if (vozPt) utterance.voice = vozPt;
+      window.speechSynthesis.speak(utterance);
+    };
+
+    if (window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.onvoiceschanged = carregarEFalar;
+    } else {
+      carregarEFalar();
+    }
+  }, []);
+
+  // Sincronização Exata:
+  // 1. Toca som de campainha ("Ding-Dong")
+  // 2. Aciona o efeito de piscar os dígitos vermelhos 4 vezes durante 4 segundos
+  // 3. Após 800ms (ao término do ding-dong), dispara falarSenha(numero)
   const anunciarSenha = useCallback(
     (numero: number) => {
-      // 1. Toca campainha bitonal ("Ding-Dong")
+      // 1. Toca som de campainha
       playDingDong();
 
-      // 2. Dispara o efeito de piscar os dígitos vermelhos (4x em 4s)
+      // 2. Aciona piscar 4x durante 4s
       triggerBlinkSequence();
 
-      // 3. Cancela agendamentos anteriores de fala
+      // 3. Cancela agendamentos anteriores
       if (speechTimeoutRef.current) {
         clearTimeout(speechTimeoutRef.current);
         speechTimeoutRef.current = null;
       }
 
-      // Aguarda 900ms (tempo do ding-dong soar) e aciona a síntese de voz nativa
+      // Após 800ms, dispara a fala
       speechTimeoutRef.current = setTimeout(() => {
-        try {
-          if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-            window.speechSynthesis.cancel(); // Cancela chamadas anteriores pendentes
-            const texto = `Senha número ${numero}`;
-            const utterance = new SpeechSynthesisUtterance(texto);
-            utterance.lang = 'pt-BR';
-            utterance.rate = 0.95; // Cadência clara e natural para salão
-            utterance.pitch = 1.0;
-
-            // Seleciona voz em português se disponível no navegador
-            const voices = window.speechSynthesis.getVoices();
-            const ptVoice = voices.find((v) => v.lang.includes('pt-BR') || v.lang.includes('pt'));
-            if (ptVoice) utterance.voice = ptVoice;
-
-            window.speechSynthesis.speak(utterance);
-          }
-        } catch (err) {
-          console.warn('SpeechSynthesis error:', err);
-        }
-      }, 900);
+        falarSenha(numero);
+      }, 800);
     },
-    [playDingDong, triggerBlinkSequence]
+    [playDingDong, triggerBlinkSequence, falarSenha]
   );
 
   // Pre-load voices for SpeechSynthesis
@@ -235,14 +250,14 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
 
   // Trigger manual recall
   const handleManualCall = () => {
-    unlockAudio();
+    if (!audioAtivado) ativarAudio();
     const numero = activeTicket?.codigo_senha != null ? activeTicket.codigo_senha : 1;
     anunciarSenha(numero);
   };
 
   // Trigger test sound & voice announcement
   const handleTestSound = () => {
-    unlockAudio();
+    if (!audioAtivado) ativarAudio();
     const testNumber = activeTicket?.codigo_senha != null ? activeTicket.codigo_senha : 42;
     anunciarSenha(testNumber);
   };
@@ -259,7 +274,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
     <div
       ref={containerRef}
       onClick={() => {
-        if (!isAudioUnlocked) unlockAudio();
+        if (!audioAtivado) ativarAudio();
       }}
       className={`bg-black text-white flex flex-col items-center justify-center relative select-none overflow-hidden transition-all duration-300 ${
         isFullscreen
@@ -278,14 +293,32 @@ export const LedPanel: React.FC<LedPanelProps> = ({ pedidos }) => {
         }}
       />
 
-      {/* Discret Top-Right Control Bar (Modo TV / Fullscreen) */}
-      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-30 flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity duration-200">
-        {/* Fallback button to unlock audio/speech permissions */}
-        {!isAudioUnlocked ? (
+      {/* Faixa / Botão Superior de Destravamento de Autoplay da TV */}
+      {!audioAtivado && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              ativarAudio();
+              handleTestSound();
+            }}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase rounded-full shadow-[0_0_20px_rgba(245,158,11,0.6)] flex items-center gap-2 cursor-pointer transition-transform hover:scale-105 animate-pulse"
+            title="Clique para habilitar som e voz na TV"
+          >
+            <span>🔊 Clique aqui para Ativar o Áudio da TV</span>
+          </button>
+        </div>
+      )}
+
+      {/* Discret Top-Right Control Bar (Modo TV / Fullscreen) */}
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-30 flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity duration-200">
+        {!audioAtivado ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              ativarAudio();
               handleTestSound();
             }}
             className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/60 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md cursor-pointer animate-pulse"

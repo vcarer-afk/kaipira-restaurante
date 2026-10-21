@@ -33,6 +33,7 @@ import {
   Layers,
   CreditCard,
   QrCode,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface CartItem {
@@ -121,7 +122,8 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   // Payment & Delivery logistics
   const [precisaTroco, setPrecisaTroco] = useState(false);
   const [trocoPara, setTrocoPara] = useState('');
-  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>('pix');
+  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento | ''>('');
+  const [paymentErrorMsg, setPaymentErrorMsg] = useState<string | null>(null);
   const [motoboyTipo, setMotoboyTipo] = useState<'proprio' | 'app'>('proprio');
 
   // Multi-Payment state (Combinação de Pagamentos)
@@ -297,14 +299,23 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       }
     }
 
-    if (tipoPedido !== 'salão' && formaPagamento === 'multiplo') {
-      if (totalPagoMultiplo < total - 0.05) {
-        alert(
-          `O VALOR PAGO (${formatBRL(totalPagoMultiplo)}) É INFERIOR AO TOTAL DO PEDIDO (${formatBRL(
-            total
-          )}). ADICIONE OS PAGAMENTOS RESTANTES.`
-        );
+    if (tipoPedido !== 'salão') {
+      if (!formaPagamento || formaPagamento.trim() === '') {
+        const msg = 'POR FAVOR, SELECIONE A FORMA DE PAGAMENTO ANTES DE FINALIZAR';
+        setPaymentErrorMsg(msg);
+        alert(msg);
         return;
+      }
+
+      if (formaPagamento === 'multiplo') {
+        if (totalPagoMultiplo < total - 0.05) {
+          const msg = `O VALOR PAGO (${formatBRL(totalPagoMultiplo)}) É INFERIOR AO TOTAL DO PEDIDO (${formatBRL(
+            total
+          )}). ADICIONE OS PAGAMENTOS RESTANTES.`;
+          setPaymentErrorMsg(msg);
+          alert(msg);
+          return;
+        }
       }
     }
 
@@ -392,6 +403,8 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
         setClienteComplemento('');
         setPrecisaTroco(false);
         setTrocoPara('');
+        setFormaPagamento('');
+        setPaymentErrorMsg(null);
       }
     } catch (err: any) {
       alert(`FALHA AO GRAVAR PEDIDO: ${err.message}`);
@@ -404,33 +417,30 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const filteredProdutos = produtos.filter((prod) => {
     const isBebidaOuSobremesa = prod.categoria_id === 4 || prod.categoria_id === 5;
 
-    // Se houver Cardápio Diário ativo e não for modo gerencial de liberação total:
-    if (
-      !modoGerencialTodosDias &&
-      !isBebidaOuSobremesa &&
-      cardapioDiario &&
-      cardapioDiario.status === 'aberto' &&
-      cardapioDiario.itens.length > 0
-    ) {
-      const itemConfig = cardapioDiario.itens.find((it) => it.produto_id === prod.id);
+    // Se o cardápio diário estiver montado (cardapioDiario?.itens configurados com itens):
+    const hasCardapioMontado = !!cardapioDiario?.itens && cardapioDiario.itens.length > 0;
+
+    if (!isBebidaOuSobremesa && hasCardapioMontado && !modoGerencialTodosDias) {
+      const itemConfig = cardapioDiario!.itens.find((it) => it.produto_id === prod.id);
+      // Bloqueia a exibição de qualquer prato que não tenha sido expressamente ativado para o dia
       if (!itemConfig) return false;
 
+      // Para pedidos de delivery ou retirada: exibe APENAS produtos com disponivel_delivery === true
       if (tipoPedido === 'delivery' || tipoPedido === 'retirada') {
-        const isDelivery =
-          itemConfig.canal === 'delivery_balcao' || !!itemConfig.disponivel_delivery;
+        const isDelivery = !!itemConfig.disponivel_delivery || itemConfig.canal === 'delivery_balcao';
         if (!isDelivery) return false;
       } else if (tipoPedido === 'salão') {
-        const isSalao =
-          itemConfig.canal === 'mesas' || !!itemConfig.disponivel_salao;
+        // Para pedidos de salão (mesas): exibe APENAS produtos com disponivel_salao === true
+        const isSalao = !!itemConfig.disponivel_salao || itemConfig.canal === 'mesas';
         if (!isSalao) return false;
       }
-    } else {
-      // Se não houver cardápio ativo configurado ou for override, filtra por dia da semana (exceto bebidas/doces)
-      if (!modoGerencialTodosDias && !isBebidaOuSobremesa) {
+    } else if (!isBebidaOuSobremesa) {
+      // Se não houver cardápio ativo configurado ou for override gerencial:
+      if (!modoGerencialTodosDias) {
         if (!prod.dia_semana.includes(todayDay)) {
           return false;
         }
-      } else if (modoGerencialTodosDias && selectedDayFilter !== 0 && !prod.dia_semana.includes(selectedDayFilter)) {
+      } else if (selectedDayFilter !== 0 && !prod.dia_semana.includes(selectedDayFilter)) {
         return false;
       }
     }
@@ -1174,9 +1184,16 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                 </div>
               ) : (
                 <div className="pt-2">
-                  <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
-                    Forma de Pagamento:
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold text-neutral-300 uppercase">
+                      Forma de Pagamento:
+                    </label>
+                    {!formaPagamento && (
+                      <span className="text-[10px] font-black text-amber-400 uppercase animate-pulse">
+                        * Seleção Obrigatória
+                      </span>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-[11px]">
                     {formasPagamento
                       .filter((p) => p.ativo !== false)
@@ -1184,7 +1201,10 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() => setFormaPagamento(p.id as FormaPagamento)}
+                          onClick={() => {
+                            setFormaPagamento(p.id as FormaPagamento);
+                            setPaymentErrorMsg(null);
+                          }}
                           className={`py-1.5 px-1 rounded text-center font-bold transition-colors cursor-pointer truncate ${
                             formaPagamento === p.id
                               ? 'bg-amber-600 text-white'
@@ -1197,7 +1217,10 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                       ))}
                     <button
                       type="button"
-                      onClick={() => setFormaPagamento('multiplo')}
+                      onClick={() => {
+                        setFormaPagamento('multiplo');
+                        setPaymentErrorMsg(null);
+                      }}
                       className={`py-1.5 px-1 rounded text-center font-bold transition-colors cursor-pointer ${
                         formaPagamento === 'multiplo'
                           ? 'bg-purple-600 text-white'
@@ -1333,6 +1356,14 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Payment Error Alert */}
+              {paymentErrorMsg && tipoPedido !== 'salão' && (
+                <div className="p-3 bg-red-950/90 border border-red-500 rounded-xl text-xs font-black text-red-200 uppercase flex items-center gap-2 animate-bounce my-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>{paymentErrorMsg}</span>
                 </div>
               )}
 

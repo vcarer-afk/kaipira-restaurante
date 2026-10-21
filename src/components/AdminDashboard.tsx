@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Pedido,
   Mesa,
@@ -40,7 +40,43 @@ import {
   ToggleLeft,
   ToggleRight,
   FlaskConical,
+  PieChart,
 } from 'lucide-react';
+
+function describeArc(
+  x: number,
+  y: number,
+  innerRadius: number,
+  outerRadius: number,
+  startAngle: number,
+  endAngle: number
+): string {
+  const span = Math.max(0, endAngle - startAngle);
+  const effectiveEnd = span >= 359.99 ? startAngle + 359.99 : endAngle;
+
+  const startRad = ((startAngle - 90) * Math.PI) / 180;
+  const endRad = ((effectiveEnd - 90) * Math.PI) / 180;
+
+  const x1 = x + outerRadius * Math.cos(startRad);
+  const y1 = y + outerRadius * Math.sin(startRad);
+  const x2 = x + outerRadius * Math.cos(endRad);
+  const y2 = y + outerRadius * Math.sin(endRad);
+
+  const x3 = x + innerRadius * Math.cos(endRad);
+  const y3 = y + innerRadius * Math.sin(endRad);
+  const x4 = x + innerRadius * Math.cos(startRad);
+  const y4 = y + innerRadius * Math.sin(startRad);
+
+  const largeArcFlag = span > 180 ? 1 : 0;
+
+  return [
+    `M ${x1} ${y1}`,
+    `A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
+    `L ${x3} ${y3}`,
+    `A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${x4} ${y4}`,
+    'Z',
+  ].join(' ');
+}
 
 interface AdminDashboardProps {
   pedidos: Pedido[];
@@ -107,6 +143,97 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const faturamentoSalao = salaoOrders.reduce((acc, p) => acc + p.valor_total, 0);
   const faturamentoRetirada = retiradaOrders.reduce((acc, p) => acc + p.valor_total, 0);
   const totalTaxasEntrega = deliveryOrders.reduce((acc, p) => acc + p.taxa_entrega, 0);
+
+  // Payment totals for 3D Pie Chart (real positive values only)
+  const paymentSlices = useMemo(() => {
+    const CANONICAL_CONFIG: Record<
+      string,
+      { label: string; color: string; darkColor: string }
+    > = {
+      pix: { label: 'PIX', color: '#06b6d4', darkColor: '#0e7490' },
+      dinheiro: { label: 'DINHEIRO (ESPÉCIE)', color: '#10b981', darkColor: '#047857' },
+      cartao_credito: { label: 'CARTÃO DE CRÉDITO', color: '#f59e0b', darkColor: '#b45309' },
+      cartao_debito: { label: 'CARTÃO DE DÉBITO', color: '#3b82f6', darkColor: '#1d4ed8' },
+      vale_refeicao: { label: 'VALE REFEIÇÃO / VR', color: '#8b5cf6', darkColor: '#6d28d9' },
+      mensalista: { label: 'CONTA MENSALISTA', color: '#ec4899', darkColor: '#be185d' },
+      multiplo: { label: 'MÚLTIPLOS', color: '#a855f7', darkColor: '#7e22ce' },
+      outro: { label: 'OUTROS', color: '#64748b', darkColor: '#334155' },
+    };
+
+    const totals: Record<string, number> = {};
+
+    activeAndCompletedOrders.forEach((p) => {
+      if (p.pagamentos && p.pagamentos.length > 0) {
+        p.pagamentos.forEach((pg) => {
+          if (pg.valor && pg.valor > 0) {
+            const raw = (pg.forma || 'outro').toLowerCase();
+            let key = 'outro';
+            if (raw.includes('pix')) key = 'pix';
+            else if (raw.includes('dinheiro')) key = 'dinheiro';
+            else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
+            else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
+            else if (raw.includes('vale') || raw.includes('refeicao') || raw.includes('refeição') || raw.includes('vr')) key = 'vale_refeicao';
+            else if (raw.includes('mensal')) key = 'mensalista';
+            else key = raw;
+
+            totals[key] = (totals[key] || 0) + pg.valor;
+          }
+        });
+      } else if ((p as any).pagamento_imediato?.forma && p.valor_total > 0) {
+        const raw = String((p as any).pagamento_imediato.forma || 'outro').toLowerCase();
+        let key = 'outro';
+        if (raw.includes('pix')) key = 'pix';
+        else if (raw.includes('dinheiro')) key = 'dinheiro';
+        else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
+        else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
+        else if (raw.includes('vale') || raw.includes('refeicao') || raw.includes('refeição') || raw.includes('vr')) key = 'vale_refeicao';
+        else if (raw.includes('mensal')) key = 'mensalista';
+        else key = raw;
+
+        totals[key] = (totals[key] || 0) + p.valor_total;
+      }
+    });
+
+    // Fallback to caixa movements if orders map is empty
+    if (Object.keys(totals).length === 0 && caixa?.movimentacoes) {
+      caixa.movimentacoes
+        .filter((m) => m.tipo === 'entrada_pedido' && m.valor > 0)
+        .forEach((m) => {
+          const raw = (m.forma || 'outro').toLowerCase();
+          let key = 'outro';
+          if (raw.includes('pix')) key = 'pix';
+          else if (raw.includes('dinheiro')) key = 'dinheiro';
+          else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
+          else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
+          else if (raw.includes('vale') || raw.includes('refeicao') || raw.includes('refeição') || raw.includes('vr')) key = 'vale_refeicao';
+          else if (raw.includes('mensal')) key = 'mensalista';
+          else key = raw;
+
+          totals[key] = (totals[key] || 0) + m.valor;
+        });
+    }
+
+    const totalGeral = Object.values(totals).reduce((sum, v) => sum + v, 0);
+
+    return Object.entries(totals)
+      .filter(([_, val]) => val > 0)
+      .map(([key, val]) => {
+        const cfg = CANONICAL_CONFIG[key] || {
+          label: key.toUpperCase(),
+          color: '#64748b',
+          darkColor: '#334155',
+        };
+        return {
+          id: key,
+          label: cfg.label,
+          valor: val,
+          percent: totalGeral > 0 ? (val / totalGeral) * 100 : 0,
+          color: cfg.color,
+          darkColor: cfg.darkColor,
+        };
+      })
+      .sort((a, b) => b.valor - a.valor);
+  }, [activeAndCompletedOrders, caixa?.movimentacoes]);
 
   // Tables metrics
   const ocupadas = mesas.filter((m) => m.status === 'ocupada').length;
@@ -513,6 +640,148 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Gráfico 3D de Pizza / Donut das Formas de Pagamento */}
+          <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-xs">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-4">
+              <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                <PieChart className="w-4 h-4 text-purple-400" />
+                <span>Distribuição por Forma de Pagamento (Faturamento Real)</span>
+              </h3>
+              <span className="text-[11px] font-mono text-neutral-400">
+                {paymentSlices.length} {paymentSlices.length === 1 ? 'forma ativa' : 'formas ativas'}
+              </span>
+            </div>
+
+            {paymentSlices.length === 0 ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-3">
+                <div className="w-24 h-24 rounded-full border-2 border-dashed border-neutral-700 flex items-center justify-center bg-neutral-900/50">
+                  <PieChart className="w-10 h-10 text-neutral-600" />
+                </div>
+                <span className="text-xs font-bold text-neutral-500 uppercase tracking-wide">
+                  Aguardando primeiras vendas do dia
+                </span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                {/* 3D SVG Donut */}
+                <div className="md:col-span-6 flex justify-center py-2">
+                  <div
+                    className="relative"
+                    style={{
+                      perspective: '700px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        transform: 'rotateX(26deg)',
+                        transformStyle: 'preserve-3d',
+                        filter: 'drop-shadow(0 16px 14px rgba(0,0,0,0.75))',
+                      }}
+                    >
+                      <svg width="240" height="230" viewBox="0 0 240 230" className="overflow-visible select-none">
+                        {/* Camada Inferior Extrudada (Efeito de profundidade 3D / chanfro cilíndrico) */}
+                        <g transform="translate(0, 10)">
+                          {(() => {
+                            let accumulatedAngle = 0;
+                            return paymentSlices.map((slice) => {
+                              const sliceAngle = (slice.percent / 100) * 360;
+                              const start = accumulatedAngle;
+                              const end = accumulatedAngle + sliceAngle;
+                              accumulatedAngle = end;
+                              return (
+                                <path
+                                  key={`3d-depth-${slice.id}`}
+                                  d={describeArc(120, 105, 46, 88, start, end)}
+                                  fill={slice.darkColor}
+                                />
+                              );
+                            });
+                          })()}
+                        </g>
+
+                        {/* Camada Superior (Superfície do Gráfico 3D) */}
+                        <g>
+                          {(() => {
+                            let accumulatedAngle = 0;
+                            return paymentSlices.map((slice) => {
+                              const sliceAngle = (slice.percent / 100) * 360;
+                              const start = accumulatedAngle;
+                              const end = accumulatedAngle + sliceAngle;
+                              accumulatedAngle = end;
+                              return (
+                                <path
+                                  key={`3d-top-${slice.id}`}
+                                  d={describeArc(120, 105, 46, 88, start, end)}
+                                  fill={slice.color}
+                                  stroke="#171717"
+                                  strokeWidth="1.5"
+                                  className="transition-transform duration-200 hover:opacity-95"
+                                />
+                              );
+                            });
+                          })()}
+                        </g>
+
+                        {/* Centro Oco do Donut com Total */}
+                        <circle cx="120" cy="105" r="44" fill="#141416" stroke="#262626" strokeWidth="2" />
+                        <text
+                          x="120"
+                          y="100"
+                          textAnchor="middle"
+                          fill="#a3a3a3"
+                          fontSize="9"
+                          fontWeight="800"
+                          letterSpacing="0.05em"
+                        >
+                          RECEBIDO
+                        </text>
+                        <text
+                          x="120"
+                          y="116"
+                          textAnchor="middle"
+                          fill="#ffffff"
+                          fontSize="11"
+                          fontWeight="900"
+                          fontFamily="monospace"
+                        >
+                          {formatBRL(paymentSlices.reduce((sum, s) => sum + s.valor, 0))}
+                        </text>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legenda Lateral */}
+                <div className="md:col-span-6 space-y-2">
+                  {paymentSlices.map((slice) => (
+                    <div
+                      key={`legend-${slice.id}`}
+                      className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800 flex items-center justify-between text-xs"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className="w-3.5 h-3.5 rounded-md shrink-0 shadow-xs"
+                          style={{ backgroundColor: slice.color }}
+                        />
+                        <span className="font-bold text-neutral-200 uppercase truncate">
+                          {slice.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 font-mono">
+                        <span className="text-neutral-400 font-bold">
+                          {slice.percent.toFixed(1)}%
+                        </span>
+                        <span className="font-black text-white tabular-nums">
+                          {formatBRL(slice.valor)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* KDS Cozinha Status */}

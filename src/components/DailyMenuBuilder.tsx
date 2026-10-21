@@ -23,6 +23,8 @@ import {
   Package,
   Flame,
   Plus,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 
 interface DailyMenuBuilderProps {
@@ -63,6 +65,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
   // Search and filter for available dishes (left column)
   const [searchLibrary, setSearchLibrary] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'todos' | 'pratos' | 'marmitex'>('todos');
+  const [libraryViewMode, setLibraryViewMode] = useState<'blocos' | 'lista'>('blocos');
 
   // Saving state & visual feedback
   const [isSaving, setIsSaving] = useState(false);
@@ -524,16 +527,44 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
             </button>
           </div>
 
-          {/* Search bar */}
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
-            <input
-              type="text"
-              value={searchLibrary}
-              onChange={(e) => setSearchLibrary(e.target.value)}
-              placeholder="BUSCAR PRATO OU MARMITEX PELO NOME..."
-              className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
-            />
+          {/* Search bar + View Selector */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
+              <input
+                type="text"
+                value={searchLibrary}
+                onChange={(e) => setSearchLibrary(e.target.value)}
+                placeholder="BUSCAR PRATO OU MARMITEX PELO NOME..."
+                className="w-full pl-9 pr-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-100 rounded-xl text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+              />
+            </div>
+            <div className="flex items-center bg-neutral-850 p-1 rounded-xl border border-neutral-700 shrink-0">
+              <button
+                type="button"
+                onClick={() => setLibraryViewMode('blocos')}
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  libraryViewMode === 'blocos'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+                title="Exibição em Blocos (Cards)"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setLibraryViewMode('lista')}
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  libraryViewMode === 'lista'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+                title="Exibição em Lista (Tabela)"
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Quick Helper Tools */}
@@ -565,14 +596,134 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
             </span>
           </div>
 
-          {/* List of Clickable Cards */}
-          <div className="space-y-3 max-h-[640px] overflow-y-auto pr-1">
-            {availableEligibleDishes.length === 0 ? (
-              <div className="p-8 text-center text-neutral-500 text-xs uppercase font-medium bg-neutral-850/40 rounded-xl border border-dashed border-neutral-800">
-                Nenhum prato encontrado com o filtro aplicado.
-              </div>
-            ) : (
-              availableEligibleDishes.map((prod) => {
+          {/* List of Clickable Cards or Table */}
+          {availableEligibleDishes.length === 0 ? (
+            <div className="p-8 text-center text-neutral-500 text-xs uppercase font-medium bg-neutral-850/40 rounded-xl border border-dashed border-neutral-800">
+              Nenhum prato encontrado com o filtro aplicado.
+            </div>
+          ) : libraryViewMode === 'lista' ? (
+            <div className="overflow-x-auto max-h-[640px] border border-neutral-800 rounded-xl">
+              <table className="w-full text-left text-xs text-neutral-200">
+                <thead className="bg-neutral-850 text-neutral-400 uppercase text-[10px] font-black border-b border-neutral-800 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-3 py-2.5">Foto</th>
+                    <th className="px-3 py-2.5">Prato / Categoria</th>
+                    <th className="px-3 py-2.5">Preços</th>
+                    <th className="px-3 py-2.5 text-right">Canais do Dia</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800/60 bg-neutral-900/60">
+                  {availableEligibleDishes.map((prod) => {
+                    const config = getItemConfig(prod.id);
+                    const isDelivery = !!config?.disponivel_delivery;
+                    const isSalao = !!config?.disponivel_salao;
+                    const isSelected = isDelivery || isSalao;
+                    const cat = categorias.find((c) => c.id === prod.categoria_id);
+                    const isMarmita = prod.categoria_id === 2;
+
+                    return (
+                      <tr
+                        key={`list-${prod.id}`}
+                        className={`hover:bg-neutral-800/50 transition-colors ${
+                          isDelivery && isSalao
+                            ? 'bg-purple-950/20'
+                            : isDelivery
+                            ? 'bg-cyan-950/20'
+                            : isSalao
+                            ? 'bg-amber-950/20'
+                            : ''
+                        }`}
+                      >
+                        <td className="px-3 py-2.5 align-middle">
+                          <div className="w-9 h-9 shrink-0 flex items-center justify-center">
+                            {renderProductVisual(prod)}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 align-middle min-w-[140px]">
+                          <span
+                            className={`px-1.5 py-0.2 rounded text-[8px] font-black uppercase tracking-wider inline-block mb-0.5 ${
+                              isMarmita
+                                ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
+                                : 'bg-amber-950 text-amber-300 border border-amber-800'
+                            }`}
+                          >
+                            {cat?.nome || 'CARDÁPIO'}
+                          </span>
+                          <h4 className="font-extrabold text-neutral-100 uppercase text-xs line-clamp-1">
+                            {prod.nome}
+                          </h4>
+                        </td>
+                        <td className="px-3 py-2.5 align-middle whitespace-nowrap font-mono text-[11px]">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-amber-400">
+                              Salão: <strong>{formatBRL(prod.preco_salao)}</strong>
+                            </span>
+                            {prod.preco_delivery > 0 && (
+                              <span className="text-cyan-400">
+                                Deliv: <strong>{formatBRL(prod.preco_delivery)}</strong>
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 align-middle text-right">
+                          <div className="flex items-center justify-end gap-1 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleChannel(prod.id, 'delivery')}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                                isDelivery
+                                  ? 'bg-cyan-600 text-white shadow-xs'
+                                  : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700 border border-neutral-700'
+                              }`}
+                              title="Ativar no Delivery"
+                            >
+                              {isDelivery ? '✓ Deliv' : '+ Delivery'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleChannel(prod.id, 'mesas')}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                                isSalao
+                                  ? 'bg-amber-600 text-white shadow-xs'
+                                  : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700 border border-neutral-700'
+                              }`}
+                              title="Ativar nas Mesas"
+                            >
+                              {isSalao ? '✓ Mesas' : '+ Mesas'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleBothChannels(prod.id)}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                                isDelivery && isSalao
+                                  ? 'bg-purple-600 text-white shadow-xs'
+                                  : 'bg-neutral-800 text-purple-300 hover:bg-neutral-700 border border-neutral-700'
+                              }`}
+                              title="Ativar em Ambos os canais"
+                            >
+                              {isDelivery && isSalao ? '✓ Ambos' : '+ Ambos'}
+                            </button>
+                            {isSelected && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(prod.id)}
+                                className="p-1 text-neutral-500 hover:text-red-400 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
+                                title="Remover dos cardápios"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[640px] overflow-y-auto pr-1">
+              {availableEligibleDishes.map((prod) => {
                 const config = getItemConfig(prod.id);
                 const isDelivery = !!config?.disponivel_delivery;
                 const isSalao = !!config?.disponivel_salao;
@@ -727,9 +878,9 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                     </div>
                   </div>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          )}
         </div>
 
         {/* =====================================================================
