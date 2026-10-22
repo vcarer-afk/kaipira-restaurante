@@ -1942,10 +1942,10 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                         <select
                           value={selectedMensalistaId}
                           onChange={(e) => setSelectedMensalistaId(e.target.value)}
-                          className="w-full px-3 py-2.5 bg-neutral-850 border border-neutral-700 text-white rounded-xl text-xs font-bold"
+                          className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
                         >
                           {mensalistasDisponiveis.map((cli) => (
-                            <option key={cli.id} value={cli.id}>
+                            <option key={cli.id} value={cli.id} className="bg-neutral-900 text-white font-bold py-1">
                               {cli.nome} · Saldo Devedor Atual: {formatBRL(cli.saldo_devedor || 0)}
                             </option>
                           ))}

@@ -9,6 +9,13 @@ interface LedPanelProps {
   onBack?: () => void;
 }
 
+// Filtro Canônico Estrito: Veto Total a Delivery e Permissão Apenas para Balcão e Salão
+const isDelivery = (tipo: string) => (tipo || '').toLowerCase().includes('delivery');
+const isBalcaoOuMesa = (tipo: string) => {
+  const t = (tipo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return t.includes('retirada') || t.includes('balcao') || t.includes('sal');
+};
+
 export const LedPanel: React.FC<LedPanelProps> = ({
   pedidos,
   configuracoes,
@@ -16,7 +23,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({
   onBack,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [lastCalledOrder, setLastCalledOrder] = useState<Pedido | null>(null);
+  const [activeOrder, setActiveOrder] = useState<Pedido | null>(null);
   const [isBlinking, setIsBlinking] = useState(false);
   const [isLedLit, setIsLedLit] = useState(true);
   const [audioAtivado, setAudioAtivado] = useState(false);
@@ -25,7 +32,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({
   const blinkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const blinkStepRef = useRef<number>(0);
   const speechTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastProcessedIdRef = useRef<number | null>(null);
+  const lastCalledRef = useRef<{ id: number; atualizado_em: string } | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Settings
@@ -78,7 +85,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({
 
   // Ready orders sorted by most recently updated - ESTRITAMENTE Balcão ('retirada') e Salão ('salão')
   const readyOrders = pedidos
-    .filter((p) => p.status === 'pronto' && (p.tipo === 'retirada' || p.tipo === 'salão'))
+    .filter((p) => p.status === 'pronto' && !isDelivery(p.tipo) && isBalcaoOuMesa(p.tipo))
     .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
 
   // Helper to retrieve/resume AudioContext
@@ -310,62 +317,66 @@ export const LedPanel: React.FC<LedPanelProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Helper to determine if a saloon or counter order has been delivered or cancelled
-  const isPedidoConcluido = (p: Pedido): boolean => {
-    return p.status === 'entregue' || p.status === 'cancelado';
-  };
+  // Chamada de senha para pedido pronto específico que saiu da cozinha
+  const chamarSenha = useCallback(
+    (pedido: Pedido) => {
+      setActiveOrder(pedido);
+      lastCalledRef.current = { id: pedido.id, atualizado_em: pedido.atualizado_em };
+      const numero = pedido.codigo_senha != null ? pedido.codigo_senha : 1;
+      const isMesa = (pedido.tipo || '').toLowerCase().includes('sal') || !!pedido.mesa_id;
+      const tipo = isMesa ? 'salão' : 'retirada';
+      anunciarSenha(numero, tipo, pedido.mesa_id);
+    },
+    [anunciarSenha]
+  );
 
-  // Monitora a lista de pedidos: Balcão e Mesas com identificação e limpeza automática
+  // Monitora a lista de pedidos: Balcão e Mesas com identificação, ordem de prontidão e limpeza automática
   useEffect(() => {
-    // 1. Se existe uma senha atualmente exibida no painel
-    if (lastCalledOrder) {
-      const currentInDb = pedidos.find((p) => p.id === lastCalledOrder.id);
-      const concluido = !currentInDb || isPedidoConcluido(currentInDb);
+    // Filtro Canônico Estrito: apenas pedidos prontos que NÃO sejam delivery e SEJAM balcão ou salão
+    const prontosAtivos = pedidos.filter(
+      (p) => p.status === 'pronto' && !isDelivery(p.tipo) && isBalcaoOuMesa(p.tipo)
+    );
 
-      if (concluido) {
-        // Pedido de mesa ou balcão foi entregue ou cancelado:
-        // Procura se há outro pedido esperando com status 'pronto' (estritamente balcão ou salão)
-        const proximosProntos = pedidos
-          .filter(
-            (p) =>
-              p.status === 'pronto' &&
-              (p.tipo === 'retirada' || p.tipo === 'salão') &&
-              p.id !== lastCalledOrder.id
-          )
-          .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
-
-        if (proximosProntos.length > 0) {
-          const proximo = proximosProntos[0];
-          lastProcessedIdRef.current = proximo.id;
-          setLastCalledOrder(proximo);
-          const numero = proximo.codigo_senha != null ? proximo.codigo_senha : 1;
-          const tipo = proximo.tipo === 'salão' ? 'salão' : 'retirada';
-          anunciarSenha(numero, tipo, proximo.mesa_id);
-        } else {
-          // Nenhum outro pedido de mesa/balcão pronto: limpa o painel imediatamente e exibe '---'
-          setLastCalledOrder(null);
-          lastProcessedIdRef.current = null;
-        }
-        return;
-      }
+    // Se não há nenhum pedido pronto de balcão ou mesa no restaurante:
+    if (prontosAtivos.length === 0) {
+      setActiveOrder(null);
+      lastCalledRef.current = null;
+      return;
     }
 
-    // 2. Se nenhuma senha está sendo exibida, ou chegou um novo pedido pronto de balcão/mesa
-    const pedidosProntos = pedidos
-      .filter((p) => p.status === 'pronto' && (p.tipo === 'retirada' || p.tipo === 'salão'))
-      .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
+    // Ordenados pela ordem cronológica de quando ficaram prontos na cozinha (atualizado_em decrescente)
+    const prontosOrdenados = [...prontosAtivos].sort(
+      (a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime()
+    );
 
-    if (pedidosProntos.length > 0) {
-      const maisRecente = pedidosProntos[0];
-      if (!lastCalledOrder || (maisRecente.id !== lastCalledOrder.id && maisRecente.id !== lastProcessedIdRef.current)) {
-        lastProcessedIdRef.current = maisRecente.id;
-        setLastCalledOrder(maisRecente);
-        const numero = maisRecente.codigo_senha != null ? maisRecente.codigo_senha : 1;
-        const tipo = maisRecente.tipo === 'salão' ? 'salão' : 'retirada';
-        anunciarSenha(numero, tipo, maisRecente.mesa_id);
-      }
+    // 1. Se nenhuma senha está atualmente na tela, chama a que acabou de ficar pronta mais recentemente
+    if (!activeOrder) {
+      const maisRecente = prontosOrdenados[0];
+      chamarSenha(maisRecente);
+      return;
     }
-  }, [pedidos, lastCalledOrder, anunciarSenha]);
+
+    // 2. Se a senha atualmente em tela já mudou de status (foi entregue/baixada):
+    const senhaAindaExiste = prontosAtivos.some((p) => p.id === activeOrder.id);
+    if (!senhaAindaExiste) {
+      // Chama o próximo pronto mais recente ou limpa se não houver
+      const proximo = prontosOrdenados[0];
+      chamarSenha(proximo);
+      return;
+    }
+
+    // 3. Se um NOVO pedido de mesa ou balcão transicionou para 'pronto' na cozinha:
+    const maisRecente = prontosOrdenados[0];
+    const lastCalled = lastCalledRef.current;
+    if (
+      maisRecente.id !== activeOrder.id &&
+      (!lastCalled ||
+        maisRecente.id !== lastCalled.id ||
+        new Date(maisRecente.atualizado_em).getTime() > new Date(lastCalled.atualizado_em).getTime())
+    ) {
+      chamarSenha(maisRecente);
+    }
+  }, [pedidos, activeOrder, chamarSenha]);
 
   const toggleFullscreen = () => {
     const target = containerRef.current || document.documentElement;
@@ -376,7 +387,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({
     }
   };
 
-  const activeTicket = lastCalledOrder;
+  const activeTicket = activeOrder;
 
   const handleManualCall = () => {
     if (!audioAtivado) ativarAudio();
@@ -387,14 +398,16 @@ export const LedPanel: React.FC<LedPanelProps> = ({
         ? readyOrders[0].codigo_senha
         : 1;
     const target = activeTicket || (readyOrders.length > 0 ? readyOrders[0] : null);
-    const tipo = target?.tipo === 'salão' ? 'salão' : 'retirada';
+    const isMesa = (target?.tipo || '').toLowerCase().includes('sal') || !!target?.mesa_id;
+    const tipo = isMesa ? 'salão' : 'retirada';
     anunciarSenha(numero, tipo, target?.mesa_id);
   };
 
   const handleTestSound = () => {
     if (!audioAtivado) ativarAudio();
     const testNumber = activeTicket?.codigo_senha != null ? activeTicket.codigo_senha : 42;
-    const tipo = activeTicket?.tipo === 'salão' ? 'salão' : 'retirada';
+    const isMesa = (activeTicket?.tipo || '').toLowerCase().includes('sal') || !!activeTicket?.mesa_id;
+    const tipo = isMesa ? 'salão' : 'retirada';
     anunciarSenha(testNumber, tipo, activeTicket?.mesa_id || 4);
   };
 
@@ -427,7 +440,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({
               textShadow: !isBlinking || isLedLit ? activeColor.glow : 'none',
             }}
           >
-            {activeTicket.tipo === 'salão' || activeTicket.mesa_id
+            {(activeTicket.tipo || '').toLowerCase().includes('sal') || activeTicket.mesa_id
               ? `MESA ${String(activeTicket.mesa_id || 1).padStart(2, '0')}`
               : 'BALCÃO'}
           </div>

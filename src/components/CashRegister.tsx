@@ -188,30 +188,38 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   // Computations
   const movs = useMemo(() => caixa.movimentacoes || [], [caixa.movimentacoes]);
 
-  // REGRA DO USUÁRIO: Entregas Delivery pendentes de conferência unificadas com o bloco âmbar
+  // REGRA DO USUÁRIO: Entregas Delivery pendentes de conferência do dia atual do caixa
+  const dataHojeIso = new Date().toISOString().slice(0, 10);
+  const dataFiltroCaixa = caixa.data_caixa || dataHojeIso;
+
   const deliveryOrdersPendentes = useMemo(() => {
     return pedidos.filter(
       (p) =>
         p.tipo === 'delivery' &&
         p.status !== 'cancelado' &&
-        p.conferencia_entrega !== 'conferido'
+        p.conferencia_entrega !== 'conferido' &&
+        (!p.criado_em || p.criado_em.startsWith(dataFiltroCaixa) || p.criado_em.startsWith(dataHojeIso))
     );
-  }, [pedidos]);
+  }, [pedidos, dataFiltroCaixa, dataHojeIso]);
 
   const deliveryOrdersConferidos = useMemo(() => {
     return pedidos.filter(
       (p) =>
         p.tipo === 'delivery' &&
         p.status !== 'cancelado' &&
-        p.conferencia_entrega === 'conferido'
+        p.conferencia_entrega === 'conferido' &&
+        (!p.criado_em || p.criado_em.startsWith(dataFiltroCaixa) || p.criado_em.startsWith(dataHojeIso))
     );
-  }, [pedidos]);
+  }, [pedidos, dataFiltroCaixa, dataHojeIso]);
 
   const deliveryOrdersAll = useMemo(() => {
     return pedidos.filter(
-      (p) => p.tipo === 'delivery' && p.status !== 'cancelado'
+      (p) =>
+        p.tipo === 'delivery' &&
+        p.status !== 'cancelado' &&
+        (!p.criado_em || p.criado_em.startsWith(dataFiltroCaixa) || p.criado_em.startsWith(dataHojeIso))
     );
-  }, [pedidos]);
+  }, [pedidos, dataFiltroCaixa, dataHojeIso]);
 
   const totalPendenteConferencia = useMemo(() => {
     return deliveryOrdersPendentes.reduce((sum, p) => sum + p.valor_total, 0);
@@ -1054,12 +1062,12 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 value={filterTipoMov}
                 onChange={(e) => setFilterTipoMov(e.target.value as any)}
                 aria-label="Filtrar por tipo de movimentação"
-                className="px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 text-white rounded-lg text-xs font-bold uppercase focus:outline-none"
+                className="px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 text-white rounded-lg text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
               >
-                <option value="todos">TODOS OS TIPOS</option>
-                <option value="entrada_pedido">VENDAS / ENTRADAS</option>
-                <option value="sangria">SANGRIAS (RETIRADAS)</option>
-                <option value="suprimento">SUPRIMENTOS</option>
+                <option value="todos" className="bg-neutral-900 text-white font-bold py-1">TODOS OS TIPOS</option>
+                <option value="entrada_pedido" className="bg-neutral-900 text-white font-bold py-1">VENDAS / ENTRADAS</option>
+                <option value="sangria" className="bg-neutral-900 text-white font-bold py-1">SANGRIAS (RETIRADAS)</option>
+                <option value="suprimento" className="bg-neutral-900 text-white font-bold py-1">SUPRIMENTOS</option>
               </select>
 
               {/* Search input */}

@@ -286,7 +286,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   // Submit Order
   const handleSubmitOrder = async () => {
     if (!isCaixaAberto) {
-      alert('CAIXA DIÁRIO FECHADO: Abra o caixa para liberar o lançamento de pedidos no salão, balcão e delivery.');
+      alert('CAIXA FECHADO: Abra o caixa diário para liberar novos pedidos no salão, balcão e delivery.');
       return;
     }
 
@@ -489,7 +489,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       {!isCaixaAberto && (
         <div className="lg:col-span-12 p-3.5 bg-red-950/90 border-2 border-red-600 rounded-xl flex items-center gap-3 text-red-200 font-bold text-xs uppercase shadow-lg animate-pulse">
           <Lock className="w-5 h-5 text-red-400 shrink-0" />
-          <span>🔒 CAIXA DIÁRIO FECHADO: Abra o caixa para liberar o lançamento de pedidos no salão, balcão e delivery.</span>
+          <span>🔒 CAIXA FECHADO: Abra o caixa diário para liberar novos pedidos no salão, balcão e delivery.</span>
         </div>
       )}
 
@@ -641,11 +641,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                     e.target.value === 'todas' ? 'todas' : Number(e.target.value)
                   )
                 }
-                className="bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-neutral-200 uppercase focus:outline-none"
+                className="bg-neutral-900 border border-neutral-700 text-white rounded-lg px-3 py-2 text-xs uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold"
               >
-                <option value="todas">TODAS AS CATEGORIAS</option>
+                <option value="todas" className="bg-neutral-900 text-white font-bold py-1">TODAS AS CATEGORIAS</option>
                 {categorias.map((c) => (
-                  <option key={c.id} value={c.id}>
+                  <option key={c.id} value={c.id} className="bg-neutral-900 text-white font-bold py-1">
                     {c.nome}
                   </option>
                 ))}

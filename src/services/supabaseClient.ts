@@ -231,8 +231,15 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     atualizado_em: now,
   };
 
-  if (pedido.forma_pagamento) {
-    pedidoPayload.forma_pagamento = String(pedido.forma_pagamento);
+  // Preservação da forma de pagamento: nunca deixa forma_pagamento vazio em delivery
+  const formaPagamentoFinal =
+    pedido.forma_pagamento ||
+    pedido.pagamento_imediato?.forma ||
+    (Array.isArray(pedido.pagamentos) && pedido.pagamentos.length > 0 ? pedido.pagamentos[0].forma : null) ||
+    (pedido.tipo === 'delivery' ? 'dinheiro' : undefined);
+
+  if (formaPagamentoFinal) {
+    pedidoPayload.forma_pagamento = String(formaPagamentoFinal);
   }
 
   // Se codigo_senha numérico foi fornecido
@@ -368,7 +375,7 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
       };
     }),
     pagamentos: pagamentosFormatados.length > 0 ? pagamentosFormatados : (pedido.pagamentos || []),
-    forma_pagamento: pedido.forma_pagamento || (pagamentosFormatados.length > 0 ? pagamentosFormatados[0].forma : undefined),
+    forma_pagamento: formaPagamentoFinal || pedido.forma_pagamento || (pagamentosFormatados.length > 0 ? pagamentosFormatados[0].forma : undefined),
     pagamento_confirmado: !!pedido.pagamento_confirmado,
     criado_em: pedidoPayload.criado_em,
     atualizado_em: now,
