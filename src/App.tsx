@@ -1465,6 +1465,7 @@ export default function App() {
             bairros={bairros}
             selectedMesaNumber={selectedMesaNumber}
             formasPagamento={formasPagamento}
+            caixa={caixa}
             onOrderCreated={async (novo) => {
               // Se for retirada (balcão) com pagamento imediato, confirma pagamento no ato
               const isConfirmadoBalcao =

@@ -188,24 +188,30 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   // Computations
   const movs = useMemo(() => caixa.movimentacoes || [], [caixa.movimentacoes]);
 
-  // REGRA DO USUÁRIO: Entregas confirmadas pelos motoboys ficam sob conferência do caixa (somente do dia atual do caixa)
-  const deliveryOrdersAll = useMemo(() => {
-    const dataAlvo = caixa.data_caixa || new Date().toISOString().split('T')[0];
-    return pedidos.filter((p) => {
-      if (p.tipo !== 'delivery') return false;
-      if (p.status !== 'entregue' && p.conferencia_entrega !== 'conferido') return false;
-      const dataCriado = (p.criado_em || '').split('T')[0];
-      return dataCriado === dataAlvo;
-    });
-  }, [pedidos, caixa.data_caixa]);
-
+  // REGRA DO USUÁRIO: Entregas Delivery pendentes de conferência unificadas com o bloco âmbar
   const deliveryOrdersPendentes = useMemo(() => {
-    return deliveryOrdersAll.filter((p) => p.conferencia_entrega !== 'conferido');
-  }, [deliveryOrdersAll]);
+    return pedidos.filter(
+      (p) =>
+        p.tipo === 'delivery' &&
+        p.status !== 'cancelado' &&
+        p.conferencia_entrega !== 'conferido'
+    );
+  }, [pedidos]);
 
   const deliveryOrdersConferidos = useMemo(() => {
-    return deliveryOrdersAll.filter((p) => p.conferencia_entrega === 'conferido');
-  }, [deliveryOrdersAll]);
+    return pedidos.filter(
+      (p) =>
+        p.tipo === 'delivery' &&
+        p.status !== 'cancelado' &&
+        p.conferencia_entrega === 'conferido'
+    );
+  }, [pedidos]);
+
+  const deliveryOrdersAll = useMemo(() => {
+    return pedidos.filter(
+      (p) => p.tipo === 'delivery' && p.status !== 'cancelado'
+    );
+  }, [pedidos]);
 
   const totalPendenteConferencia = useMemo(() => {
     return deliveryOrdersPendentes.reduce((sum, p) => sum + p.valor_total, 0);
@@ -2118,13 +2124,13 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
               <select
                 value={formaMov}
                 onChange={(e) => setFormaMov(e.target.value)}
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none"
+                className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
               >
-                <option value="dinheiro">DINHEIRO (ESPÉCIE / GAVETA)</option>
-                <option value="pix">PIX (CONTA BANCÁRIA)</option>
-                <option value="cartao_debito">CARTÃO DE DÉBITO</option>
-                <option value="cartao_credito">CARTÃO DE CRÉDITO</option>
-                <option value="outro">OUTRA FORMA</option>
+                <option value="dinheiro" className="bg-neutral-900 text-white font-bold py-1">DINHEIRO (ESPÉCIE / GAVETA)</option>
+                <option value="pix" className="bg-neutral-900 text-white font-bold py-1">PIX (CONTA BANCÁRIA)</option>
+                <option value="cartao_debito" className="bg-neutral-900 text-white font-bold py-1">CARTÃO DE DÉBITO</option>
+                <option value="cartao_credito" className="bg-neutral-900 text-white font-bold py-1">CARTÃO DE CRÉDITO</option>
+                <option value="outro" className="bg-neutral-900 text-white font-bold py-1">OUTRA FORMA</option>
               </select>
             </div>
 
@@ -2632,10 +2638,10 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
               <select
                 value={responsavelConferencia}
                 onChange={(e) => setResponsavelConferencia(e.target.value)}
-                className="w-full bg-neutral-850 border border-neutral-750 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-hidden focus:border-amber-500"
+                className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
               >
                 {supervisoresCadastrados.map((u) => (
-                  <option key={u.id} value={u.nome}>
+                  <option key={u.id} value={u.nome} className="bg-neutral-900 text-white font-bold py-1">
                     {u.nome} ({u.cargo.toUpperCase()})
                   </option>
                 ))}

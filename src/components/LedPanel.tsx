@@ -76,9 +76,9 @@ export const LedPanel: React.FC<LedPanelProps> = ({
 
   const activeFontClass = FONT_CLASSES[ledFonte] || FONT_CLASSES.mono;
 
-  // Ready orders sorted by most recently updated
+  // Ready orders sorted by most recently updated - ESTRITAMENTE Balcão ('retirada') e Salão ('salão')
   const readyOrders = pedidos
-    .filter((p) => p.status === 'pronto')
+    .filter((p) => p.status === 'pronto' && (p.tipo === 'retirada' || p.tipo === 'salão'))
     .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
 
   // Helper to retrieve/resume AudioContext
@@ -201,14 +201,18 @@ export const LedPanel: React.FC<LedPanelProps> = ({
     }, 500);
   }, []);
 
-  // Web Speech API: tratamento assíncrono com variações de voz configuráveis
+  // Web Speech API: sintetizador de voz personalizado para Balcão ou Mesa
   const falarSenha = useCallback(
-    (numero: number, variacaoVoz: string) => {
+    (numero: number, tipoPedido: 'salão' | 'retirada' = 'retirada', mesaId?: number, variacaoVoz: string = 'padrao') => {
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
       window.speechSynthesis.resume();
 
-      const texto = `Senha número ${numero}`;
+      const texto =
+        tipoPedido === 'salão' && mesaId
+          ? `Mesa ${mesaId}, senha ${numero}`
+          : `Balcão, senha ${numero}`;
+
       const utterance = new SpeechSynthesisUtterance(texto);
       utterance.lang = 'pt-BR';
 
@@ -249,10 +253,10 @@ export const LedPanel: React.FC<LedPanelProps> = ({
 
   // Sincronização Exata:
   // 1. Toca campainha
-  // 2. Aciona o efeito de piscar os dígitos vermelhos 4 vezes durante 4 segundos
-  // 3. Após 800ms, dispara falarSenha(numero)
+  // 2. Aciona o efeito de piscar os dígitos 4 vezes durante 4 segundos
+  // 3. Após 800ms, dispara falarSenha com identificador de mesa ou balcão
   const anunciarSenha = useCallback(
-    (numero: number) => {
+    (numero: number, tipoPedido: 'salão' | 'retirada' = 'retirada', mesaId?: number) => {
       tocarCampainha(ledCampainha);
       triggerBlinkSequence();
 
@@ -262,7 +266,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({
       }
 
       speechTimeoutRef.current = setTimeout(() => {
-        falarSenha(numero, ledVoz);
+        falarSenha(numero, tipoPedido, mesaId, ledVoz);
       }, 800);
     },
     [tocarCampainha, ledCampainha, triggerBlinkSequence, falarSenha, ledVoz]
@@ -306,16 +310,12 @@ export const LedPanel: React.FC<LedPanelProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Helper to determine if an order has been concluded or cancelled
+  // Helper to determine if a saloon or counter order has been delivered or cancelled
   const isPedidoConcluido = (p: Pedido): boolean => {
-    if (p.status === 'entregue' || p.status === 'cancelado') return true;
-    if (p.tipo === 'delivery') {
-      return p.status === 'a_caminho' || p.conferencia_entrega === 'conferido';
-    }
-    return false;
+    return p.status === 'entregue' || p.status === 'cancelado';
   };
 
-  // Monitora a lista de pedidos: se a senha em exibição for entregue ou cancelada, limpa ou chama a próxima
+  // Monitora a lista de pedidos: Balcão e Mesas com identificação e limpeza automática
   useEffect(() => {
     // 1. Se existe uma senha atualmente exibida no painel
     if (lastCalledOrder) {
@@ -323,10 +323,15 @@ export const LedPanel: React.FC<LedPanelProps> = ({
       const concluido = !currentInDb || isPedidoConcluido(currentInDb);
 
       if (concluido) {
-        // Pedido foi entregue, despachado, cancelado ou removido:
-        // Procura se há outro pedido esperando com status 'pronto'
+        // Pedido de mesa ou balcão foi entregue ou cancelado:
+        // Procura se há outro pedido esperando com status 'pronto' (estritamente balcão ou salão)
         const proximosProntos = pedidos
-          .filter((p) => p.status === 'pronto' && p.id !== lastCalledOrder.id)
+          .filter(
+            (p) =>
+              p.status === 'pronto' &&
+              (p.tipo === 'retirada' || p.tipo === 'salão') &&
+              p.id !== lastCalledOrder.id
+          )
           .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
 
         if (proximosProntos.length > 0) {
@@ -334,9 +339,10 @@ export const LedPanel: React.FC<LedPanelProps> = ({
           lastProcessedIdRef.current = proximo.id;
           setLastCalledOrder(proximo);
           const numero = proximo.codigo_senha != null ? proximo.codigo_senha : 1;
-          anunciarSenha(numero);
+          const tipo = proximo.tipo === 'salão' ? 'salão' : 'retirada';
+          anunciarSenha(numero, tipo, proximo.mesa_id);
         } else {
-          // Nenhum outro pedido pronto: limpa o painel e exibe os traços digitais '---'
+          // Nenhum outro pedido de mesa/balcão pronto: limpa o painel imediatamente e exibe '---'
           setLastCalledOrder(null);
           lastProcessedIdRef.current = null;
         }
@@ -344,9 +350,9 @@ export const LedPanel: React.FC<LedPanelProps> = ({
       }
     }
 
-    // 2. Se nenhuma senha está sendo exibida, ou chegou um novo pedido pronto da cozinha
+    // 2. Se nenhuma senha está sendo exibida, ou chegou um novo pedido pronto de balcão/mesa
     const pedidosProntos = pedidos
-      .filter((p) => p.status === 'pronto')
+      .filter((p) => p.status === 'pronto' && (p.tipo === 'retirada' || p.tipo === 'salão'))
       .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
 
     if (pedidosProntos.length > 0) {
@@ -355,7 +361,8 @@ export const LedPanel: React.FC<LedPanelProps> = ({
         lastProcessedIdRef.current = maisRecente.id;
         setLastCalledOrder(maisRecente);
         const numero = maisRecente.codigo_senha != null ? maisRecente.codigo_senha : 1;
-        anunciarSenha(numero);
+        const tipo = maisRecente.tipo === 'salão' ? 'salão' : 'retirada';
+        anunciarSenha(numero, tipo, maisRecente.mesa_id);
       }
     }
   }, [pedidos, lastCalledOrder, anunciarSenha]);
@@ -379,13 +386,16 @@ export const LedPanel: React.FC<LedPanelProps> = ({
         : readyOrders.length > 0 && readyOrders[0].codigo_senha != null
         ? readyOrders[0].codigo_senha
         : 1;
-    anunciarSenha(numero);
+    const target = activeTicket || (readyOrders.length > 0 ? readyOrders[0] : null);
+    const tipo = target?.tipo === 'salão' ? 'salão' : 'retirada';
+    anunciarSenha(numero, tipo, target?.mesa_id);
   };
 
   const handleTestSound = () => {
     if (!audioAtivado) ativarAudio();
     const testNumber = activeTicket?.codigo_senha != null ? activeTicket.codigo_senha : 42;
-    anunciarSenha(testNumber);
+    const tipo = activeTicket?.tipo === 'salão' ? 'salão' : 'retirada';
+    anunciarSenha(testNumber, tipo, activeTicket?.mesa_id || 4);
   };
 
   // Format 3 digits: e.g. "042" or "---"
@@ -404,20 +414,40 @@ export const LedPanel: React.FC<LedPanelProps> = ({
       }}
       className="bg-black w-screen h-screen fixed inset-0 overflow-hidden flex items-center justify-center select-none z-50"
     >
-      {/* NÚMERO GIGANTE MINIMALISTA (100% livre de molduras e caixas) */}
-      <div
-        className={`text-[26vw] sm:text-[30vw] font-black leading-none text-center select-none transition-all duration-100 ${activeFontClass} ${
-          isBlinking && !isLedLit ? 'opacity-10 scale-[0.99]' : 'opacity-100 scale-100'
-        }`}
-        style={{
-          color: hasActiveTicket ? activeColor.color : activeColor.unlit,
-          textShadow:
-            hasActiveTicket && (!isBlinking || isLedLit)
-              ? activeColor.glow
-              : 'none',
-        }}
-      >
-        {formattedNumber}
+      {/* PAINEL LED CENTRAL COM IDENTIFICADOR DE MESA/BALCÃO E NÚMERO GIGANTE */}
+      <div className="flex flex-col items-center justify-center pointer-events-none select-none">
+        {/* Identificador de Mesa / Balcão no mesmo estilo LED */}
+        {hasActiveTicket && (
+          <div
+            className={`text-[5.5vw] sm:text-[4.5vw] font-black uppercase tracking-widest text-center select-none transition-all duration-100 mb-2 sm:mb-4 ${activeFontClass} ${
+              isBlinking && !isLedLit ? 'opacity-10 scale-[0.99]' : 'opacity-100 scale-100'
+            }`}
+            style={{
+              color: activeColor.color,
+              textShadow: !isBlinking || isLedLit ? activeColor.glow : 'none',
+            }}
+          >
+            {activeTicket.tipo === 'salão' || activeTicket.mesa_id
+              ? `MESA ${String(activeTicket.mesa_id || 1).padStart(2, '0')}`
+              : 'BALCÃO'}
+          </div>
+        )}
+
+        {/* NÚMERO GIGANTE MINIMALISTA (100% livre de molduras e caixas) */}
+        <div
+          className={`text-[24vw] sm:text-[28vw] font-black leading-none text-center select-none transition-all duration-100 ${activeFontClass} ${
+            isBlinking && !isLedLit ? 'opacity-10 scale-[0.99]' : 'opacity-100 scale-100'
+          }`}
+          style={{
+            color: hasActiveTicket ? activeColor.color : activeColor.unlit,
+            textShadow:
+              hasActiveTicket && (!isBlinking || isLedLit)
+                ? activeColor.glow
+                : 'none',
+          }}
+        >
+          {formattedNumber}
+        </div>
       </div>
 
       {/* CONTROLES OCULTOS NA BASE (revelam-se suavemente ao aproximar o mouse) */}

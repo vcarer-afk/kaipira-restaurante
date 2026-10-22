@@ -1839,12 +1839,12 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                       <select
                         value={novaFormaMultiplo}
                         onChange={(e) => setNovaFormaMultiplo(e.target.value as FormaPagamento)}
-                        className="px-3 py-2 bg-neutral-850 border border-neutral-700 text-neutral-200 rounded-lg text-xs font-bold uppercase"
+                        className="w-full sm:w-auto px-3 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
                       >
                         {formasPagamento
                           .filter((fp) => fp.ativo !== false && fp.id !== 'multiplo')
                           .map((fp) => (
-                            <option key={fp.id} value={fp.id}>
+                            <option key={fp.id} value={fp.id} className="bg-neutral-900 text-white font-bold py-1">
                               {fp.nome}
                             </option>
                           ))}
@@ -1892,12 +1892,12 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
                                     prev.map((item) => (item.id === pg.id ? { ...item, forma: novaForma } : item))
                                   );
                                 }}
-                                className="px-2 py-1 bg-neutral-850 border border-neutral-700 text-neutral-200 rounded text-[11px] font-bold uppercase cursor-pointer"
+                                className="px-3 py-1.5 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
                               >
                                 {formasPagamento
                                   .filter((fp) => fp.ativo !== false && fp.id !== 'multiplo')
                                   .map((fp) => (
-                                    <option key={fp.id} value={fp.id}>
+                                    <option key={fp.id} value={fp.id} className="bg-neutral-900 text-white font-bold py-1">
                                       {fp.nome.replace(' (ESPÉCIE)', '').replace(' (CHAVE / QR CODE)', '').replace(' (FATURADO EM CONTA)', '')}
                                     </option>
                                   ))}

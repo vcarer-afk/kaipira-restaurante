@@ -9,6 +9,7 @@ import {
   Pedido,
   CardapioDiarioConfig,
   FormaPagamentoConfig,
+  CaixaDiario,
 } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { UpperInput, UpperTextarea } from './UpperInput';
@@ -34,6 +35,7 @@ import {
   CreditCard,
   QrCode,
   AlertTriangle,
+  Lock,
 } from 'lucide-react';
 
 interface CartItem {
@@ -56,6 +58,7 @@ interface POSNewOrderProps {
   bairros: BairroTaxa[];
   selectedMesaNumber?: number;
   formasPagamento?: FormaPagamentoConfig[];
+  caixa?: CaixaDiario;
   onOrderCreated: (pedido: Pedido) => void;
   onPrintReceipt: (pedido: Pedido) => void;
   onTogglePauseProduto: (id: number) => void;
@@ -70,12 +73,15 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   bairros,
   selectedMesaNumber,
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
+  caixa,
   onOrderCreated,
   onPrintReceipt,
   onTogglePauseProduto,
   cardapioDiario,
   onOpenCardapioBuilder,
 }) => {
+  const isCaixaAberto = caixa?.status === 'aberto';
+
   // Order Mode
   const [tipoPedido, setTipoPedido] = useState<TipoPedido>(
     selectedMesaNumber ? 'salão' : 'delivery'
@@ -188,7 +194,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
   // Open modal to configure dish
   const handleOpenCustomize = (prod: Produto) => {
-    if (prod.pausado) return;
+    if (prod.pausado || !isCaixaAberto) return;
     setModalProduto(prod);
     setModalQuantidade(1);
     setModalObservacao('');
@@ -196,7 +202,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   };
 
   const handleAddModalToCart = () => {
-    if (!modalProduto) return;
+    if (!modalProduto || !isCaixaAberto) return;
     const precoUnitario =
       tipoPedido === 'delivery' ? modalProduto.preco_delivery : modalProduto.preco_salao;
 
@@ -279,6 +285,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
   // Submit Order
   const handleSubmitOrder = async () => {
+    if (!isCaixaAberto) {
+      alert('CAIXA DIÁRIO FECHADO: Abra o caixa para liberar o lançamento de pedidos no salão, balcão e delivery.');
+      return;
+    }
+
     if (cart.length === 0) {
       alert('ADICIONE AO MENOS UM ITEM AO PEDIDO');
       return;
@@ -474,6 +485,14 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Banner de Bloqueio Obrigatório quando Caixa estiver Fechado */}
+      {!isCaixaAberto && (
+        <div className="lg:col-span-12 p-3.5 bg-red-950/90 border-2 border-red-600 rounded-xl flex items-center gap-3 text-red-200 font-bold text-xs uppercase shadow-lg animate-pulse">
+          <Lock className="w-5 h-5 text-red-400 shrink-0" />
+          <span>🔒 CAIXA DIÁRIO FECHADO: Abra o caixa para liberar o lançamento de pedidos no salão, balcão e delivery.</span>
+        </div>
+      )}
+
       {/* LEFT: Menu & Catalog Selection (7 cols) */}
       <div className="lg:col-span-7 flex flex-col gap-4">
         {/* Order Mode Switcher */}
@@ -767,11 +786,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
                     <button
                       onClick={() => handleOpenCustomize(prod)}
-                      disabled={prod.pausado}
+                      disabled={prod.pausado || !isCaixaAberto}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors ${
-                        prod.pausado
-                          ? 'bg-neutral-800 text-neutral-600 cursor-not-allowed'
-                          : 'bg-amber-600 hover:bg-amber-500 text-white'
+                        prod.pausado || !isCaixaAberto
+                          ? 'bg-neutral-800 text-neutral-600 opacity-40 cursor-not-allowed'
+                          : 'bg-amber-600 hover:bg-amber-500 text-white cursor-pointer'
                       }`}
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -861,11 +880,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                         <button
                           type="button"
                           onClick={() => handleOpenCustomize(prod)}
-                          disabled={prod.pausado}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1 transition-colors ml-auto cursor-pointer ${
-                            prod.pausado
-                              ? 'bg-neutral-800 text-neutral-600 cursor-not-allowed'
-                              : 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm'
+                          disabled={prod.pausado || !isCaixaAberto}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1 transition-colors ml-auto ${
+                            prod.pausado || !isCaixaAberto
+                              ? 'bg-neutral-800 text-neutral-600 opacity-40 cursor-not-allowed'
+                              : 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm cursor-pointer'
                           }`}
                         >
                           <Plus className="w-3.5 h-3.5" />
@@ -1268,12 +1287,12 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                     <select
                       value={novaFormaMultiplo}
                       onChange={(e) => setNovaFormaMultiplo(e.target.value as FormaPagamento)}
-                      className="px-2 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-lg text-xs font-bold"
+                      className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
                     >
                       {formasPagamento
                         .filter((fp) => fp.ativo !== false && fp.id !== 'multiplo')
                         .map((fp) => (
-                          <option key={fp.id} value={fp.id}>
+                          <option key={fp.id} value={fp.id} className="bg-neutral-900 text-white font-bold py-1">
                             {fp.nome}
                           </option>
                         ))}
@@ -1382,13 +1401,17 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
               {/* Submit CTA */}
               <button
                 onClick={handleSubmitOrder}
-                disabled={isSubmitting}
-                className={`w-full py-3 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-colors mt-2 cursor-pointer ${
-                  tipoPedido === 'delivery'
-                    ? 'bg-blue-600 hover:bg-blue-500'
+                disabled={isSubmitting || !isCaixaAberto}
+                className={`w-full py-3 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-colors mt-2 ${
+                  !isCaixaAberto
+                    ? 'bg-neutral-800 text-neutral-500 opacity-40 cursor-not-allowed border border-neutral-700'
+                    : isSubmitting
+                    ? 'opacity-60 cursor-wait'
+                    : tipoPedido === 'delivery'
+                    ? 'bg-blue-600 hover:bg-blue-500 cursor-pointer'
                     : tipoPedido === 'salão'
-                    ? 'bg-amber-600 hover:bg-amber-500'
-                    : 'bg-emerald-600 hover:bg-emerald-500'
+                    ? 'bg-amber-600 hover:bg-amber-500 cursor-pointer'
+                    : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer'
                 }`}
               >
                 {tipoPedido === 'delivery' ? (
