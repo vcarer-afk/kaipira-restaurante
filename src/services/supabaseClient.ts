@@ -231,6 +231,10 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     atualizado_em: now,
   };
 
+  if (pedido.forma_pagamento) {
+    pedidoPayload.forma_pagamento = String(pedido.forma_pagamento);
+  }
+
   // Se codigo_senha numérico foi fornecido
   if (pedido.codigo_senha && Number(pedido.codigo_senha) > 0) {
     pedidoPayload.codigo_senha = Number(pedido.codigo_senha);
@@ -247,7 +251,10 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
 
     if (error) {
       console.warn('Tentativa 1 de insert na tabela pedidos falhou:', error.message);
-      // Tratamento resiliente se codigo_senha for autoincrement ou conflitar
+      // Tratamento resiliente se coluna forma_pagamento ou codigo_senha não existirem
+      if (error.message?.includes('forma_pagamento')) {
+        delete pedidoPayload.forma_pagamento;
+      }
       if (error.message?.includes('codigo_senha')) {
         delete pedidoPayload.codigo_senha;
       }
@@ -361,6 +368,7 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
       };
     }),
     pagamentos: pagamentosFormatados.length > 0 ? pagamentosFormatados : (pedido.pagamentos || []),
+    forma_pagamento: pedido.forma_pagamento || (pagamentosFormatados.length > 0 ? pagamentosFormatados[0].forma : undefined),
     pagamento_confirmado: !!pedido.pagamento_confirmado,
     criado_em: pedidoPayload.criado_em,
     atualizado_em: now,
@@ -496,6 +504,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           taxa_entrega: Number(p.taxa_entrega) || 0,
           itens: Array.isArray(p.itens) ? p.itens : [],
           pagamentos: Array.isArray(p.pagamentos) ? p.pagamentos : [],
+          forma_pagamento: p.forma_pagamento || (Array.isArray(p.pagamentos) && p.pagamentos.length > 0 ? p.pagamentos[0].forma : undefined),
           pagamento_confirmado: Boolean(p.pagamento_confirmado),
           conferencia_entrega: statusConf,
           conferido_por: p.conferido_por || confLocal?.conferido_por || undefined,
@@ -572,6 +581,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           taxa_entrega: Number(p.taxa_entrega) || 0,
           itens: pedItens.length > 0 ? pedItens : (Array.isArray(p.itens) ? p.itens : []),
           pagamentos: pedPags.length > 0 ? pedPags : (Array.isArray(p.pagamentos) ? p.pagamentos : []),
+          forma_pagamento: p.forma_pagamento || (pedPags.length > 0 ? pedPags[0].forma : undefined),
           pagamento_confirmado: Boolean(p.pagamento_confirmado),
           conferencia_entrega: statusConf,
           conferido_por: p.conferido_por || confLocal?.conferido_por || undefined,
@@ -620,7 +630,8 @@ export async function atualizarStatusPedidoSupabase(
 
 export async function conferirEntregaPedidoSupabase(
   id: number,
-  conferidoPor: string
+  conferidoPor: string,
+  formaFinal?: string
 ): Promise<void> {
   try {
     // 1. Registra no cache em memória
@@ -631,20 +642,61 @@ export async function conferirEntregaPedidoSupabase(
 
     await checkPedidosSchema();
 
-    // 3. Se a tabela pedidos possuir as colunas de conferência no Supabase, tenta atualizar
-    if (pedidosCols.conferencia_entrega) {
-      const payload: any = {
-        conferencia_entrega: 'conferido',
-      };
-      if (pedidosCols.conferido_por) payload.conferido_por = conferidoPor;
-      if (pedidosCols.conferido_em) payload.conferido_em = new Date().toISOString();
+    // 3. Atualiza tabela pedidos no Supabase com conferencia_entrega, conferido_por, conferido_em, pagamento_confirmado e forma_pagamento
+    const nowIso = new Date().toISOString();
+    const payload: any = {
+      conferencia_entrega: 'conferido',
+      conferido_por: conferidoPor,
+      conferido_em: nowIso,
+      pagamento_confirmado: true,
+    };
+    if (formaFinal) {
+      payload.forma_pagamento = String(formaFinal);
+    }
 
-      const { error } = await supabase.from('pedidos').update(payload).eq('id', id);
-      if (error) {
-        pedidosCols.conferencia_entrega = false;
-        pedidosCols.conferido_por = false;
-        pedidosCols.conferido_em = false;
-        pedidosColumnsChecked = true;
+    let { error } = await supabase.from('pedidos').update(payload).eq('id', id);
+    if (error) {
+      if (error.message?.includes('forma_pagamento')) delete payload.forma_pagamento;
+      if (error.message?.includes('conferido_por')) delete payload.conferido_por;
+      if (error.message?.includes('conferido_em')) delete payload.conferido_em;
+      if (error.message?.includes('conferencia_entrega')) delete payload.conferencia_entrega;
+      await supabase.from('pedidos').update(payload).eq('id', id);
+    }
+
+    // 4. Insere ou atualiza o registro na tabela pagamentos com pedido_id, forma: formaFinal e valor: valor_total
+    if (formaFinal) {
+      try {
+        const { data: pRow } = await supabase
+          .from('pedidos')
+          .select('valor_total')
+          .eq('id', id)
+          .maybeSingle();
+
+        const valorTotal = Number(pRow?.valor_total) || 0;
+        const cleanForma = String(formaFinal).toLowerCase().trim();
+
+        const { data: existingPags } = await supabase
+          .from('pagamentos')
+          .select('id')
+          .eq('pedido_id', id);
+
+        if (existingPags && existingPags.length > 0) {
+          await supabase
+            .from('pagamentos')
+            .update({
+              forma: cleanForma,
+              valor: valorTotal > 0 ? valorTotal : undefined,
+            })
+            .eq('id', existingPags[0].id);
+        } else if (valorTotal > 0) {
+          await supabase.from('pagamentos').insert({
+            pedido_id: id,
+            forma: cleanForma,
+            valor: valorTotal,
+          });
+        }
+      } catch (pgErr) {
+        console.warn('Aviso ao sincronizar pagamento na conferência:', pgErr);
       }
     }
   } catch (err) {

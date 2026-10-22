@@ -306,25 +306,24 @@ export const LedPanel: React.FC<LedPanelProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Helper to determine if an order has been concluded
+  // Helper to determine if an order has been concluded or cancelled
   const isPedidoConcluido = (p: Pedido): boolean => {
-    if (p.status === 'cancelado') return true;
+    if (p.status === 'entregue' || p.status === 'cancelado') return true;
     if (p.tipo === 'delivery') {
-      return p.status === 'a_caminho' || p.status === 'entregue' || p.conferencia_entrega === 'conferido';
+      return p.status === 'a_caminho' || p.conferencia_entrega === 'conferido';
     }
-    // Balcão e Mesas
-    return p.status === 'entregue';
+    return false;
   };
 
-  // Auto-trigger when a new order changes status to 'pronto' or auto-clear when concluded
+  // Monitora a lista de pedidos: se a senha em exibição for entregue ou cancelada, limpa ou chama a próxima
   useEffect(() => {
-    // 1. Se existe uma senha atualmente exibida, verifica se foi concluída
+    // 1. Se existe uma senha atualmente exibida no painel
     if (lastCalledOrder) {
       const currentInDb = pedidos.find((p) => p.id === lastCalledOrder.id);
       const concluido = !currentInDb || isPedidoConcluido(currentInDb);
 
       if (concluido) {
-        // Pedido foi entregue, despachado ou conferido:
+        // Pedido foi entregue, despachado, cancelado ou removido:
         // Procura se há outro pedido esperando com status 'pronto'
         const proximosProntos = pedidos
           .filter((p) => p.status === 'pronto' && p.id !== lastCalledOrder.id)

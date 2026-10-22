@@ -67,7 +67,7 @@ interface CashRegisterProps {
     valor: number,
     descricao: string
   ) => void;
-  onConferirEntrega?: (pedidoId: number, conferidoPor: string) => void;
+  onConferirEntrega?: (pedidoId: number, conferidoPor: string, formaFinal?: string) => void;
   onConfirmarPagamento?: (pedidoId: number, forma?: FormaPagamento, conferidoPor?: string) => void;
 }
 
@@ -147,6 +147,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   const [conferenciaFiltro, setConferenciaFiltro] = useState<'pendentes' | 'conferidos' | 'todos'>('pendentes');
   const [conferenciaViewMode, setConferenciaViewMode] = useState<'blocos' | 'lista'>('blocos');
   const [conferindoPedido, setConferindoPedido] = useState<Pedido | null>(null);
+  const [formaConferencia, setFormaConferencia] = useState<string>('dinheiro');
 
   // Usuários para conferência e baixa de entregas (liberado para operadores ativos em qualquer dispositivo)
   const supervisoresCadastrados = useMemo(() => {
@@ -187,12 +188,16 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   // Computations
   const movs = useMemo(() => caixa.movimentacoes || [], [caixa.movimentacoes]);
 
-  // REGRA DO USUÁRIO: Entregas confirmadas pelos motoboys ficam sob conferência do caixa
+  // REGRA DO USUÁRIO: Entregas confirmadas pelos motoboys ficam sob conferência do caixa (somente do dia atual do caixa)
   const deliveryOrdersAll = useMemo(() => {
-    return pedidos.filter(
-      (p) => p.tipo === 'delivery' && (p.status === 'entregue' || p.conferencia_entrega === 'conferido')
-    );
-  }, [pedidos]);
+    const dataAlvo = caixa.data_caixa || new Date().toISOString().split('T')[0];
+    return pedidos.filter((p) => {
+      if (p.tipo !== 'delivery') return false;
+      if (p.status !== 'entregue' && p.conferencia_entrega !== 'conferido') return false;
+      const dataCriado = (p.criado_em || '').split('T')[0];
+      return dataCriado === dataAlvo;
+    });
+  }, [pedidos, caixa.data_caixa]);
 
   const deliveryOrdersPendentes = useMemo(() => {
     return deliveryOrdersAll.filter((p) => p.conferencia_entrega !== 'conferido');
@@ -543,11 +548,19 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     }
   };
 
+  // Abertura do modal rápido de conferência e confirmação de pagamento
+  const handleAbrirModalConferencia = (pedido: Pedido) => {
+    setConferindoPedido(pedido);
+    const formaInicial = pedido.forma_pagamento || pedido.pagamentos?.[0]?.forma || 'dinheiro';
+    setFormaConferencia(formaInicial);
+  };
+
   // Conferência de entrega individual pelo Gerente ou Supervisor
-  const handleConfirmarConferencia = (pedido: Pedido, responsavel?: string) => {
+  const handleConfirmarConferencia = (pedido: Pedido, responsavel?: string, formaFinal?: string) => {
     const nome = responsavel?.trim() || responsavelConferencia.trim() || 'GERENTE GERAL';
+    const formaEscolhida = formaFinal || formaConferencia || pedido.forma_pagamento || pedido.pagamentos?.[0]?.forma || 'dinheiro';
     if (onConferirEntrega) {
-      onConferirEntrega(pedido.id, nome);
+      onConferirEntrega(pedido.id, nome, formaEscolhida);
     }
     setConferindoPedido(null);
   };
@@ -1387,9 +1400,16 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                               <span className="text-lg font-black text-amber-400 font-mono tabular-nums">
                                 {formatBRL(p.valor_total)}
                               </span>
-                              <span className="text-[10px] text-neutral-400 block uppercase">
-                                {p.pagamentos?.[0]?.forma ? p.pagamentos[0].forma.toUpperCase() : 'A RECEBER'}
-                              </span>
+                              <div className="flex flex-col items-end gap-0.5 mt-0.5">
+                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
+                                  💳 {(p.forma_pagamento || p.pagamentos?.[0]?.forma || 'A DEFINIR').replace('_', ' ').toUpperCase()}
+                                </span>
+                                {p.precisa_troco && p.troco_para && (
+                                  <span className="text-[9.5px] font-bold text-amber-400 font-mono">
+                                    Troco p/ {formatBRL(p.troco_para)}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
 
@@ -1470,7 +1490,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
                               <button
                                 type="button"
-                                onClick={() => handleConfirmarConferencia(p)}
+                                onClick={() => handleAbrirModalConferencia(p)}
                                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98"
                               >
                                 <ShieldCheck className="w-3.5 h-3.5" />
@@ -1606,13 +1626,11 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
                             {/* Forma de Pagamento */}
                             <td className="py-3.5 px-3 align-top whitespace-nowrap">
-                              <span className="text-xs font-bold uppercase text-neutral-200 block">
-                                {p.pagamentos?.[0]?.forma
-                                  ? p.pagamentos[0].forma.replace('_', ' ')
-                                  : 'A RECEBER'}
+                              <span className="text-xs font-black uppercase text-amber-300 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 inline-block font-mono">
+                                💳 {(p.forma_pagamento || p.pagamentos?.[0]?.forma || 'A DEFINIR').replace('_', ' ').toUpperCase()}
                               </span>
                               {p.precisa_troco && p.troco_para && (
-                                <span className="text-[10px] text-amber-400 font-bold block mt-0.5">
+                                <span className="text-[10px] text-amber-400 font-bold block mt-1 font-mono">
                                   Troco p/ {formatBRL(p.troco_para)}
                                 </span>
                               )}
@@ -1640,7 +1658,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => handleConfirmarConferencia(p)}
+                                  onClick={() => handleAbrirModalConferencia(p)}
                                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black uppercase inline-flex items-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-95"
                                   title="Liberar entrada no faturamento diário"
                                 >
@@ -1712,9 +1730,16 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
                         {/* Ação */}
                         <div className="pt-1 flex items-center justify-between text-xs">
-                          <span className="text-neutral-400 text-[11px] uppercase">
-                            Pgto: {p.pagamentos?.[0]?.forma || 'A RECEBER'}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className="text-amber-300 font-black text-[11px] uppercase font-mono">
+                              💳 {(p.forma_pagamento || p.pagamentos?.[0]?.forma || 'A DEFINIR').replace('_', ' ').toUpperCase()}
+                            </span>
+                            {p.precisa_troco && p.troco_para && (
+                              <span className="text-[10px] text-amber-400 font-bold font-mono">
+                                Troco p/ {formatBRL(p.troco_para)}
+                              </span>
+                            )}
+                          </div>
 
                           {isConferido ? (
                             <span className="text-[10px] text-emerald-400 font-bold uppercase flex items-center gap-1">
@@ -1724,7 +1749,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                           ) : (
                             <button
                               type="button"
-                              onClick={() => handleConfirmarConferencia(p)}
+                              onClick={() => handleAbrirModalConferencia(p)}
                               className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black uppercase flex items-center gap-1.5 shadow-sm active:scale-95"
                             >
                               <ShieldCheck className="w-3.5 h-3.5" />
@@ -2500,6 +2525,140 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                   Fechar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação e Ajuste da Forma de Pagamento da Entrega */}
+      {conferindoPedido && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+          <div className="bg-neutral-900 border border-neutral-750 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in duration-150">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase">
+                    Conferência de Entrega · #{conferindoPedido.codigo_senha}
+                  </h3>
+                  <p className="text-xs text-neutral-400">
+                    Pedido #{conferindoPedido.id} · Motoboy: {conferindoPedido.entregador_nome || 'PRÓPRIO'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConferindoPedido(null)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Informações da Entrega */}
+            <div className="bg-neutral-850 p-3.5 rounded-xl border border-neutral-800 space-y-2 text-xs">
+              <div className="flex justify-between items-baseline">
+                <span className="font-bold text-white uppercase">
+                  {conferindoPedido.cliente?.nome || 'CLIENTE NÃO IDENTIFICADO'}
+                </span>
+                <span className="text-base font-black text-amber-400 font-mono">
+                  {formatBRL(conferindoPedido.valor_total)}
+                </span>
+              </div>
+              <p className="text-neutral-400 text-[11px]">
+                {conferindoPedido.cliente?.endereco || 'PIRACICABA'}
+                {conferindoPedido.cliente?.numero ? `, Nº ${conferindoPedido.cliente.numero}` : ''} -{' '}
+                <strong className="text-neutral-300">{conferindoPedido.cliente?.bairro || 'PIRACICABA'}</strong>
+              </p>
+              <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <span className="text-neutral-400">
+                  Forma Combinada no Pedido:{' '}
+                  <strong className="text-amber-400 font-mono uppercase">
+                    {(conferindoPedido.forma_pagamento || conferindoPedido.pagamentos?.[0]?.forma || 'A DEFINIR').replace('_', ' ')}
+                  </strong>
+                </span>
+                {conferindoPedido.precisa_troco && conferindoPedido.troco_para && (
+                  <span className="text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60 font-mono font-bold">
+                    Troco p/ {formatBRL(conferindoPedido.troco_para)}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Seleção / Confirmação da Forma Real Recebida */}
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase text-neutral-300 flex items-center justify-between">
+                <span>Forma de Pagamento Recebida pelo Motoboy:</span>
+                <span className="text-[10px] text-amber-400 font-normal">Confirme ou altere</span>
+              </label>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { id: 'dinheiro', label: 'DINHEIRO', icon: '💵' },
+                  { id: 'pix', label: 'PIX', icon: '⚡' },
+                  { id: 'cartao_debito', label: 'DÉBITO', icon: '💳' },
+                  { id: 'cartao_credito', label: 'CRÉDITO', icon: '💳' },
+                  { id: 'vale_refeicao', label: 'VALE / VR', icon: '🍽️' },
+                  { id: 'mensalista', label: 'MENSALISTA', icon: '📋' },
+                ].map((item) => {
+                  const isSelected = formaConferencia.toLowerCase() === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setFormaConferencia(item.id)}
+                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-600 text-white border-amber-500 shadow-md ring-1 ring-amber-400'
+                          : 'bg-neutral-850 text-neutral-300 border-neutral-750 hover:bg-neutral-800'
+                      }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Responsável pela Conferência */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold uppercase text-neutral-300 block">
+                Operador / Supervisor Responsável:
+              </label>
+              <select
+                value={responsavelConferencia}
+                onChange={(e) => setResponsavelConferencia(e.target.value)}
+                className="w-full bg-neutral-850 border border-neutral-750 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-hidden focus:border-amber-500"
+              >
+                {supervisoresCadastrados.map((u) => (
+                  <option key={u.id} value={u.nome}>
+                    {u.nome} ({u.cargo.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Ações */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setConferindoPedido(null)}
+                className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmarConferencia(conferindoPedido, responsavelConferencia, formaConferencia)}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Confirmar & Faturar {formatBRL(conferindoPedido.valor_total)}</span>
+              </button>
             </div>
           </div>
         </div>

@@ -651,14 +651,12 @@ export default function App() {
           setPedidos((prev) => enrichPedidosWithProductNames(peds, produtos));
           setSyncStatus('sincronizado');
         }
-        await fetchCloudState();
       } catch (err) {
-        console.warn('Oscilação na conexão com a nuvem:', err);
         setSyncStatus('reconectando');
       }
     }, 6000);
     return () => clearInterval(interval);
-  }, [isAuthenticated, fetchCloudState, produtos]);
+  }, [isAuthenticated, produtos]);
 
   // 3. Detecção de conexão de rede do navegador (online/offline)
   useEffect(() => {
@@ -748,11 +746,20 @@ export default function App() {
   };
 
   // Conferência de entrega pelo Gerente ou Supervisor no Caixa
-  const handleConferirEntrega = async (pedidoId: number, conferidoPor: string) => {
+  const handleConferirEntrega = async (
+    pedidoId: number,
+    conferidoPor: string,
+    formaFinal?: string
+  ) => {
     const pedidoAlvo = pedidos.find((p) => p.id === pedidoId);
     if (!pedidoAlvo) return;
 
     const agora = new Date().toISOString();
+    const formaEscolhida =
+      formaFinal ||
+      pedidoAlvo.forma_pagamento ||
+      pedidoAlvo.pagamentos?.[0]?.forma ||
+      'dinheiro';
 
     setPedidos((prev) =>
       prev.map((p) =>
@@ -763,30 +770,35 @@ export default function App() {
               conferido_por: conferidoPor,
               conferido_em: agora,
               pagamento_confirmado: true,
+              forma_pagamento: formaEscolhida,
+              pagamentos: [
+                {
+                  id: p.pagamentos?.[0]?.id || Date.now(),
+                  pedido_id: p.id,
+                  forma: formaEscolhida,
+                  valor: p.valor_total,
+                  criado_em: p.pagamentos?.[0]?.criado_em || agora,
+                },
+              ],
             }
           : p
       )
     );
 
-    // Persistir conferência no banco Supabase
-    await conferirEntregaPedidoSupabase(pedidoId, conferidoPor);
+    // Persistir conferência no banco Supabase com a forma de pagamento final confirmada
+    await conferirEntregaPedidoSupabase(pedidoId, conferidoPor, formaEscolhida);
 
     // REGRA: Somente entrará no faturamento diário se estiver conferido pelo gerente ou supervisor
-    // Lança agora as entradas de pagamento do delivery no caixa diário
+    // Lança agora as entradas de pagamento do delivery no caixa diário com essa forma exata
     if (caixa && caixa.status === 'aberto') {
-      const pgs =
-        pedidoAlvo.pagamentos && pedidoAlvo.pagamentos.length > 0
-          ? pedidoAlvo.pagamentos.filter((pg) => pg.valor > 0)
-          : [{ forma: 'dinheiro', valor: pedidoAlvo.valor_total }];
-
-      await handleRegistrarMultiplasMovimentacoesCaixa(
-        pgs.map((pg) => ({
+      await handleRegistrarMultiplasMovimentacoesCaixa([
+        {
           tipo: 'entrada_pedido' as const,
-          forma: pg.forma,
-          valor: pg.valor,
-          descricao: `PEDIDO #${pedidoAlvo.id} (DELIVERY CONFERIDO - ${conferidoPor.toUpperCase()})`,
-        }))
-      );
+          forma: formaEscolhida,
+          valor: pedidoAlvo.valor_total,
+          descricao: `PEDIDO #${pedidoAlvo.id} (DELIVERY CONFERIDO - ${formaEscolhida.toUpperCase().replace('_', ' ')} - ${conferidoPor.toUpperCase()})`,
+        },
+      ]);
     }
 
     playAlertChime();
