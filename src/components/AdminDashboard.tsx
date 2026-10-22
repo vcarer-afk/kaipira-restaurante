@@ -130,21 +130,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newStockQty, setNewStockQty] = useState('');
   const [newStockMin, setNewStockMin] = useState('');
 
-  // Financial metrics - REGRA ESTRITA: Faturamento Condicionado à Confirmação do Caixa
-  // Somente somar pedidos com pagamento_confirmado === true ou entregas conferidas pelo supervisor
+  // Regra Unificada de Faturamento: Delivery com Conferência vs Balcão/Mesas Imediatos
+  const isPedidoFaturado = (p: Pedido): boolean => {
+    if (p.status === 'cancelado') return false;
+    if (p.tipo === 'delivery') {
+      return p.conferencia_entrega === 'conferido';
+    }
+    // Balcão e Mesas: faturado se houver pagamentos registrados ou status entregue
+    return (p.pagamentos && p.pagamentos.some((pg) => pg.valor > 0)) || p.pagamento_confirmado === true;
+  };
+
   const activeAndCompletedOrders = pedidos.filter((p) => p.status !== 'cancelado');
-  const pedidosConfirmados = activeAndCompletedOrders.filter(
-    (p) =>
-      p.pagamento_confirmado === true ||
-      (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido')
-  );
-  const pedidosAFaturar = activeAndCompletedOrders.filter(
-    (p) =>
-      !(
-        p.pagamento_confirmado === true ||
-        (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido')
-      )
-  );
+  const pedidosConfirmados = activeAndCompletedOrders.filter(isPedidoFaturado);
+  const pedidosAFaturar = activeAndCompletedOrders.filter((p) => !isPedidoFaturado(p));
 
   const totalFaturamento = pedidosConfirmados.reduce((acc, p) => acc + p.valor_total, 0);
   const totalAFaturar = pedidosAFaturar.reduce((acc, p) => acc + p.valor_total, 0);

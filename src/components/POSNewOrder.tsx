@@ -378,11 +378,15 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
               },
             ];
 
+      // Para pedidos de balcão (retirada) com pagamento imediato: grava pagamento_confirmado: true
+      const isBalcaoPago = tipoPedido === 'retirada' && pagamentosArray.length > 0;
+
       const novoPedido = await criarPedidoSupabase({
         ...payload,
         status: 'pendente',
         valor_total: total,
         pagamentos: pagamentosArray,
+        pagamento_confirmado: isBalcaoPago ? true : undefined,
       });
 
       playAlertChime('order');

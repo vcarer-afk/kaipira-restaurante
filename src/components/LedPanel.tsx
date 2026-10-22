@@ -306,18 +306,60 @@ export const LedPanel: React.FC<LedPanelProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Auto-trigger when a new order changes status to 'pronto'
+  // Helper to determine if an order has been concluded
+  const isPedidoConcluido = (p: Pedido): boolean => {
+    if (p.status === 'cancelado') return true;
+    if (p.tipo === 'delivery') {
+      return p.status === 'a_caminho' || p.status === 'entregue' || p.conferencia_entrega === 'conferido';
+    }
+    // Balcão e Mesas
+    return p.status === 'entregue';
+  };
+
+  // Auto-trigger when a new order changes status to 'pronto' or auto-clear when concluded
   useEffect(() => {
-    if (readyOrders.length > 0) {
-      const topReady = readyOrders[0];
-      if (lastProcessedIdRef.current !== topReady.id) {
-        lastProcessedIdRef.current = topReady.id;
-        setLastCalledOrder(topReady);
-        const numero = topReady.codigo_senha != null ? topReady.codigo_senha : 1;
+    // 1. Se existe uma senha atualmente exibida, verifica se foi concluída
+    if (lastCalledOrder) {
+      const currentInDb = pedidos.find((p) => p.id === lastCalledOrder.id);
+      const concluido = !currentInDb || isPedidoConcluido(currentInDb);
+
+      if (concluido) {
+        // Pedido foi entregue, despachado ou conferido:
+        // Procura se há outro pedido esperando com status 'pronto'
+        const proximosProntos = pedidos
+          .filter((p) => p.status === 'pronto' && p.id !== lastCalledOrder.id)
+          .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
+
+        if (proximosProntos.length > 0) {
+          const proximo = proximosProntos[0];
+          lastProcessedIdRef.current = proximo.id;
+          setLastCalledOrder(proximo);
+          const numero = proximo.codigo_senha != null ? proximo.codigo_senha : 1;
+          anunciarSenha(numero);
+        } else {
+          // Nenhum outro pedido pronto: limpa o painel e exibe os traços digitais '---'
+          setLastCalledOrder(null);
+          lastProcessedIdRef.current = null;
+        }
+        return;
+      }
+    }
+
+    // 2. Se nenhuma senha está sendo exibida, ou chegou um novo pedido pronto da cozinha
+    const pedidosProntos = pedidos
+      .filter((p) => p.status === 'pronto')
+      .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
+
+    if (pedidosProntos.length > 0) {
+      const maisRecente = pedidosProntos[0];
+      if (!lastCalledOrder || (maisRecente.id !== lastCalledOrder.id && maisRecente.id !== lastProcessedIdRef.current)) {
+        lastProcessedIdRef.current = maisRecente.id;
+        setLastCalledOrder(maisRecente);
+        const numero = maisRecente.codigo_senha != null ? maisRecente.codigo_senha : 1;
         anunciarSenha(numero);
       }
     }
-  }, [readyOrders, anunciarSenha]);
+  }, [pedidos, lastCalledOrder, anunciarSenha]);
 
   const toggleFullscreen = () => {
     const target = containerRef.current || document.documentElement;
@@ -328,11 +370,16 @@ export const LedPanel: React.FC<LedPanelProps> = ({
     }
   };
 
-  const activeTicket = lastCalledOrder || (readyOrders.length > 0 ? readyOrders[0] : null);
+  const activeTicket = lastCalledOrder;
 
   const handleManualCall = () => {
     if (!audioAtivado) ativarAudio();
-    const numero = activeTicket?.codigo_senha != null ? activeTicket.codigo_senha : 1;
+    const numero =
+      activeTicket?.codigo_senha != null
+        ? activeTicket.codigo_senha
+        : readyOrders.length > 0 && readyOrders[0].codigo_senha != null
+        ? readyOrders[0].codigo_senha
+        : 1;
     anunciarSenha(numero);
   };
 

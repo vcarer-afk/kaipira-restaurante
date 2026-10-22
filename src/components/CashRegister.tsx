@@ -148,31 +148,32 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   const [conferenciaViewMode, setConferenciaViewMode] = useState<'blocos' | 'lista'>('blocos');
   const [conferindoPedido, setConferindoPedido] = useState<Pedido | null>(null);
 
-  // Usuários com perfil de supervisão ou gerência para conferência
+  // Usuários para conferência e baixa de entregas (liberado para operadores ativos em qualquer dispositivo)
   const supervisoresCadastrados = useMemo(() => {
-    const list = (usuarios || []).filter(
-      (u) => ['supervisor', 'admin', 'master'].includes(u.cargo) && u.status === 'ativo'
-    );
+    const list = (usuarios || []).filter((u) => u.status === 'ativo');
     if (list.length === 0) {
-      return [{ id: 'sup-vlademir', nome: 'VLADEMIR (SUPERVISOR)', cargo: 'supervisor' as const }];
+      return [{ id: 'sup-operador', nome: currentPerfil?.nome || 'VLADEMIR (SUPERVISOR)', cargo: (currentPerfil?.cargo || 'supervisor') as any }];
     }
     return list;
-  }, [usuarios]);
+  }, [usuarios, currentPerfil]);
 
   const [responsavelConferencia, setResponsavelConferencia] = useState(
-    () => supervisoresCadastrados[0]?.nome || currentPerfil?.nome || 'VLADEMIR (SUPERVISOR)'
+    () => currentPerfil?.nome || supervisoresCadastrados[0]?.nome || 'VLADEMIR (SUPERVISOR)'
   );
+
+  // Regra Unificada de Faturamento: Delivery com Conferência vs Balcão/Mesas Imediatos
+  const isPedidoFaturado = (p: Pedido): boolean => {
+    if (p.status === 'cancelado') return false;
+    if (p.tipo === 'delivery') {
+      return p.conferencia_entrega === 'conferido';
+    }
+    // Balcão e Mesas: faturado se houver pagamentos registrados ou status entregue
+    return (p.pagamentos && p.pagamentos.some((pg) => pg.valor > 0)) || p.pagamento_confirmado === true;
+  };
 
   // Pedidos sob a categoria "A Faturar / A Receber" (não confirmados pelo caixa)
   const pedidosAFaturar = useMemo(() => {
-    return pedidos.filter(
-      (p) =>
-        p.status !== 'cancelado' &&
-        !(
-          p.pagamento_confirmado === true ||
-          (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido')
-        )
-    );
+    return pedidos.filter((p) => p.status !== 'cancelado' && !isPedidoFaturado(p));
   }, [pedidos]);
 
   const totalAFaturar = useMemo(() => {
@@ -313,12 +314,8 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     // Inclusão de segurança: agrega também pagamentos finalizados em pedidos (ex: fechamentos de mesa)
     // para garantir que nenhuma forma (como PIX ou Dinheiro) deixe de constar no faturamento do dia
     pedidos.forEach((p) => {
-      if (p.status === 'cancelado') return;
-      // REGRA MANDATÓRIA: Somente entra no faturamento se pagamento confirmado ou delivery conferido!
-      const isConfirmado =
-        p.pagamento_confirmado === true ||
-        (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido');
-      if (!isConfirmado) return;
+      // Regra Unificada de Faturamento: delivery conferido OU balcão/mesas com pagamentos
+      if (!isPedidoFaturado(p)) return;
 
       if (p.pagamentos && p.pagamentos.length > 0) {
         p.pagamentos.forEach((pg) => {
@@ -400,11 +397,8 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     let balcaoQtd = 0;
 
     pedidos.forEach((p) => {
-      if (p.status === 'cancelado') return;
-      const isConfirmado =
-        p.pagamento_confirmado === true ||
-        (p.tipo === 'delivery' && p.conferencia_entrega === 'conferido');
-      if (!isConfirmado) return;
+      // Regra Unificada de Faturamento: delivery conferido OU balcão/mesas com pagamentos
+      if (!isPedidoFaturado(p)) return;
 
       if (p.tipo === 'salão') {
         salaoTotal += p.valor_total;

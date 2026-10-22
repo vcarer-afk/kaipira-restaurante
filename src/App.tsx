@@ -520,6 +520,55 @@ export default function App() {
         )
         .on(
           'postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'pedidos' },
+          (payload: any) => {
+            if (payload.old && payload.old.id) {
+              const deletedId = Number(payload.old.id);
+              setPedidos((prev) => prev.filter((p) => p.id !== deletedId));
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'pagamentos' },
+          async () => {
+            try {
+              const peds = await fetchPedidosSupabase();
+              if (peds) {
+                setPedidos(enrichPedidosWithProductNames(peds, produtos));
+              }
+            } catch {}
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'caixa_diario' },
+          (payload: any) => {
+            if (payload.new) {
+              const row = payload.new;
+              if (row.dados && typeof row.dados === 'object' && row.dados.valor_abertura !== undefined) {
+                setCaixa(row.dados);
+              } else {
+                const valAbertura = row.valor_abertura !== undefined && row.valor_abertura !== null
+                  ? Number(row.valor_abertura)
+                  : (row.valor_apertura !== undefined && row.valor_apertura !== null ? Number(row.valor_apertura) : 0);
+                const cloudMovs: MovimentacaoCaixa[] = Array.isArray(row.movimentacoes) ? row.movimentacoes : [];
+                setCaixa({
+                  id: row.id || 1,
+                  data_caixa: row.data_caixa || new Date().toISOString().split('T')[0],
+                  status: (row.status as any) || 'aberto',
+                  valor_abertura: isNaN(valAbertura) ? 0 : valAbertura,
+                  valor_fechamento: row.valor_fechamento !== null && row.valor_fechamento !== undefined ? Number(row.valor_fechamento) : undefined,
+                  observacoes: row.observacoes || '',
+                  movimentacoes: cloudMovs,
+                  aberto_em: row.aberto_em || new Date().toISOString(),
+                });
+              }
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
           { event: '*', schema: 'public', table: 'mesas' },
           (payload: any) => {
             if (payload.new) {
@@ -1405,13 +1454,11 @@ export default function App() {
             selectedMesaNumber={selectedMesaNumber}
             formasPagamento={formasPagamento}
             onOrderCreated={async (novo) => {
-              // Se for retirada (balcão) com pagamento imediato e caixa aberto, confirma pagamento no ato
+              // Se for retirada (balcão) com pagamento imediato, confirma pagamento no ato
               const isConfirmadoBalcao =
                 novo.tipo === 'retirada' &&
-                caixa &&
-                caixa.status === 'aberto' &&
                 novo.pagamentos &&
-                novo.pagamentos.length > 0;
+                novo.pagamentos.some((pg) => pg.valor > 0);
 
               const enrichedNovo = enrichPedidosWithProductNames([novo], produtos)[0] || novo;
               const finalNovo = isConfirmadoBalcao
@@ -1467,7 +1514,14 @@ export default function App() {
         )}
 
         {/* LED Panel */}
-        {activeTab === 'led' && <LedPanel pedidos={pedidos} />}
+        {activeTab === 'led' && (
+          <LedPanel
+            pedidos={pedidos}
+            configuracoes={configuracoes}
+            onOpenSettings={() => setActiveTab('configuracoes')}
+            onBack={() => setActiveTab('dashboard')}
+          />
+        )}
 
         {/* Mesas & Salão */}
         {activeTab === 'mesas' && (
