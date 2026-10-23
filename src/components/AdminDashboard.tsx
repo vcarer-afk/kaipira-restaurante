@@ -506,6 +506,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {caixa.status === 'aberto' ? (
             <button
               onClick={() => {
+                const mesasAbertas = mesas.filter((m) => m.status === 'ocupada' || m.status === 'conta');
+                const entregasPendentes = pedidos.filter(
+                  (p) => p.tipo === 'delivery' && p.status !== 'cancelado' && p.conferencia_entrega !== 'conferido'
+                );
+
+                if (mesasAbertas.length > 0 || entregasPendentes.length > 0) {
+                  alert(
+                    "IMPOSSÍVEL FECHAR O CAIXA:\n\nExistem " +
+                      mesasAbertas.length +
+                      " mesa(s) em aberto e " +
+                      entregasPendentes.length +
+                      " entrega(s) pendente(s) de conferência."
+                  );
+                  return;
+                }
+
                 setValorFechamento(dinheiroGaveta.toFixed(2));
                 setShowFecharModal(true);
               }}

@@ -1467,6 +1467,9 @@ export default function App() {
             formasPagamento={formasPagamento}
             caixa={caixa}
             currentRole={currentRole}
+            clientes={clientes}
+            onSaveCliente={handleSaveCliente}
+            onSaveBairro={handleSaveBairro}
             onOrderCreated={async (novo) => {
               // Se for retirada (balcão) com pagamento imediato, confirma pagamento no ato
               const isConfirmadoBalcao =

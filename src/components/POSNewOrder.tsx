@@ -11,6 +11,7 @@ import {
   FormaPagamentoConfig,
   CaixaDiario,
   TipoUsuario,
+  Cliente,
 } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { UpperInput, UpperTextarea } from './UpperInput';
@@ -61,6 +62,9 @@ interface POSNewOrderProps {
   formasPagamento?: FormaPagamentoConfig[];
   caixa?: CaixaDiario;
   currentRole?: TipoUsuario;
+  clientes?: Cliente[];
+  onSaveCliente?: (cliente: Partial<Cliente>) => Promise<any> | void;
+  onSaveBairro?: (bairro: BairroTaxa) => Promise<any> | void;
   onOrderCreated: (pedido: Pedido) => void;
   onPrintReceipt: (pedido: Pedido) => void;
   onTogglePauseProduto: (id: number) => void;
@@ -77,6 +81,9 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
   caixa,
   currentRole,
+  clientes = [],
+  onSaveCliente,
+  onSaveBairro,
   onOrderCreated,
   onPrintReceipt,
   onTogglePauseProduto,
@@ -116,6 +123,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const [mesaId, setMesaId] = useState<number>(selectedMesaNumber || 1);
 
   // Delivery / Client Form
+  const [clienteMatchedId, setClienteMatchedId] = useState<string | undefined>(undefined);
   const [clienteNome, setClienteNome] = useState('');
   const [clienteTelefone, setClienteTelefone] = useState('');
   const [clienteCep, setClienteCep] = useState('13400-010'); // Piracicaba Centro default sample
@@ -127,6 +135,39 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const [taxaEntrega, setTaxaEntrega] = useState<number>(7.0);
   const [isCepLoading, setIsCepLoading] = useState(false);
   const [cepMessage, setCepMessage] = useState('');
+
+  // Busca Inteligente e Autocomplete por Telefone
+  const handleTelefoneChange = (val: string) => {
+    setClienteTelefone(val);
+    const cleanTel = val.replace(/\D/g, '');
+    if (cleanTel.length >= 8 && clientes && clientes.length > 0) {
+      const match = clientes.find((c) => {
+        const cTelClean = (c.telefone || '').replace(/\D/g, '');
+        return (
+          cTelClean === cleanTel ||
+          (cTelClean.length >= 8 && (cleanTel.endsWith(cTelClean) || cTelClean.endsWith(cleanTel)))
+        );
+      });
+      if (match) {
+        setClienteMatchedId(match.id);
+        if (match.nome) setClienteNome(match.nome);
+        if (match.cep) setClienteCep(match.cep);
+        if (match.endereco) setClienteEndereco(match.endereco);
+        if (match.numero) setClienteNumero(match.numero);
+        if (match.bairro) {
+          setClienteBairro(match.bairro);
+          const matchedB = bairros.find(
+            (b) => b.bairro.toUpperCase() === match.bairro.toUpperCase()
+          );
+          if (matchedB) {
+            setTaxaEntrega(matchedB.taxa);
+          }
+        }
+        if (match.complemento) setClienteComplemento(match.complemento);
+        if (match.eh_mensalista !== undefined) setIsMensalista(match.eh_mensalista);
+      }
+    }
+  };
 
   // Payment & Delivery logistics
   const [precisaTroco, setPrecisaTroco] = useState(false);
@@ -159,7 +200,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     }
   }, [selectedMesaNumber]);
 
-  // Handle CEP lookup
+  // Handle CEP lookup (ViaCEP Orgânico com taxa zero e criação instantânea)
   const handleBuscarCep = async (cepToSearch: string) => {
     const digits = cleanDigits(cepToSearch);
     if (digits.length !== 8) {
@@ -168,23 +209,35 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     }
 
     setIsCepLoading(true);
-    setCepMessage('BUSCANDO ENDEREÇO EM PIRACICABA...');
+    setCepMessage('BUSCANDO ENDEREÇO NO VIACEP...');
     try {
       const data = await consultarViaCep(digits);
       if (data && !data.erro) {
-        setClienteEndereco(data.logradouro || '');
-        setClienteBairro(data.bairro || 'CENTRO');
-        setCepMessage(`${data.localidade || 'PIRACICABA'} - ${data.uf || 'SP'}`);
+        setClienteEndereco(data.logradouro ? data.logradouro.toUpperCase() : '');
 
-        // Match neighborhood fee
+        // ViaCEP Orgânico: Se o CEP não retornar bairro, force o valor "BAIRRO NÃO INFORMADO (VIA CEP)"
+        const rawBairro = (data.bairro || '').trim();
+        const bairroFinal = rawBairro ? rawBairro.toUpperCase() : 'BAIRRO NÃO INFORMADO (VIA CEP)';
+        setClienteBairro(bairroFinal);
+
+        // Verifica se ele existe no array bairros
         const matchedBairro = bairros.find(
-          (b) => b.bairro.toUpperCase() === (data.bairro || '').toUpperCase()
+          (b) => b.bairro.toUpperCase() === bairroFinal.toUpperCase()
         );
+
         if (matchedBairro) {
           setTaxaEntrega(matchedBairro.taxa);
         } else {
-          setTaxaEntrega(10.0);
+          // Se não existir, chame imediatamente onSaveBairro({ bairro: bairroViaCep, taxa: 0 })
+          // Assuma a taxa do novo bairro como R$ 0,00 e aplique-a ao pedido atual (entrega grátis)
+          const novoBairro: BairroTaxa = { bairro: bairroFinal, taxa: 0.0 };
+          setTaxaEntrega(0.0);
+          if (onSaveBairro) {
+            onSaveBairro(novoBairro);
+          }
         }
+
+        setCepMessage(`${data.localidade || 'PIRACICABA'} - ${data.uf || 'SP'}`);
       } else {
         setCepMessage('CEP NÃO ENCONTRADO NO VIACEP. PREENCHA MANUALMENTE.');
       }
@@ -298,13 +351,19 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       return;
     }
 
+    if (!clienteTelefone || !clienteTelefone.trim()) {
+      alert('POR FAVOR, INFORME O TELEFONE DO CLIENTE');
+      return;
+    }
+
+    if (!clienteNome || !clienteNome.trim()) {
+      alert('POR FAVOR, INFORME O NOME DO CLIENTE');
+      return;
+    }
+
     if (tipoPedido === 'delivery') {
-      if (!clienteNome) {
-        alert('POR FAVOR, INFORME O NOME DO CLIENTE');
-        return;
-      }
-      if (!clienteTelefone) {
-        alert('POR FAVOR, INFORME O TELEFONE COM MÁSCARA');
+      if (!clienteCep || cleanDigits(clienteCep).length !== 8) {
+        alert('POR FAVOR, INFORME O CEP VÁLIDO PARA ENTREGA');
         return;
       }
       if (!clienteEndereco || !clienteNumero) {
@@ -335,27 +394,40 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
     setIsSubmitting(true);
     try {
+      // Upsert do Cliente: salva ou atualiza cliente na nuvem junto com o pedido
+      const clienteForm: Partial<Cliente> = {
+        id: clienteMatchedId,
+        nome: clienteNome.toUpperCase().trim(),
+        telefone: clienteTelefone.trim(),
+        cep: clienteCep ? clienteCep.trim() : undefined,
+        endereco: clienteEndereco ? clienteEndereco.toUpperCase().trim() : undefined,
+        numero: clienteNumero ? clienteNumero.toUpperCase().trim() : undefined,
+        bairro: clienteBairro ? clienteBairro.toUpperCase().trim() : undefined,
+        complemento: clienteComplemento ? clienteComplemento.toUpperCase().trim() : undefined,
+        eh_mensalista: isMensalista,
+      };
+
+      if (onSaveCliente) {
+        try {
+          await onSaveCliente(clienteForm);
+        } catch (cliErr) {
+          console.warn('Aviso ao sincronizar cliente no Supabase:', cliErr);
+        }
+      }
+
       const payload = {
         tipo: tipoPedido,
         mesa_id: tipoPedido === 'salão' ? mesaId : undefined,
-        cliente:
-          tipoPedido === 'delivery'
-            ? {
-                nome: clienteNome.toUpperCase(),
-                telefone: clienteTelefone,
-                cep: clienteCep,
-                endereco: clienteEndereco.toUpperCase(),
-                numero: clienteNumero.toUpperCase(),
-                bairro: clienteBairro.toUpperCase(),
-                complemento: clienteComplemento ? clienteComplemento.toUpperCase() : '',
-                eh_mensalista: isMensalista,
-              }
-            : clienteNome
-            ? {
-                nome: clienteNome.toUpperCase(),
-                telefone: clienteTelefone,
-              }
-            : undefined,
+        cliente: {
+          nome: clienteNome.toUpperCase().trim(),
+          telefone: clienteTelefone.trim(),
+          cep: clienteCep ? clienteCep.trim() : undefined,
+          endereco: clienteEndereco ? clienteEndereco.toUpperCase().trim() : undefined,
+          numero: clienteNumero ? clienteNumero.toUpperCase().trim() : undefined,
+          bairro: clienteBairro ? clienteBairro.toUpperCase().trim() : undefined,
+          complemento: clienteComplemento ? clienteComplemento.toUpperCase().trim() : '',
+          eh_mensalista: isMensalista,
+        },
         itens: cart,
         taxa_entrega: finalTaxa,
         precisa_troco: tipoPedido !== 'salão' ? precisaTroco : false,
@@ -421,9 +493,10 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       setCart([]);
       setPagamentosParciais([]);
       setNovoValorParcial('');
+      setClienteMatchedId(undefined);
+      setClienteNome('');
+      setClienteTelefone('');
       if (tipoPedido !== 'salão') {
-        setClienteNome('');
-        setClienteTelefone('');
         setClienteEndereco('');
         setClienteNumero('');
         setClienteComplemento('');
@@ -571,7 +644,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {onOpenCardapioBuilder && (!currentRole || !['atendente', 'garcom', 'cozinha'].includes(currentRole)) && (
+              {onOpenCardapioBuilder && (currentRole === 'admin' || currentRole === 'master' || currentRole === 'supervisor') && (
                 <button
                   type="button"
                   onClick={onOpenCardapioBuilder}
@@ -973,12 +1046,21 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                   </button>
                 ))}
               </div>
-              <div className="mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 pt-2 border-t border-neutral-800">
                 <UpperInput
-                  label="NOME DO CLIENTE NA MESA (OPCIONAL):"
+                  label="TELEFONE / WHATSAPP: *"
+                  maskType="phone"
+                  value={clienteTelefone}
+                  onChange={handleTelefoneChange}
+                  placeholder="(19) 9-9999-9999"
+                  required
+                />
+                <UpperInput
+                  label="NOME COMPLETO NA MESA: *"
                   value={clienteNome}
                   onChange={setClienteNome}
                   placeholder="EX: DR. MARCOS / FAMÍLIA SILVA"
+                  required
                 />
               </div>
             </div>
@@ -989,18 +1071,18 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
             <div className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <UpperInput
+                  label="TELEFONE / WHATSAPP (BUSCA): *"
+                  maskType="phone"
+                  value={clienteTelefone}
+                  onChange={handleTelefoneChange}
+                  placeholder="(19) 9-9999-9999"
+                  required
+                />
+                <UpperInput
                   label="NOME COMPLETO: *"
                   value={clienteNome}
                   onChange={setClienteNome}
                   placeholder="EX: CARLOS SILVA"
-                  required
-                />
-                <UpperInput
-                  label="TELEFONE / WHATSAPP: *"
-                  maskType="phone"
-                  value={clienteTelefone}
-                  onChange={setClienteTelefone}
-                  placeholder="(19) 9-9999-9999"
                   required
                 />
               </div>
@@ -1022,12 +1104,14 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                         }}
                         placeholder="13400-000"
                         helperText={cepMessage}
+                        required
                       />
                     </div>
                     <button
+                      type="button"
                       onClick={() => handleBuscarCep(clienteCep)}
                       disabled={isCepLoading}
-                      className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-amber-400 border border-neutral-700 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 h-[38px] transition-colors"
+                      className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-amber-400 border border-neutral-700 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 h-[38px] transition-colors cursor-pointer"
                     >
                       <Search className="w-3.5 h-3.5" />
                       {isCepLoading ? 'Buscando...' : 'ViaCEP'}
@@ -1065,11 +1149,16 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                         onChange={(e) => {
                           const newBairro = e.target.value;
                           setClienteBairro(newBairro);
-                          const found = bairros.find((b) => b.bairro === newBairro);
+                          const found = bairros.find((b) => b.bairro.toUpperCase() === newBairro.toUpperCase());
                           if (found) setTaxaEntrega(found.taxa);
                         }}
                         className="w-full px-2 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs uppercase focus:outline-none"
                       >
+                        {clienteBairro && !bairros.some((b) => b.bairro.toUpperCase() === clienteBairro.toUpperCase()) && (
+                          <option key={clienteBairro} value={clienteBairro}>
+                            {clienteBairro} ({formatBRL(taxaEntrega)})
+                          </option>
+                        )}
                         {bairros.map((b) => (
                           <option key={b.bairro} value={b.bairro}>
                             {b.bairro} ({formatBRL(b.taxa)})
