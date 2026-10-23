@@ -186,7 +186,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
   // Filter & Search in movements ledger
   const [searchMov, setSearchMov] = useState('');
-  const [filterTipoMov, setFilterTipoMov] = useState<'todos' | 'entrada_pedido' | 'sangria' | 'suprimento'>('todos');
+  const [filterTipoMov, setFilterTipoMov] = useState<'todos' | 'sangria' | 'suprimento'>('todos');
 
   // Computations
   const movs = useMemo(() => caixa.movimentacoes || [], [caixa.movimentacoes]);
@@ -231,6 +231,15 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   const totalConferidoHoje = useMemo(() => {
     return deliveryOrdersConferidos.reduce((sum, p) => sum + p.valor_total, 0);
   }, [deliveryOrdersConferidos]);
+
+  // Pedidos faturados/confirmados de HOJE (Única fonte de faturamento do caixa)
+  const pedidosConfirmados = useMemo(() => {
+    return pedidos.filter((p) => {
+      if (!isPedidoFaturado(p)) return false;
+      const criadoEm = p.criado_em || '';
+      return !criadoEm || criadoEm.startsWith(dataFiltroCaixa) || criadoEm.startsWith(dataHojeIso);
+    });
+  }, [pedidos, dataFiltroCaixa, dataHojeIso]);
 
   // Dynamic dictionary of payment methods (canonical, deduplicated)
   const paymentStats = useMemo(() => {
@@ -279,114 +288,73 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       }
     });
 
-    // 2. Aggregate movements with tipo === 'entrada_pedido'
-    let totalEntradasGerais = 0;
-    let totalDinheiroEntradas = 0;
+    // 1. O fundo inicial da gaveta
+    let dinheiroGaveta = caixa.valor_abertura || 0;
+
+    // 2. Somar Suprimentos e subtrair Sangrias (excluindo qualquer entrada_pedido perdida)
     let totalSangrias = 0;
     let totalSuprimentos = 0;
     let sangriasDinheiro = 0;
     let suprimentosDinheiro = 0;
 
-    movs.forEach((m) => {
-      // REGRA: Se houver movimentação de delivery não conferido, não entra no faturamento
-      const isDeliveryNaoConferido = pedidos.some(
-        (p) =>
-          p.tipo === 'delivery' &&
-          p.conferencia_entrega !== 'conferido' &&
-          m.descricao &&
-          m.descricao.includes(`PEDIDO #${p.id}`)
-      );
-      if (isDeliveryNaoConferido) return;
-
-      const formaKey = getFormaCanonica(m.forma || 'outro');
-
-      if (m.tipo === 'entrada_pedido') {
-        totalEntradasGerais += m.valor;
-
-        if (!statsMap[formaKey]) {
-          statsMap[formaKey] = {
-            id: formaKey,
-            nome: CANONICAL_NAMES[formaKey] || formaKey.toUpperCase(),
-            tipo: 'outro',
-            total: 0,
-            qtd: 0,
-            taxa_operadora: 0,
-          };
-        }
-
-        statsMap[formaKey].total += m.valor;
-        statsMap[formaKey].qtd += 1;
-
-        if (formaKey === 'dinheiro') {
-          totalDinheiroEntradas += m.valor;
-        }
-      } else if (m.tipo === 'sangria') {
-        totalSangrias += m.valor;
-        if (formaKey === 'dinheiro' || !m.forma) {
-          sangriasDinheiro += m.valor;
-        }
-      } else if (m.tipo === 'suprimento') {
+    (caixa.movimentacoes || []).forEach((m) => {
+      const formaKey = getFormaCanonica(m.forma || 'dinheiro');
+      if (m.tipo === 'suprimento') {
+        dinheiroGaveta += m.valor;
         totalSuprimentos += m.valor;
         if (formaKey === 'dinheiro' || !m.forma) {
           suprimentosDinheiro += m.valor;
         }
       }
+      if (m.tipo === 'sangria') {
+        dinheiroGaveta -= m.valor;
+        totalSangrias += m.valor;
+        if (formaKey === 'dinheiro' || !m.forma) {
+          sangriasDinheiro += m.valor;
+        }
+      }
     });
 
-    // Inclusão de segurança: agrega também pagamentos finalizados em pedidos (ex: fechamentos de mesa)
-    // para garantir que nenhuma forma (como PIX ou Dinheiro) deixe de constar no faturamento do dia
-    pedidos.forEach((p) => {
-      // Regra Unificada de Faturamento: delivery conferido OU balcão/mesas com pagamentos
-      if (!isPedidoFaturado(p)) return;
+    // 3. Somar todos os pagamentos em ESPÉCIE dos pedidos faturados de HOJE e agregar faturamento geral
+    let totalEntradasGerais = 0;
+    let totalDinheiroEntradas = 0;
 
+    pedidosConfirmados.forEach((p) => {
       if (p.pagamentos && p.pagamentos.length > 0) {
         p.pagamentos.forEach((pg) => {
           if (!pg.valor || pg.valor <= 0) return;
-          // Evita duplicidade se esta mesma entrada já estiver explícita em movs
-          const alreadyInMovs = movs.some(
-            (m) =>
-              m.tipo === 'entrada_pedido' &&
-              m.descricao &&
-              (m.descricao.includes(`PEDIDO #${p.id}`) ||
-                (p.mesa_id && m.descricao.includes(`MESA #${p.mesa_id}`) && Math.abs(m.valor - pg.valor) < 0.01))
-          );
+          const canonicalKey = getFormaCanonica(pg.forma || 'outro');
 
-          if (!alreadyInMovs) {
-            const formaKey = getFormaCanonica(pg.forma || 'outro');
+          totalEntradasGerais += pg.valor;
 
-            totalEntradasGerais += pg.valor;
-
-            if (!statsMap[formaKey]) {
-              statsMap[formaKey] = {
-                id: formaKey,
-                nome: CANONICAL_NAMES[formaKey] || formaKey.toUpperCase(),
-                tipo: 'outro',
-                total: 0,
-                qtd: 0,
-                taxa_operadora: 0,
-              };
-            }
-
-            statsMap[formaKey].total += pg.valor;
-            statsMap[formaKey].qtd += 1;
-
-            if (formaKey === 'dinheiro') {
-              totalDinheiroEntradas += pg.valor;
-            }
+          if (canonicalKey === 'dinheiro') {
+            dinheiroGaveta += pg.valor;
+            totalDinheiroEntradas += pg.valor;
           }
+
+          if (!statsMap[canonicalKey]) {
+            statsMap[canonicalKey] = {
+              id: canonicalKey,
+              nome: CANONICAL_NAMES[canonicalKey] || canonicalKey.toUpperCase(),
+              tipo: 'outro',
+              total: 0,
+              qtd: 0,
+              taxa_operadora: 0,
+            };
+          }
+
+          statsMap[canonicalKey].total += pg.valor;
+          statsMap[canonicalKey].qtd += 1;
         });
       }
     });
 
-    // Calculate Physical drawer money
     const fundoAbertura = caixa.valor_abertura || 0;
-    const dinheiroGavetaEsperado =
-      fundoAbertura + totalDinheiroEntradas + suprimentosDinheiro - sangriasDinheiro;
+    const dinheiroGavetaEsperado = dinheiroGaveta;
 
     // Convert statsMap to sorted list, eliminating any duplicated or ghost entries
     const statsList = Object.values(statsMap)
       .filter((item) => {
-        // Exibir sempre se tiver faturamento (> 0) OU se for uma das 4 formas principais ativas
         return item.total > 0 || ['dinheiro', 'pix', 'cartao_debito', 'cartao_credito'].includes(item.id);
       })
       .map((item) => ({
@@ -407,7 +375,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       fundoAbertura,
       dinheiroGavetaEsperado,
     };
-  }, [formasPagamento, movs, pedidos, caixa.valor_abertura]);
+  }, [formasPagamento, caixa.movimentacoes, pedidosConfirmados, caixa.valor_abertura]);
 
   // Breakdown by channel from orders (Apenas pedidos confirmados no caixa)
   const channelStats = useMemo(() => {
@@ -453,9 +421,11 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   // Physical money in drawer
   const dinheiroNaGaveta = paymentStats.dinheiroGavetaEsperado;
 
-  // Filtered movements for ledger
+  // Filtered movements for ledger (Apenas Abertura, Sangrias e Suprimentos)
   const filteredMovs = useMemo(() => {
     return movs.filter((m) => {
+      // Exclui completamente entradas de pedido do extrato do caixa diário
+      if (m.tipo === 'entrada_pedido') return false;
       if (filterTipoMov !== 'todos' && m.tipo !== filterTipoMov) return false;
       if (searchMov) {
         const query = searchMov.toLowerCase();
@@ -855,7 +825,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
           <div className="text-[11px] text-neutral-400 flex items-center justify-between pt-1 border-t border-neutral-800/80">
             <span>Soma de todas as formas</span>
             <span className="font-bold text-amber-400 font-mono">
-              {movs.filter((m) => m.tipo === 'entrada_pedido').length} pagtos
+              {pedidosConfirmados.length} pedidos faturados
             </span>
           </div>
         </div>
@@ -1088,7 +1058,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 <span>Extrato Cronológico do Caixa ({filteredMovs.length})</span>
               </h3>
               <p className="text-[11px] text-neutral-400 mt-0.5">
-                Todas as entradas de pedidos, sangrias e suprimentos registrados no caixa.
+                Abertura, sangrias e suprimentos registrados no caixa do dia.
               </p>
             </div>
 
@@ -1100,10 +1070,9 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 aria-label="Filtrar por tipo de movimentação"
                 className="px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 text-white rounded-lg text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
               >
-                <option value="todos" className="bg-neutral-900 text-white font-bold py-1">TODOS OS TIPOS</option>
-                <option value="entrada_pedido" className="bg-neutral-900 text-white font-bold py-1">VENDAS / ENTRADAS</option>
+                <option value="todos" className="bg-neutral-900 text-white font-bold py-1">TODOS (SANGRIAS E SUPRIMENTOS)</option>
                 <option value="sangria" className="bg-neutral-900 text-white font-bold py-1">SANGRIAS (RETIRADAS)</option>
-                <option value="suprimento" className="bg-neutral-900 text-white font-bold py-1">SUPRIMENTOS</option>
+                <option value="suprimento" className="bg-neutral-900 text-white font-bold py-1">SUPRIMENTOS (APORTES)</option>
               </select>
 
               {/* Search input */}
@@ -1829,7 +1798,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 <span>Extrato Geral das Movimentações ({filteredMovs.length})</span>
               </h3>
               <p className="text-xs text-neutral-400 mt-0.5">
-                Todas as entradas de pedidos, sangrias e suprimentos registrados no caixa do dia.
+                Abertura, sangrias e suprimentos registrados no caixa do dia (vendas registradas no faturamento).
               </p>
             </div>
 
@@ -1840,10 +1809,9 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 aria-label="Filtrar por tipo de movimentação"
                 className="px-3 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none"
               >
-                <option value="todos">TODOS OS TIPOS</option>
-                <option value="entrada_pedido">VENDAS / ENTRADAS</option>
+                <option value="todos">TODOS OS TIPOS (SANGRIAS E SUPRIMENTOS)</option>
                 <option value="sangria">SANGRIAS (RETIRADAS)</option>
-                <option value="suprimento">SUPRIMENTOS</option>
+                <option value="suprimento">SUPRIMENTOS (APORTES)</option>
               </select>
 
               <div className="relative">
@@ -2415,7 +2383,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                       <tr className="border-t-2 border-neutral-800 font-black text-xs bg-neutral-100 text-neutral-900">
                         <td className="py-2.5 px-3 uppercase">TOTAL GERAL FATURADO:</td>
                         <td className="py-2.5 px-3 text-center font-mono">
-                          {movs.filter((m) => m.tipo === 'entrada_pedido').length}
+                          {pedidosConfirmados.length}
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono text-amber-800 text-sm">
                           {formatBRL(paymentStats.totalEntradasGerais)}

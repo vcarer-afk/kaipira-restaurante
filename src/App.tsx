@@ -852,19 +852,6 @@ export default function App() {
     // Persistir conferência no banco Supabase com a forma de pagamento final confirmada
     await conferirEntregaPedidoSupabase(pedidoId, conferidoPor, formaEscolhida);
 
-    // REGRA: Somente entrará no faturamento diário se estiver conferido pelo gerente ou supervisor
-    // Lança agora as entradas de pagamento do delivery no caixa diário com essa forma exata
-    if (caixa && caixa.status === 'aberto') {
-      await handleRegistrarMultiplasMovimentacoesCaixa([
-        {
-          tipo: 'entrada_pedido' as const,
-          forma: formaEscolhida,
-          valor: pedidoAlvo.valor_total,
-          descricao: `PEDIDO #${pedidoAlvo.id} (DELIVERY CONFERIDO - ${formaEscolhida.toUpperCase().replace('_', ' ')} - ${conferidoPor.toUpperCase()})`,
-        },
-      ]);
-    }
-
     playAlertChime();
   };
 
@@ -896,19 +883,6 @@ export default function App() {
 
     if (pedidoAlvo.tipo === 'delivery') {
       await conferirEntregaPedidoSupabase(pedidoId, responsavel);
-    }
-
-    // Registra entrada no caixa se ainda não constava
-    if (caixa && caixa.status === 'aberto') {
-      const formaUsada = forma || pedidoAlvo.pagamentos?.[0]?.forma || 'dinheiro';
-      await handleRegistrarMultiplasMovimentacoesCaixa([
-        {
-          tipo: 'entrada_pedido' as const,
-          forma: formaUsada,
-          valor: pedidoAlvo.valor_total,
-          descricao: `PEDIDO #${pedidoAlvo.id} (${pedidoAlvo.tipo.toUpperCase()} CONFIRMADO CAIXA - ${responsavel.toUpperCase()})`,
-        },
-      ]);
     }
 
     playAlertChime();
@@ -987,21 +961,6 @@ export default function App() {
             saldo_devedor: (cli.saldo_devedor || 0) + valorMensalista,
           });
         }
-      }
-    }
-
-    // Registra movimentações no faturamento do caixa (Dinheiro, PIX, Débito, Crédito, etc.)
-    if (pagamentos && pagamentos.length > 0) {
-      const validPgs = pagamentos.filter((pg) => pg.valor > 0);
-      if (validPgs.length > 0) {
-        await handleRegistrarMultiplasMovimentacoesCaixa(
-          validPgs.map((pg) => ({
-            tipo: 'entrada_pedido' as const,
-            forma: pg.forma,
-            valor: pg.valor,
-            descricao: `FECHAMENTO MESA #${numero} (${String(pg.forma).toUpperCase().replace('_', ' ')})`,
-          }))
-        );
       }
     }
 
@@ -1554,27 +1513,6 @@ export default function App() {
                 const mesaAtual = mesas.find((m) => m.numero === mesaNum);
                 const cliNome = novo.cliente?.nome || mesaAtual?.cliente_nome || 'MESA OCUPADA';
                 await handleUpdateMesaStatus(mesaNum, 'ocupada', cliNome, mesaAtual?.pessoas || 2);
-              }
-
-              // Quando pedido tiver pagamentos imediatos (apenas balcão ou salão; delivery entra somente após conferência pelo gerente/supervisor)
-              if (
-                novo.tipo !== 'delivery' &&
-                caixa &&
-                caixa.status === 'aberto' &&
-                novo.pagamentos &&
-                novo.pagamentos.length > 0
-              ) {
-                const validPgs = novo.pagamentos.filter((pg) => pg.valor > 0);
-                if (validPgs.length > 0) {
-                  await handleRegistrarMultiplasMovimentacoesCaixa(
-                    validPgs.map((pg) => ({
-                      tipo: 'entrada_pedido' as const,
-                      forma: pg.forma,
-                      valor: pg.valor,
-                      descricao: `PEDIDO #${novo.id} (${novo.tipo.toUpperCase()})`,
-                    }))
-                  );
-                }
               }
             }}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}

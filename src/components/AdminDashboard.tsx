@@ -201,39 +201,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             totals[key] = (totals[key] || 0) + pg.valor;
           }
         });
-      } else if ((p as any).pagamento_imediato?.forma && p.valor_total > 0) {
-        const raw = String((p as any).pagamento_imediato.forma || 'outro').toLowerCase();
-        let key = 'outro';
-        if (raw.includes('pix')) key = 'pix';
-        else if (raw.includes('dinheiro')) key = 'dinheiro';
-        else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
-        else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
-        else if (raw.includes('vale') || raw.includes('refeicao') || raw.includes('refeição') || raw.includes('vr')) key = 'vale_refeicao';
-        else if (raw.includes('mensal')) key = 'mensalista';
-        else key = raw;
-
-        totals[key] = (totals[key] || 0) + p.valor_total;
       }
     });
-
-    // Fallback to caixa movements if orders map is empty
-    if (Object.keys(totals).length === 0 && caixa?.movimentacoes) {
-      caixa.movimentacoes
-        .filter((m) => m.tipo === 'entrada_pedido' && m.valor > 0)
-        .forEach((m) => {
-          const raw = (m.forma || 'outro').toLowerCase();
-          let key = 'outro';
-          if (raw.includes('pix')) key = 'pix';
-          else if (raw.includes('dinheiro')) key = 'dinheiro';
-          else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
-          else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
-          else if (raw.includes('vale') || raw.includes('refeicao') || raw.includes('refeição') || raw.includes('vr')) key = 'vale_refeicao';
-          else if (raw.includes('mensal')) key = 'mensalista';
-          else key = raw;
-
-          totals[key] = (totals[key] || 0) + m.valor;
-        });
-    }
 
     const totalGeral = Object.values(totals).reduce((sum, v) => sum + v, 0);
 
@@ -255,7 +224,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         };
       })
       .sort((a, b) => b.valor - a.valor);
-  }, [activeAndCompletedOrders, caixa?.movimentacoes]);
+  }, [pedidosConfirmados]);
 
   // Tables metrics
   const ocupadas = mesas.filter((m) => m.status === 'ocupada').length;
@@ -304,15 +273,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const mensalistas = clientes.filter((c) => c.eh_mensalista || c.saldo_devedor > 0);
   const totalDevedorMensalistas = mensalistas.reduce((acc, c) => acc + (c.saldo_devedor || 0), 0);
 
-  // Cash in drawer
+  // Cash in drawer (fundo + suprimentos - sangrias + dinheiro em espécie dos pedidos faturados)
   let dinheiroGaveta = caixa.valor_abertura || 0;
   (caixa.movimentacoes || []).forEach((m) => {
-    if (m.forma === 'dinheiro') {
-      if (m.tipo === 'entrada_pedido' || m.tipo === 'suprimento') {
-        dinheiroGaveta += m.valor;
-      } else if (m.tipo === 'sangria') {
-        dinheiroGaveta -= m.valor;
-      }
+    if (m.tipo === 'suprimento') dinheiroGaveta += m.valor;
+    if (m.tipo === 'sangria') dinheiroGaveta -= m.valor;
+  });
+
+  pedidosConfirmados.forEach((p) => {
+    if (p.pagamentos) {
+      p.pagamentos.forEach((pg) => {
+        const raw = (pg.forma || '').toLowerCase();
+        if (raw.includes('dinheiro')) {
+          dinheiroGaveta += pg.valor;
+        }
+      });
     }
   });
 

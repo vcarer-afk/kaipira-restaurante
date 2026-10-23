@@ -350,19 +350,6 @@ async function startServer() {
               cli.saldo_devedor = (cli.saldo_devedor || 0) + Number(pg.valor);
             }
           }
-
-          // 3. Adiciona a movimentação individual no caixa diário
-          if (state.caixa && state.caixa.status === 'aberto') {
-            state.caixa.movimentacoes.push({
-              id: Date.now() + idx,
-              tipo: 'entrada_pedido',
-              forma: pg.forma,
-              valor: Number(pg.valor),
-              descricao: `PEDIDO #${codigo_senha} (${tipo.toUpperCase()}) - ${String(pg.forma).toUpperCase()}`,
-              hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-              pedido_id: codigo_senha,
-            });
-          }
         });
       }
 
@@ -463,19 +450,6 @@ async function startServer() {
         cli.eh_mensalista = true;
         cli.saldo_devedor = (cli.saldo_devedor || 0) + valorPago;
       }
-    }
-
-    // Caixa
-    if (state.caixa && state.caixa.status === 'aberto') {
-      state.caixa.movimentacoes.push({
-        id: Date.now(),
-        tipo: 'entrada_pedido',
-        forma,
-        valor: valorPago,
-        descricao: `PAGTO PEDIDO #${pedido.codigo_senha} (${pedido.tipo.toUpperCase()})`,
-        hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        pedido_id: pedido.codigo_senha,
-      });
     }
 
     broadcast('PAYMENT_RECORDED', { pedido, pagamento: novoPagamento });
