@@ -28,7 +28,6 @@ import {
   INITIAL_USUARIOS,
   INITIAL_CATEGORIAS,
   INITIAL_PRODUTOS,
-  BAIRROS_PIRACICABA,
   INITIAL_FORMAS_PAGAMENTO,
 } from '../data/seedData';
 import { formatPhone, formatBRL } from '../utils/formatters';
@@ -2423,16 +2422,19 @@ export async function fetchBairrosSupabase(): Promise<BairroTaxa[]> {
       .eq('id', 1)
       .maybeSingle();
 
-    if (!error && data?.dados?.bairros && Array.isArray(data.dados.bairros) && data.dados.bairros.length > 0) {
+    if (error) {
+      console.warn('Erro ao buscar bairros no Supabase:', error.message);
+      return [];
+    }
+
+    if (data?.dados?.bairros && Array.isArray(data.dados.bairros)) {
       return data.dados.bairros as BairroTaxa[];
     }
 
-    // Salva bairros padrão de Piracicaba na nuvem se ainda não existirem
-    await salvarBairrosSupabase(BAIRROS_PIRACICABA);
-    return BAIRROS_PIRACICABA;
+    return [];
   } catch (err) {
     console.warn('Erro ao buscar bairros no Supabase:', err);
-    return BAIRROS_PIRACICABA;
+    return [];
   }
 }
 
