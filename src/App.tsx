@@ -43,7 +43,6 @@ import { THEMES } from './utils/theme';
 // Configurações e dados estáticos essenciais
 import {
   INITIAL_USUARIOS,
-  BAIRROS_PIRACICABA,
   INITIAL_CONFIGURACOES,
   INITIAL_FORMAS_PAGAMENTO,
 } from './data/seedData';
@@ -161,7 +160,7 @@ export default function App() {
     movimentacoes: [],
   });
   const [reservas, setReservas] = useState<Reserva[]>([]);
-  const [bairros, setBairros] = useState<BairroTaxa[]>(BAIRROS_PIRACICABA);
+  const [bairros, setBairros] = useState<BairroTaxa[]>([]);
   const [cardapioDiario, setCardapioDiario] = useState<CardapioDiarioConfig>({
     data: new Date().toLocaleDateString('en-CA'),
     status: 'aguardando',
@@ -378,9 +377,7 @@ export default function App() {
       // Carrega bairros da nuvem Supabase (100% cloud)
       try {
         const cloudBairros = await fetchBairrosSupabase();
-        if (cloudBairros && cloudBairros.length > 0) {
-          setBairros(cloudBairros);
-        }
+        setBairros(cloudBairros || []);
       } catch (err) {
         console.warn('Conectando a bairros do Supabase...', err);
       }

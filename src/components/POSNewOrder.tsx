@@ -1154,6 +1154,9 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                         }}
                         className="w-full px-2 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs uppercase focus:outline-none"
                       >
+                        {bairros.length === 0 && (
+                          <option value="">AGUARDANDO BUSCA POR CEP...</option>
+                        )}
                         {clienteBairro && !bairros.some((b) => b.bairro.toUpperCase() === clienteBairro.toUpperCase()) && (
                           <option key={clienteBairro} value={clienteBairro}>
                             {clienteBairro} ({formatBRL(taxaEntrega)})
