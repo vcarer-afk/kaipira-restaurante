@@ -337,10 +337,20 @@ export const LedPanel: React.FC<LedPanelProps> = ({
       (p) => p.status === 'pronto' && !isDelivery(p.tipo) && isBalcaoOuMesa(p.tipo)
     );
 
-    // Se não há nenhum pedido pronto de balcão ou mesa no restaurante:
+    // Se não há nenhum pedido pronto no restaurante (lista vazia):
     if (prontosAtivos.length === 0) {
       setActiveOrder(null);
       lastCalledRef.current = null;
+      if (blinkTimerRef.current) {
+        clearInterval(blinkTimerRef.current);
+        blinkTimerRef.current = null;
+      }
+      if (speechTimeoutRef.current) {
+        clearTimeout(speechTimeoutRef.current);
+        speechTimeoutRef.current = null;
+      }
+      setIsBlinking(false);
+      setIsLedLit(true);
       return;
     }
 
@@ -361,7 +371,18 @@ export const LedPanel: React.FC<LedPanelProps> = ({
     if (!senhaAindaExiste) {
       // Chama o próximo pronto mais recente ou limpa se não houver
       const proximo = prontosOrdenados[0];
-      chamarSenha(proximo);
+      if (proximo) {
+        chamarSenha(proximo);
+      } else {
+        setActiveOrder(null);
+        lastCalledRef.current = null;
+        if (blinkTimerRef.current) {
+          clearInterval(blinkTimerRef.current);
+          blinkTimerRef.current = null;
+        }
+        setIsBlinking(false);
+        setIsLedLit(true);
+      }
       return;
     }
 

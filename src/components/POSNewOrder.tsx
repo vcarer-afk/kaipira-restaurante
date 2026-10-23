@@ -211,36 +211,43 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     setIsCepLoading(true);
     setCepMessage('BUSCANDO ENDEREÇO NO VIACEP...');
     try {
-      const data = await consultarViaCep(digits);
-      if (data && !data.erro) {
-        setClienteEndereco(data.logradouro ? data.logradouro.toUpperCase() : '');
+      const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      if (!response.ok) throw new Error('Falha na resposta do ViaCEP');
+      const data = await response.json();
 
-        // ViaCEP Orgânico: Se o CEP não retornar bairro, force o valor "BAIRRO NÃO INFORMADO (VIA CEP)"
-        const rawBairro = (data.bairro || '').trim();
-        const bairroFinal = rawBairro ? rawBairro.toUpperCase() : 'BAIRRO NÃO INFORMADO (VIA CEP)';
-        setClienteBairro(bairroFinal);
-
-        // Verifica se ele existe no array bairros
-        const matchedBairro = bairros.find(
-          (b) => b.bairro.toUpperCase() === bairroFinal.toUpperCase()
-        );
-
-        if (matchedBairro) {
-          setTaxaEntrega(matchedBairro.taxa);
-        } else {
-          // Se não existir, chame imediatamente onSaveBairro({ bairro: bairroViaCep, taxa: 0 })
-          // Assuma a taxa do novo bairro como R$ 0,00 e aplique-a ao pedido atual (entrega grátis)
-          const novoBairro: BairroTaxa = { bairro: bairroFinal, taxa: 0.0 };
-          setTaxaEntrega(0.0);
-          if (onSaveBairro) {
-            onSaveBairro(novoBairro);
-          }
-        }
-
-        setCepMessage(`${data.localidade || 'PIRACICABA'} - ${data.uf || 'SP'}`);
-      } else {
-        setCepMessage('CEP NÃO ENCONTRADO NO VIACEP. PREENCHA MANUALMENTE.');
+      if (data.erro) {
+        alert('CEP não encontrado ou inválido. Por favor, verifique o número digitado.');
+        setClienteEndereco('');
+        setClienteBairro('');
+        setCepMessage('CEP NÃO ENCONTRADO OU INVÁLIDO. VERIFIQUE O NÚMERO DIGITADO.');
+        return;
       }
+
+      setClienteEndereco(data.logradouro ? data.logradouro.toUpperCase() : '');
+
+      // ViaCEP Orgânico: Se o CEP não retornar bairro, force o valor "BAIRRO NÃO INFORMADO (VIA CEP)"
+      const rawBairro = (data.bairro || '').trim();
+      const bairroFinal = rawBairro ? rawBairro.toUpperCase() : 'BAIRRO NÃO INFORMADO (VIA CEP)';
+      setClienteBairro(bairroFinal);
+
+      // Verifica se ele existe no array bairros
+      const matchedBairro = bairros.find(
+        (b) => b.bairro.toUpperCase() === bairroFinal.toUpperCase()
+      );
+
+      if (matchedBairro) {
+        setTaxaEntrega(matchedBairro.taxa);
+      } else {
+        // Se não existir, chame imediatamente onSaveBairro({ bairro: bairroViaCep, taxa: 0 })
+        // Assuma a taxa do novo bairro como R$ 0,00 e aplique-a ao pedido atual (entrega grátis)
+        const novoBairro: BairroTaxa = { bairro: bairroFinal, taxa: 0.0 };
+        setTaxaEntrega(0.0);
+        if (onSaveBairro) {
+          onSaveBairro(novoBairro);
+        }
+      }
+
+      setCepMessage(`${data.localidade || 'PIRACICABA'} - ${data.uf || 'SP'}`);
     } catch {
       setCepMessage('FALHA AO CONSULTAR CEP');
     } finally {

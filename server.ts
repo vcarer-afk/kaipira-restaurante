@@ -269,7 +269,7 @@ async function startServer() {
         precisa_troco = false,
         troco_para,
         motoboy_tipo = 'proprio',
-        pagamento_imediato,
+        pagamentos = [],
       } = req.body;
 
       const codigo_senha = state.proximoCodigoSenha++;
@@ -331,36 +331,39 @@ async function startServer() {
       }
 
       const pagamentosList: any[] = [];
-      if (pagamento_imediato && pagamento_imediato.forma) {
-        pagamentosList.push({
-          id: Date.now(),
-          pedido_id: 0,
-          forma: pagamento_imediato.forma,
-          valor: valor_total,
-          criado_em: new Date().toISOString(),
-        });
-
-        // If mensalista, update debtor balance
-        if (pagamento_imediato.forma === 'mensalista' && cliente_id) {
-          const cli = state.clientes.find((c) => c.id === cliente_id);
-          if (cli) {
-            cli.eh_mensalista = true;
-            cli.saldo_devedor = (cli.saldo_devedor || 0) + valor_total;
-          }
-        }
-
-        // Add to daily cash register if cash/pix/card
-        if (state.caixa && state.caixa.status === 'aberto') {
-          state.caixa.movimentacoes.push({
-            id: Date.now(),
-            tipo: 'entrada_pedido',
-            forma: pagamento_imediato.forma,
-            valor: valor_total,
-            descricao: `PEDIDO #${codigo_senha} (${tipo.toUpperCase()})`,
-            hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-            pedido_id: codigo_senha,
+      if (req.body.pagamentos && req.body.pagamentos.length > 0) {
+        req.body.pagamentos.forEach((pg: any, idx: number) => {
+          // 1. Adiciona ao array de pagamentos do pedido
+          pagamentosList.push({
+            id: Date.now() + idx,
+            pedido_id: 0, // Será vinculado dinamicamente pelo frontend local
+            forma: pg.forma,
+            valor: Number(pg.valor),
+            criado_em: new Date().toISOString()
           });
-        }
+
+          // 2. Se for mensalista, abate no saldo
+          if (pg.forma === 'mensalista' && cliente_id) {
+            const cli = state.clientes.find((c) => c.id === cliente_id);
+            if (cli) {
+              cli.eh_mensalista = true;
+              cli.saldo_devedor = (cli.saldo_devedor || 0) + Number(pg.valor);
+            }
+          }
+
+          // 3. Adiciona a movimentação individual no caixa diário
+          if (state.caixa && state.caixa.status === 'aberto') {
+            state.caixa.movimentacoes.push({
+              id: Date.now() + idx,
+              tipo: 'entrada_pedido',
+              forma: pg.forma,
+              valor: Number(pg.valor),
+              descricao: `PEDIDO #${codigo_senha} (${tipo.toUpperCase()}) - ${String(pg.forma).toUpperCase()}`,
+              hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+              pedido_id: codigo_senha,
+            });
+          }
+        });
       }
 
       // If Mesa, mark as ocupada
