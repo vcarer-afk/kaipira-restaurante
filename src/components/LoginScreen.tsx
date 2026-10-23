@@ -1,183 +1,78 @@
 import React, { useState } from 'react';
-import { Perfil, TipoUsuario, UsuarioSistema } from '../types';
-import { UpperInput } from './UpperInput';
+import { Perfil, TipoUsuario } from '../types';
 import {
   Lock,
   User,
-  ShieldCheck,
   Eye,
   EyeOff,
   LogIn,
   AlertCircle,
   KeyRound,
-  Crown,
+  ShieldCheck,
 } from 'lucide-react';
-import { INITIAL_USUARIOS } from '../data/seedData';
+import { loginWithSupabase } from '../services/supabaseClient';
 
 interface LoginScreenProps {
-  onLoginSuccess: (perfil: Perfil) => void;
-  usuarios?: UsuarioSistema[];
+  onLoginSuccess?: (perfil: Perfil) => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuarios = INITIAL_USUARIOS }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
     setIsLoading(true);
 
     const cleanInput = username.trim();
-    const cleanUserUpper = cleanInput.toUpperCase();
-    const cleanUserLower = cleanInput.toLowerCase();
-    const cleanPass = password.trim();
+    const cleanPass = password; // Senha case-sensitive (não aplicar toUpperCase)
 
-    // 1. Verificação Primária do Usuário MASTER (Acesso Total & Irrestrito)
-    if (
-      (cleanUserLower === 'master@kaipira.com' ||
-        cleanUserUpper === 'MASTER' ||
-        cleanUserUpper === 'ADMIN' ||
-        cleanUserUpper === 'MASTER@KAIPIRA.COM') &&
-      cleanPass === 'DNDIGQOL'
-    ) {
-      setTimeout(() => {
-        setIsLoading(false);
-        onLoginSuccess({
-          id: 'usr-master-0',
-          nome: 'ADMINISTRADOR MASTER GERAL',
-          email: 'master@kaipira.com',
-          telefone: '(19) 9-9999-9999',
-          cargo: 'master',
-          criado_em: new Date().toISOString(),
-        });
-      }, 300);
-      return;
-    }
+    try {
+      const data = await loginWithSupabase(cleanInput, cleanPass);
+      const userEmail =
+        data.user?.email ||
+        (cleanInput.includes('@') ? cleanInput.toLowerCase() : `${cleanInput.toLowerCase()}@kaipira.com`);
 
-    // 2. Verificação Primária do Usuário VLADEMIR (SUPERVISOR)
-    if (
-      (cleanUserUpper === 'VLADEMIR' ||
-        cleanUserLower === 'vlademir@kaipira.com' ||
-        cleanUserUpper === 'SUPERVISOR') &&
-      cleanPass === '071276'
-    ) {
-      setTimeout(() => {
-        setIsLoading(false);
-        onLoginSuccess({
-          id: 'usr-sup-vlademir',
-          nome: 'VLADEMIR (SUPERVISOR)',
-          email: 'vlademir@kaipira.com',
-          telefone: '(19) 9-8888-7777',
-          cargo: 'supervisor',
-          criado_em: new Date().toISOString(),
-        });
-      }, 300);
-      return;
-    }
+      // Fallback local para definir o cargo com base no email retornado pelo Supabase
+      let cargoAferido: TipoUsuario = 'atendente';
+      if (userEmail.startsWith('admin') || userEmail.startsWith('master')) cargoAferido = 'admin';
+      else if (userEmail.startsWith('vlademir') || userEmail.startsWith('supervisor')) cargoAferido = 'supervisor';
+      else if (userEmail.startsWith('cozinha')) cargoAferido = 'cozinha';
+      else if (userEmail.startsWith('garcom')) cargoAferido = 'garcom';
+      else if (userEmail.startsWith('entregador')) cargoAferido = 'entregador';
 
-    // 2. Verificação Dinâmica na lista de usuários cadastrados
-    const foundUser = usuarios.find(
-      (u) =>
-        (u.email.toLowerCase() === cleanUserLower ||
-          u.nome.toUpperCase() === cleanUserUpper ||
-          u.cargo.toUpperCase() === cleanUserUpper) &&
-        (u.senha === cleanPass || cleanPass === 'DNDIGQOL' || cleanPass === '1234' || cleanPass === '071276')
-    );
+      const perfil: Perfil = {
+        id: data.user?.id || 'usr-' + Date.now(),
+        nome: userEmail.split('@')[0].toUpperCase(),
+        email: userEmail,
+        cargo: cargoAferido,
+        criado_em: new Date().toISOString(),
+      };
 
-    if (foundUser) {
-      if (foundUser.status === 'inativo') {
-        setTimeout(() => {
-          setIsLoading(false);
-          setErrorMessage('ESTE USUÁRIO ESTÁ INATIVO NO SISTEMA. PROCURE O ADMINISTRADOR MASTER.');
-        }, 300);
-        return;
+      if (onLoginSuccess) {
+        onLoginSuccess(perfil);
       }
-
-      setTimeout(() => {
-        setIsLoading(false);
-        onLoginSuccess({
-          id: foundUser.id,
-          nome: foundUser.nome,
-          email: foundUser.email,
-          telefone: foundUser.telefone,
-          cargo: foundUser.cargo,
-          criado_em: foundUser.criado_em,
-        });
-      }, 300);
-      return;
-    }
-
-    // 3. Fallbacks de equipe operacional se senha '1234'
-    if (cleanPass === '1234') {
-      if (cleanUserUpper === 'ATENDENTE') {
-        setTimeout(() => {
-          setIsLoading(false);
-          onLoginSuccess({
-            id: 'usr-atend-1',
-            nome: 'JULIANA ATENDENTE (BALCÃO & WHATSAPP)',
-            email: 'juliana@kaipira.com',
-            telefone: '(19) 9-9765-4321',
-            cargo: 'atendente',
-            criado_em: new Date().toISOString(),
-          });
-        }, 300);
-        return;
+    } catch (err: any) {
+      console.warn('Erro no login Supabase Auth:', err);
+      const rawMsg = err.message || '';
+      if (
+        rawMsg.toLowerCase().includes('invalid login credentials') ||
+        rawMsg.toLowerCase().includes('invalid_grant') ||
+        rawMsg.toLowerCase().includes('invalid credentials')
+      ) {
+        setErrorMessage('Credenciais inválidas. Verifique o usuário e a senha digitada.');
+      } else if (rawMsg.toLowerCase().includes('email not confirmed')) {
+        setErrorMessage('E-mail não confirmado no Supabase.');
+      } else {
+        setErrorMessage(err.message || 'Erro ao autenticar no Supabase. Verifique suas credenciais.');
       }
-
-      if (cleanUserUpper === 'COZINHA') {
-        setTimeout(() => {
-          setIsLoading(false);
-          onLoginSuccess({
-            id: 'usr-coz-1',
-            nome: 'CHEF TIÃO (COZINHA)',
-            email: 'tiao@kaipira.com',
-            telefone: '(19) 9-9654-1234',
-            cargo: 'cozinha',
-            criado_em: new Date().toISOString(),
-          });
-        }, 300);
-        return;
-      }
-
-      if (cleanUserUpper === 'GARCOM') {
-        setTimeout(() => {
-          setIsLoading(false);
-          onLoginSuccess({
-            id: 'usr-garc-1',
-            nome: 'MARCELO GARÇOM (SALÃO 20 MESAS)',
-            email: 'marcelo@kaipira.com',
-            telefone: '(19) 9-9543-5678',
-            cargo: 'garcom',
-            criado_em: new Date().toISOString(),
-          });
-        }, 300);
-        return;
-      }
-
-      if (cleanUserUpper === 'ENTREGADOR') {
-        setTimeout(() => {
-          setIsLoading(false);
-          onLoginSuccess({
-            id: 'usr-moto-1',
-            nome: 'RODRIGO MOTOBOY (DELIVERY PRÓPRIO)',
-            email: 'rodrigo@kaipira.com',
-            telefone: '(19) 9-9432-8765',
-            cargo: 'entregador',
-            criado_em: new Date().toISOString(),
-          });
-        }, 300);
-        return;
-      }
-    }
-
-    setTimeout(() => {
+    } finally {
       setIsLoading(false);
-      setErrorMessage('LOGIN OU SENHA INCORRETOS. VERIFIQUE AS CREDENCIAIS.');
-    }, 300);
+    }
   };
 
   return (
@@ -207,26 +102,34 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 sm:p-8 shadow-2xl backdrop-blur-md">
           <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-5">
             <div className="flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-amber-500" />
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span className="text-xs font-black uppercase text-neutral-200 tracking-wider">
-                Acesso Seguro ao Sistema
+                Autenticação Supabase
               </span>
             </div>
             <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-900">
-              100% NUVEM
+              RLS ATIVO
             </span>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Username / E-mail */}
             <div>
-              <UpperInput
-                label="USUÁRIO / E-MAIL:"
-                value={username}
-                onChange={(val) => setUsername(String(val))}
-                placeholder="DIGITE SEU USUÁRIO OU E-MAIL"
-                required
-              />
+              <label className="text-xs font-semibold tracking-wider text-neutral-300 block mb-1">
+                USUÁRIO OU E-MAIL:
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 absolute left-3 top-2.5 text-neutral-500" />
+                <input
+                  type="text"
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="ex: admin, garcom ou seu email"
+                  autoComplete="username"
+                  className="w-full pl-9 pr-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500"
+                />
+              </div>
             </div>
 
             {/* Password */}
@@ -241,7 +144,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="DIGITE SUA SENHA"
+                  placeholder="Digite sua senha"
+                  autoComplete="current-password"
                   className="w-full pl-9 pr-10 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-neutral-500 font-mono"
                 />
                 <button
@@ -252,6 +156,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <p className="text-[11px] text-neutral-400 mt-1.5 flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span>Senha padrão da equipe com 6 dígitos (ex: 123456). Diferencia maiúsculas e minúsculas.</span>
+              </p>
             </div>
 
             {/* Error banner */}
@@ -266,17 +174,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, usuari
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-all hover:scale-[1.01] active:scale-[0.99] uppercase cursor-pointer"
+              className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-all hover:scale-[1.01] active:scale-[0.99] uppercase cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <LogIn className="w-4 h-4" />
-              {isLoading ? 'Autenticando na Nuvem...' : 'Entrar no Sistema'}
+              {isLoading ? 'Autenticando no Supabase...' : 'Entrar no Sistema'}
             </button>
           </form>
         </div>
 
         {/* Footer */}
         <div className="text-center mt-6 text-xs text-neutral-500">
-          <span>Armazenamento 100% em Nuvem (Sem Dados Locais)</span>
+          <span>Autenticação Oficial Supabase Auth · 100% Nuvem</span>
         </div>
       </div>
     </div>

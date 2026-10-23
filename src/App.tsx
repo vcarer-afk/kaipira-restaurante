@@ -87,6 +87,7 @@ import {
   conferirEntregaPedidoSupabase,
   subscribeActiveConnections,
   zerarFinanceiroDiaSupabase,
+  logoutSupabase,
 } from './services/supabaseClient';
 
 // Helper para enriquecer a descrição/nome completo do produto usando estritamente os produtos cadastrados na nuvem
@@ -419,6 +420,87 @@ export default function App() {
     }
   }, [fetchCloudConfiguracoes]);
 
+  // Gerenciamento de Sessão de Autenticação Real do Supabase (RLS Ativo)
+  useEffect(() => {
+    // Verifica se já existe uma sessão ativa ao carregar a página
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setIsAuthenticated(true);
+        // Extrair o nome/cargo baseando-se no email do usuário
+        const email = session.user.email || '';
+        let cargoAferido: any = 'atendente';
+        if (email.startsWith('admin') || email.startsWith('master')) cargoAferido = 'admin';
+        else if (email.startsWith('supervisor') || email.startsWith('vlademir')) cargoAferido = 'supervisor';
+        else if (email.startsWith('cozinha')) cargoAferido = 'cozinha';
+        else if (email.startsWith('garcom')) cargoAferido = 'garcom';
+        else if (email.startsWith('entregador')) cargoAferido = 'entregador';
+
+        setCurrentPerfil({
+          id: session.user.id,
+          nome: email.split('@')[0].toUpperCase(),
+          email,
+          cargo: cargoAferido,
+          criado_em: session.user.created_at || new Date().toISOString(),
+        });
+        setCurrentRole(cargoAferido);
+        fetchCloudState();
+
+        if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
+          setActiveTab('dashboard');
+        } else if (cargoAferido === 'cozinha') {
+          setActiveTab('kds');
+        } else if (cargoAferido === 'garcom') {
+          setActiveTab('mesas');
+        } else if (cargoAferido === 'entregador') {
+          setActiveTab('expedicao');
+        } else {
+          setActiveTab('pdv');
+        }
+      }
+    });
+
+    // Escuta mudanças de login/logout
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+      if (session) {
+        const email = session.user.email || '';
+        let cargoAferido: any = 'atendente';
+        if (email.startsWith('admin') || email.startsWith('master')) cargoAferido = 'admin';
+        else if (email.startsWith('supervisor') || email.startsWith('vlademir')) cargoAferido = 'supervisor';
+        else if (email.startsWith('cozinha')) cargoAferido = 'cozinha';
+        else if (email.startsWith('garcom')) cargoAferido = 'garcom';
+        else if (email.startsWith('entregador')) cargoAferido = 'entregador';
+
+        setCurrentPerfil({
+          id: session.user.id,
+          nome: email.split('@')[0].toUpperCase(),
+          email,
+          cargo: cargoAferido,
+          criado_em: session.user.created_at || new Date().toISOString(),
+        });
+        setCurrentRole(cargoAferido);
+        fetchCloudState();
+
+        if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
+          setActiveTab('dashboard');
+        } else if (cargoAferido === 'cozinha') {
+          setActiveTab('kds');
+        } else if (cargoAferido === 'garcom') {
+          setActiveTab('mesas');
+        } else if (cargoAferido === 'entregador') {
+          setActiveTab('expedicao');
+        } else {
+          setActiveTab('pdv');
+        }
+      } else {
+        setPedidos([]); 
+        setMesas([]); 
+        setCurrentPerfil(undefined);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [fetchCloudState]);
+
   useEffect(() => {
     // Priority: always load cloud settings immediately on device start
     fetchCloudConfiguracoes();
@@ -672,27 +754,12 @@ export default function App() {
     };
   }, [fetchCloudState]);
 
-  // Handle Login Success
-  const handleLoginSuccess = (perfil: Perfil) => {
-    setIsAuthenticated(true);
-    setCurrentPerfil(perfil);
-    setCurrentRole(perfil.cargo);
-    fetchCloudState();
-
-    if (perfil.cargo === 'master' || perfil.cargo === 'admin' || perfil.cargo === 'supervisor') {
-      setActiveTab('dashboard');
-    } else if (perfil.cargo === 'cozinha') {
-      setActiveTab('kds');
-    } else if (perfil.cargo === 'garcom') {
-      setActiveTab('mesas');
-    } else if (perfil.cargo === 'entregador') {
-      setActiveTab('expedicao');
-    } else {
-      setActiveTab('pdv');
+  const handleLogout = async () => {
+    try {
+      await logoutSupabase();
+    } catch (err) {
+      console.warn('Erro ao realizar logout do Supabase:', err);
     }
-  };
-
-  const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentPerfil(undefined);
     setIsSlideMenuOpen(false);
@@ -1328,7 +1395,7 @@ export default function App() {
 
   // IF NOT AUTHENTICATED -> SHOW LOGIN SCREEN FIRST
   if (!isAuthenticated) {
-    return <LoginScreen onLoginSuccess={handleLoginSuccess} usuarios={usuarios} />;
+    return <LoginScreen />;
   }
 
   const currentTheme = THEMES[configuracoes.padraoCor] || THEMES.ambar;

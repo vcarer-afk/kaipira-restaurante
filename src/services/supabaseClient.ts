@@ -43,6 +43,29 @@ export function getSupabaseClient(): SupabaseClient {
 }
 
 /**
+ * Funções reais de Auth do Supabase
+ */
+export async function loginWithSupabase(loginInfo: string, senhaInfo: string) {
+  // Converte o login para minúsculo e adiciona o domínio se necessário
+  const email = loginInfo.includes('@') ? loginInfo.toLowerCase() : `${loginInfo.toLowerCase()}@kaipira.com`;
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password: senhaInfo, // A senha deve ir exatamente como digitada (case-sensitive)
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function logoutSupabase() {
+  await supabase.auth.signOut();
+}
+
+export async function getCurrentSession() {
+  const { data } = await supabase.auth.getSession();
+  return data.session;
+}
+
+/**
  * 1. Fetch configuracoes directly from Supabase:
  *    supabase.from('configuracoes').select('*')
  */
