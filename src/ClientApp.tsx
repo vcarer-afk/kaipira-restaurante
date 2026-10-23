@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Flame,
   UtensilsCrossed,
   ShoppingBag,
   Search,
@@ -8,51 +9,135 @@ import {
   Phone,
   MapPin,
   Plus,
-  AlertCircle,
-  Flame,
+  Minus,
+  Trash2,
+  ArrowLeft,
   CheckCircle2,
+  ChevronRight,
+  AlertCircle,
   Lock,
+  Check,
+  CreditCard,
+  Banknote,
+  QrCode,
+  Bike,
+  Sparkles,
+  RefreshCw,
+  X,
+  Send,
 } from 'lucide-react';
 import {
   Produto,
   Categoria,
   ConfiguracoesSistema,
   CardapioDiarioConfig,
+  BairroTaxa,
+  FormaPagamentoConfig,
+  Cliente,
+  Pedido,
+  Opcional,
 } from './types';
 import {
   fetchConfiguracoesFromSupabase,
   fetchProdutosSupabase,
   fetchCategoriasSupabase,
   fetchCardapioDiarioSupabase,
+  fetchBairrosSupabase,
+  fetchFormasPagamentoSupabase,
+  salvarClienteSupabase,
+  criarPedidoSupabase,
 } from './services/supabaseClient';
-import { formatBRL } from './utils/formatters';
+import { supabase } from './lib/supabase';
+import { formatBRL, formatPhone, cleanDigits, formatCep } from './utils/formatters';
+
+// Interface do item no carrinho do cliente
+interface CartItem {
+  cartItemId: string;
+  produto: Produto;
+  quantidade: number;
+  observacao: string;
+  opcionaisSelecionados: Opcional[];
+  precoUnitario: number;
+}
+
+// Passos do fluxo de compra
+type CheckoutStep = 'menu' | 'cart' | 'checkout' | 'success';
+
+function isUUID(str?: string): boolean {
+  if (!str || typeof str !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+}
+
+function normalizeStr(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
 
 export default function ClientApp() {
+  // Dados do Servidor / Nuvem
   const [configuracoes, setConfiguracoes] = useState<ConfiguracoesSistema | null>(null);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [cardapioDiario, setCardapioDiario] = useState<CardapioDiarioConfig | null>(null);
+  const [bairros, setBairros] = useState<BairroTaxa[]>([]);
+  const [formasPagamento, setFormasPagamento] = useState<FormaPagamentoConfig[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Interface states
+  // Navegação e Filtros da Vitrine
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('menu');
   const [categoriaAtiva, setCategoriaAtiva] = useState<number | 'todos'>('todos');
   const [busca, setBusca] = useState<string>('');
-  const [carrinhoItensCount, setCarrinhoItensCount] = useState<number>(0);
-  const [carrinhoTotal, setCarrinhoTotal] = useState<number>(0);
 
-  // Fetch de dados do Supabase
+  // Estado do Carrinho
+  const [cart, setCart] = useState<CartItem[]>([]);
+
+  // Modal de Opcionais ao Adicionar
+  const [selectedProdutoOpcionais, setSelectedProdutoOpcionais] = useState<Produto | null>(null);
+  const [tempOpcionais, setTempOpcionais] = useState<Opcional[]>([]);
+  const [tempObservacao, setTempObservacao] = useState<string>('');
+  const [tempQuantidade, setTempQuantidade] = useState<number>(1);
+
+  // Dados do Checkout (Cliente e Entrega)
+  const [clienteTelefone, setClienteTelefone] = useState<string>('');
+  const [clienteNome, setClienteNome] = useState<string>('');
+  const [clienteCep, setClienteCep] = useState<string>('');
+  const [clienteRua, setClienteRua] = useState<string>('');
+  const [clienteNumero, setClienteNumero] = useState<string>('');
+  const [clienteBairro, setClienteBairro] = useState<string>('');
+  const [clienteComplemento, setClienteComplemento] = useState<string>('');
+  const [clienteMatchedId, setClienteMatchedId] = useState<string | null>(null);
+  const [isSearchingPhone, setIsSearchingPhone] = useState<boolean>(false);
+  const [isSearchingCep, setIsSearchingCep] = useState<boolean>(false);
+  const [taxaEntrega, setTaxaEntrega] = useState<number>(0);
+
+  // Pagamento
+  const [metodoPagamento, setMetodoPagamento] = useState<string>('pix');
+  const [precisaTroco, setPrecisaTroco] = useState<boolean>(false);
+  const [trocoPara, setTrocoPara] = useState<string>('');
+
+  // Status de Submissão e Pedido Concluído
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [pedidoConcluido, setPedidoConcluido] = useState<Pedido | null>(null);
+
+  // Carregamento inicial de dados
   useEffect(() => {
     let isMounted = true;
 
     async function loadData() {
       try {
         setLoading(true);
-        const [confRes, prodsRes, catsRes, cardapioRes] = await Promise.allSettled([
-          fetchConfiguracoesFromSupabase(),
-          fetchProdutosSupabase(),
-          fetchCategoriasSupabase(),
-          fetchCardapioDiarioSupabase(),
-        ]);
+        const [confRes, prodsRes, catsRes, cardapioRes, bairrosRes, formasRes] =
+          await Promise.allSettled([
+            fetchConfiguracoesFromSupabase(),
+            fetchProdutosSupabase(),
+            fetchCategoriasSupabase(),
+            fetchCardapioDiarioSupabase(),
+            fetchBairrosSupabase(),
+            fetchFormasPagamentoSupabase(),
+          ]);
 
         if (!isMounted) return;
 
@@ -68,8 +153,14 @@ export default function ClientApp() {
         if (cardapioRes.status === 'fulfilled' && cardapioRes.value) {
           setCardapioDiario(cardapioRes.value);
         }
+        if (bairrosRes.status === 'fulfilled' && bairrosRes.value) {
+          setBairros(bairrosRes.value);
+        }
+        if (formasRes.status === 'fulfilled' && formasRes.value) {
+          setFormasPagamento(formasRes.value.filter((f) => f.ativo));
+        }
       } catch (err) {
-        console.warn('Erro ao carregar cardápio para o cliente:', err);
+        console.warn('Erro ao carregar vitrine do cliente:', err);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -112,11 +203,288 @@ export default function ClientApp() {
     });
   }, [produtosDisponiveis, categoriaAtiva, busca]);
 
-  // Handler de demonstração para o botão Adicionar (carrinho funcional será integrado no próximo passo)
-  const handleAdicionarItem = (produto: Produto) => {
-    const preco = Number(produto.preco_delivery) || Number(produto.preco_salao) || 0;
-    setCarrinhoItensCount((prev) => prev + 1);
-    setCarrinhoTotal((prev) => prev + preco);
+  // Cálculos do Carrinho
+  const cartSubtotal = useMemo(() => {
+    return cart.reduce((acc, it) => acc + it.precoUnitario * it.quantidade, 0);
+  }, [cart]);
+
+  const cartTotalItens = useMemo(() => {
+    return cart.reduce((acc, it) => acc + it.quantidade, 0);
+  }, [cart]);
+
+  const cartTotalComEntrega = useMemo(() => {
+    return cartSubtotal + taxaEntrega;
+  }, [cartSubtotal, taxaEntrega]);
+
+  // Função para calcular a Taxa Mágica do Bairro
+  const calcularTaxaParaBairro = (nomeBairro: string): number => {
+    if (!nomeBairro || bairros.length === 0) {
+      const outros = bairros.find((b) => normalizeStr(b.bairro).includes('outros'));
+      return outros ? outros.taxa : 0;
+    }
+
+    const buscado = normalizeStr(nomeBairro);
+    // 1. Correspondência exata
+    const match = bairros.find((b) => normalizeStr(b.bairro) === buscado);
+    if (match) return match.taxa;
+
+    // 2. Correspondência parcial
+    const matchParcial = bairros.find((b) => {
+      const bNorm = normalizeStr(b.bairro);
+      return bNorm.includes(buscado) || buscado.includes(bNorm);
+    });
+    if (matchParcial) return matchParcial.taxa;
+
+    // 3. Fallback "OUTROS" ou 0
+    const outros = bairros.find((b) => normalizeStr(b.bairro).includes('outros'));
+    return outros ? outros.taxa : 0;
+  };
+
+  // Handler para iniciar adição do produto ao carrinho
+  const handleIniciarAdicionar = (produto: Produto) => {
+    if (produto.opcionais && produto.opcionais.length > 0) {
+      setSelectedProdutoOpcionais(produto);
+      setTempOpcionais([]);
+      setTempObservacao('');
+      setTempQuantidade(1);
+    } else {
+      adicionarAoCarrinho(produto, [], '', 1);
+    }
+  };
+
+  // Adiciona item efetivamente ao carrinho
+  const adicionarAoCarrinho = (
+    produto: Produto,
+    opcionais: Opcional[],
+    observacao: string,
+    quantidade: number
+  ) => {
+    const precoBase = Number(produto.preco_delivery) || Number(produto.preco_salao) || 0;
+    const precoOpcionais = opcionais.reduce((acc, op) => acc + (Number(op.preco_adicional) || 0), 0);
+    const precoUnitarioTotal = precoBase + precoOpcionais;
+
+    const opcKey = opcionais.map((o) => o.id).sort().join('-');
+    const cartItemId = `${produto.id}_${opcKey}_${observacao.trim()}`;
+
+    setCart((prevCart) => {
+      const index = prevCart.findIndex((item) => item.cartItemId === cartItemId);
+      if (index >= 0) {
+        const updated = [...prevCart];
+        updated[index].quantidade += quantidade;
+        return updated;
+      }
+      return [
+        ...prevCart,
+        {
+          cartItemId,
+          produto,
+          quantidade,
+          observacao: observacao.trim(),
+          opcionaisSelecionados: opcionais,
+          precoUnitario: precoUnitarioTotal,
+        },
+      ];
+    });
+
+    setSelectedProdutoOpcionais(null);
+  };
+
+  // Ajustar quantidade no carrinho
+  const handleAtualizarQuantidade = (cartItemId: string, delta: number) => {
+    setCart((prevCart) => {
+      return prevCart
+        .map((item) => {
+          if (item.cartItemId === cartItemId) {
+            const novaQtd = item.quantidade + delta;
+            return novaQtd > 0 ? { ...item, quantidade: novaQtd } : null;
+          }
+          return item;
+        })
+        .filter(Boolean) as CartItem[];
+    });
+  };
+
+  // Remover item do carrinho
+  const handleRemoverItem = (cartItemId: string) => {
+    setCart((prev) => prev.filter((it) => it.cartItemId !== cartItemId));
+  };
+
+  // Busca do Cliente no Supabase pelo Telefone
+  const handleBuscarClientePorTelefone = async (telValue: string) => {
+    const rawDigits = cleanDigits(telValue);
+    if (rawDigits.length < 10) return;
+
+    setIsSearchingPhone(true);
+    try {
+      const { data: clients } = await supabase
+        .from('clientes')
+        .select('*')
+        .or(`telefone.eq.${telValue},telefone.eq.${rawDigits},telefone.eq.${formatPhone(telValue)}`)
+        .limit(1);
+
+      if (clients && clients.length > 0) {
+        const c = clients[0] as Cliente;
+        setClienteMatchedId(c.id);
+        if (c.nome) setClienteNome(c.nome);
+        if (c.cep) setClienteCep(c.cep);
+        if (c.endereco) setClienteRua(c.endereco);
+        if (c.numero) setClienteNumero(c.numero);
+        if (c.bairro) {
+          setClienteBairro(c.bairro);
+          const taxa = calcularTaxaParaBairro(c.bairro);
+          setTaxaEntrega(taxa);
+        }
+        if (c.complemento) setClienteComplemento(c.complemento);
+      }
+    } catch (err) {
+      console.warn('Erro ao consultar cliente por telefone:', err);
+    } finally {
+      setIsSearchingPhone(false);
+    }
+  };
+
+  // Busca de Endereço via CEP (ViaCEP)
+  const handleBuscarViaCep = async (cepValue: string) => {
+    const digits = cleanDigits(cepValue);
+    if (digits.length !== 8) return;
+
+    setIsSearchingCep(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await res.json();
+
+      if (data.erro) {
+        alert('CEP não encontrado ou inválido. Por favor, verifique o número digitado.');
+        return;
+      }
+
+      if (data.logradouro) setClienteRua(data.logradouro.toUpperCase());
+      if (data.bairro) {
+        const bairroNome = data.bairro.toUpperCase();
+        setClienteBairro(bairroNome);
+        const taxa = calcularTaxaParaBairro(bairroNome);
+        setTaxaEntrega(taxa);
+      }
+    } catch (err) {
+      console.warn('Erro ao consultar ViaCEP:', err);
+      alert('Não foi possível consultar o CEP no momento. Por favor, preencha o endereço manualmente.');
+    } finally {
+      setIsSearchingCep(false);
+    }
+  };
+
+  // Alteração manual do Bairro
+  const handleAlterarBairro = (novoBairro: string) => {
+    setClienteBairro(novoBairro);
+    const taxa = calcularTaxaParaBairro(novoBairro);
+    setTaxaEntrega(taxa);
+  };
+
+  // Submissão do Pedido ao Supabase
+  const handleFinalizarPedido = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (cart.length === 0) {
+      alert('Sua sacola está vazia.');
+      setCheckoutStep('menu');
+      return;
+    }
+
+    if (!clienteTelefone.trim() || cleanDigits(clienteTelefone).length < 10) {
+      alert('Por favor, informe um telefone válido com DDD para contato.');
+      return;
+    }
+
+    if (!clienteNome.trim()) {
+      alert('Por favor, informe seu nome completo.');
+      return;
+    }
+
+    if (!clienteRua.trim() || !clienteNumero.trim() || !clienteBairro.trim()) {
+      alert('Por favor, preencha todos os campos do endereço (Rua, Número e Bairro).');
+      return;
+    }
+
+    if (metodoPagamento === 'dinheiro' && precisaTroco) {
+      const trocoNum = parseFloat(trocoPara.replace(',', '.'));
+      if (isNaN(trocoNum) || trocoNum < cartTotalComEntrega) {
+        alert(
+          `O valor do troco deve ser maior que o total do pedido (${formatBRL(cartTotalComEntrega)}).`
+        );
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+    try {
+      // 1. Criar ou Atualizar Cliente na Nuvem (tabela 'clientes')
+      const clientePayload: Partial<Cliente> = {
+        id: clienteMatchedId || undefined,
+        nome: clienteNome.toUpperCase().trim(),
+        telefone: formatPhone(clienteTelefone),
+        cep: clienteCep ? formatCep(clienteCep) : '13400-000',
+        endereco: clienteRua.toUpperCase().trim(),
+        numero: clienteNumero.toUpperCase().trim(),
+        bairro: clienteBairro.toUpperCase().trim(),
+        complemento: clienteComplemento ? clienteComplemento.toUpperCase().trim() : undefined,
+        eh_mensalista: false,
+      };
+
+      const cliRes = await salvarClienteSupabase(clientePayload);
+      const clienteSalvo = cliRes.data;
+
+      // 2. Montar Pedido e Enviar via criarPedidoSupabase (tabelas 'pedidos', 'itens_pedido' e 'pagamentos')
+      const trocoCalculado =
+        metodoPagamento === 'dinheiro' && precisaTroco
+          ? parseFloat(trocoPara.replace(',', '.'))
+          : undefined;
+
+      const pedidoPayload = {
+        tipo: 'delivery' as const,
+        status: 'pendente' as const,
+        cliente_id: clienteSalvo?.id && isUUID(clienteSalvo.id) ? clienteSalvo.id : undefined,
+        cliente: clienteSalvo || clientePayload,
+        taxa_entrega: taxaEntrega,
+        valor_total: cartTotalComEntrega,
+        precisa_troco: metodoPagamento === 'dinheiro' && precisaTroco,
+        troco_para: trocoCalculado,
+        forma_pagamento: metodoPagamento,
+        pagamentos: [
+          {
+            forma: metodoPagamento,
+            valor: cartTotalComEntrega,
+          },
+        ],
+        itens: cart.map((it) => ({
+          produto_id: it.produto.id,
+          produto_nome: it.produto.nome,
+          quantidade: it.quantidade,
+          preco_unitario: it.precoUnitario,
+          observacao: it.observacao ? it.observacao.toUpperCase().trim() : undefined,
+          opcionais_selecionados:
+            it.opcionaisSelecionados.length > 0
+              ? it.opcionaisSelecionados.map((op) => ({
+                  id: op.id,
+                  nome: op.nome,
+                  preco_adicional: op.preco_adicional,
+                }))
+              : undefined,
+        })),
+      };
+
+      const pedidoCriado = await criarPedidoSupabase(pedidoPayload);
+
+      setPedidoConcluido(pedidoCriado);
+      setCart([]);
+      setCheckoutStep('success');
+    } catch (err: any) {
+      console.error('Erro ao finalizar pedido:', err);
+      alert(
+        'Ocorreu um erro ao registrar seu pedido. Por favor, tente novamente ou entre em contato pelo WhatsApp.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Se o carregamento terminou e o cardapioDiario não estiver 'aberto', exibe a tela de Restaurante Fechado
@@ -125,7 +493,6 @@ export default function ClientApp() {
   if (!loading && !isAberto) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between selection:bg-amber-500 selection:text-black">
-        {/* Header Superior */}
         <header className="bg-neutral-900/90 border-b border-neutral-800 p-4 sticky top-0 z-20 backdrop-blur-md">
           <div className="max-w-md mx-auto flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -152,7 +519,6 @@ export default function ClientApp() {
           </div>
         </header>
 
-        {/* Ecrã de Restaurante Fechado */}
         <main className="flex-1 max-w-md mx-auto p-6 flex flex-col items-center justify-center text-center">
           <div className="relative mb-6">
             <div className="w-24 h-24 rounded-3xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-amber-500 shadow-2xl">
@@ -191,18 +557,6 @@ export default function ClientApp() {
                 </div>
               </div>
             )}
-
-            {configuracoes?.endereco && (
-              <div className="flex items-center gap-3 text-xs text-neutral-300">
-                <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
-                <div>
-                  <strong className="text-white block uppercase">Endereço:</strong>
-                  <span>
-                    {configuracoes.endereco}, {configuracoes.numero} - {configuracoes.bairro}
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
 
           <button
@@ -213,7 +567,6 @@ export default function ClientApp() {
           </button>
         </main>
 
-        {/* Rodapé */}
         <footer className="p-4 text-center border-t border-neutral-900 text-[11px] text-neutral-600">
           © {new Date().getFullYear()} {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'} · Cardápio Digital
         </footer>
@@ -221,6 +574,719 @@ export default function ClientApp() {
     );
   }
 
+  // =========================================================================
+  // TELA DE SUCESSO (PEDIDO REALIZADO)
+  // =========================================================================
+  if (checkoutStep === 'success' && pedidoConcluido) {
+    const whatsAppNumero = cleanDigits(configuracoes?.telefone || '19999999999');
+    const msgWhats = encodeURIComponent(
+      `Olá, fiz o pedido #${pedidoConcluido.codigo_senha || pedidoConcluido.id} no site do ${
+        configuracoes?.nomeRestaurante || 'Restaurante Kaipira'
+      }! Gostaria de acompanhar a entrega.`
+    );
+
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between selection:bg-amber-500 selection:text-black">
+        <header className="bg-neutral-900/90 border-b border-neutral-800 p-4 sticky top-0 z-20 backdrop-blur-md">
+          <div className="max-w-md mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center text-black font-black">
+                <Flame className="w-5 h-5" />
+              </div>
+              <h1 className="text-sm font-black uppercase tracking-tight text-white">
+                {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'}
+              </h1>
+            </div>
+            <Link to="/admin" className="text-neutral-500 hover:text-white p-2">
+              <Lock className="w-4 h-4" />
+            </Link>
+          </div>
+        </header>
+
+        <main className="flex-1 max-w-md mx-auto p-5 w-full flex flex-col justify-center">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 text-center shadow-2xl relative overflow-hidden">
+            <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/30">
+              <CheckCircle2 className="w-10 h-10 stroke-[2.5]" />
+            </div>
+
+            <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-black uppercase tracking-wider">
+              Pedido Enviado para a Cozinha
+            </span>
+
+            <h2 className="text-2xl font-black uppercase text-white mt-3 mb-1">
+              Obrigado, {clienteNome.split(' ')[0]}!
+            </h2>
+            <p className="text-xs text-neutral-400 mb-6">
+              Seu pedido já está registrado no nosso sistema e já está sendo preparado.
+            </p>
+
+            {/* Número / Senha do Pedido */}
+            <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 mb-5">
+              <span className="text-[10px] font-black text-neutral-500 uppercase tracking-widest block mb-1">
+                Número do seu Pedido / Senha
+              </span>
+              <span className="text-3xl font-black text-amber-400 font-mono">
+                #{pedidoConcluido.codigo_senha || pedidoConcluido.id}
+              </span>
+              <div className="flex items-center justify-center gap-1.5 text-xs text-neutral-400 mt-2">
+                <Bike className="w-4 h-4 text-amber-500" />
+                <span>Previsão de entrega: <strong>35 a 50 minutos</strong></span>
+              </div>
+            </div>
+
+            {/* Resumo do Pedido */}
+            <div className="text-left text-xs bg-neutral-950/50 rounded-xl p-3.5 border border-neutral-800/80 space-y-2 mb-6">
+              <div className="flex justify-between text-neutral-400 pb-2 border-b border-neutral-800">
+                <span>Forma de Pagamento:</span>
+                <strong className="text-white uppercase">
+                  {pedidoConcluido.forma_pagamento?.replace('_', ' ') || 'A combinar'}
+                </strong>
+              </div>
+              <div className="flex justify-between text-neutral-400 pb-2 border-b border-neutral-800">
+                <span>Entrega em:</span>
+                <strong className="text-white truncate max-w-[200px]">
+                  {clienteRua}, {clienteNumero} - {clienteBairro}
+                </strong>
+              </div>
+              <div className="flex justify-between text-neutral-300 font-bold pt-1">
+                <span>Total a Pagar:</span>
+                <span className="text-amber-400 font-mono text-sm font-black">
+                  {formatBRL(pedidoConcluido.valor_total)}
+                </span>
+              </div>
+            </div>
+
+            {/* Botões de Ação */}
+            <div className="space-y-2.5">
+              {whatsAppNumero && (
+                <a
+                  href={`https://wa.me/55${whatsAppNumero}?text=${msgWhats}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Acompanhar pelo WhatsApp</span>
+                </a>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPedidoConcluido(null);
+                  setCheckoutStep('menu');
+                }}
+                className="w-full py-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold uppercase rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Fazer Novo Pedido
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // TELA DE CARRINHO / SACOLA
+  // =========================================================================
+  if (checkoutStep === 'cart') {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-amber-500 selection:text-black">
+        {/* Top Header */}
+        <header className="bg-neutral-900/95 border-b border-neutral-800 sticky top-0 z-30 p-4 backdrop-blur-md">
+          <div className="max-w-2xl mx-auto flex items-center justify-between">
+            <button
+              onClick={() => setCheckoutStep('menu')}
+              className="flex items-center gap-1.5 text-xs font-bold text-neutral-400 hover:text-white uppercase transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar ao Cardápio</span>
+            </button>
+            <h1 className="text-sm font-black uppercase tracking-wider text-white">
+              Sua Sacola ({cartTotalItens})
+            </h1>
+            <div className="w-16" />
+          </div>
+        </header>
+
+        {/* Lista de Itens */}
+        <main className="max-w-2xl mx-auto p-4 flex-1 w-full space-y-4 pb-32">
+          {cart.length === 0 ? (
+            <div className="py-24 text-center text-neutral-500 flex flex-col items-center justify-center gap-3">
+              <ShoppingBag className="w-12 h-12 stroke-[1.5] text-neutral-600" />
+              <p className="text-sm font-bold uppercase text-neutral-400">Sua sacola está vazia</p>
+              <button
+                onClick={() => setCheckoutStep('menu')}
+                className="mt-2 px-5 py-2.5 bg-amber-500 text-black text-xs font-black uppercase rounded-xl"
+              >
+                Escolher Pratos
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {cart.map((item) => (
+                  <div
+                    key={item.cartItemId}
+                    className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex flex-col justify-between shadow-xs"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-black text-white uppercase leading-snug">
+                          {item.produto.nome}
+                        </h4>
+
+                        {item.opcionaisSelecionados.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {item.opcionaisSelecionados.map((op) => (
+                              <span
+                                key={op.id}
+                                className="px-2 py-0.5 rounded-md bg-neutral-800 text-amber-400 text-[10px] font-bold uppercase"
+                              >
+                                + {op.nome} ({formatBRL(op.preco_adicional)})
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {item.observacao && (
+                          <p className="text-[11px] text-neutral-400 italic mt-1 bg-neutral-950/60 px-2 py-1 rounded-md border border-neutral-800/60">
+                            Obs: {item.observacao}
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => handleRemoverItem(item.cartItemId)}
+                        className="text-neutral-500 hover:text-red-400 p-1 rounded-lg transition-colors cursor-pointer"
+                        title="Remover produto"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 mt-3 border-t border-neutral-800/80">
+                      <span className="text-sm font-black text-amber-400 font-mono">
+                        {formatBRL(item.precoUnitario * item.quantidade)}
+                      </span>
+
+                      {/* Stepper de Quantidade */}
+                      <div className="flex items-center gap-2 bg-neutral-800 rounded-xl p-1 border border-neutral-700">
+                        <button
+                          onClick={() => handleAtualizarQuantidade(item.cartItemId, -1)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-neutral-700/60 hover:bg-neutral-600 text-white cursor-pointer transition-colors"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-xs font-mono font-black text-white w-5 text-center">
+                          {item.quantidade}
+                        </span>
+                        <button
+                          onClick={() => handleAtualizarQuantidade(item.cartItemId, 1)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-neutral-700/60 hover:bg-neutral-600 text-white cursor-pointer transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Botão Adicionar mais itens */}
+              <button
+                type="button"
+                onClick={() => setCheckoutStep('menu')}
+                className="w-full py-2.5 border border-dashed border-neutral-700 hover:border-amber-500 text-neutral-400 hover:text-amber-400 text-xs font-bold uppercase rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Adicionar Mais Itens ao Pedido</span>
+              </button>
+
+              {/* Resumo */}
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 text-xs space-y-2 mt-4">
+                <div className="flex justify-between text-neutral-400">
+                  <span>Subtotal dos Itens:</span>
+                  <span className="font-mono text-white font-bold">{formatBRL(cartSubtotal)}</span>
+                </div>
+                <div className="flex justify-between text-neutral-400">
+                  <span>Taxa de Entrega:</span>
+                  <span className="text-neutral-500">Calculada na próxima etapa</span>
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+
+        {/* Footer de Ação */}
+        {cart.length > 0 && (
+          <aside className="fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 border-t border-neutral-800 backdrop-blur-md p-4">
+            <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
+              <div>
+                <span className="text-[10px] font-bold text-neutral-400 uppercase block">Subtotal</span>
+                <span className="text-lg font-black text-amber-400 font-mono">
+                  {formatBRL(cartSubtotal)}
+                </span>
+              </div>
+              <button
+                onClick={() => setCheckoutStep('checkout')}
+                className="px-6 py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-black uppercase text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer transition-all"
+              >
+                <span>Avançar para Entrega</span>
+                <ChevronRight className="w-4 h-4 stroke-[3]" />
+              </button>
+            </div>
+          </aside>
+        )}
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // TELA DE CHECKOUT (ENTREGA, VIACEP E PAGAMENTO)
+  // =========================================================================
+  if (checkoutStep === 'checkout') {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-amber-500 selection:text-black pb-36">
+        <header className="bg-neutral-900/95 border-b border-neutral-800 sticky top-0 z-30 p-4 backdrop-blur-md">
+          <div className="max-w-2xl mx-auto flex items-center justify-between">
+            <button
+              onClick={() => setCheckoutStep('cart')}
+              className="flex items-center gap-1.5 text-xs font-bold text-neutral-400 hover:text-white uppercase transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar à Sacola</span>
+            </button>
+            <h1 className="text-sm font-black uppercase tracking-wider text-white">
+              Entrega & Pagamento
+            </h1>
+            <div className="w-16" />
+          </div>
+        </header>
+
+        <main className="max-w-2xl mx-auto p-4 flex-1 w-full space-y-5">
+          <form onSubmit={handleFinalizarPedido} className="space-y-5">
+            {/* 1. SEÇÃO DE IDENTIFICAÇÃO DO CLIENTE */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 sm:p-5 space-y-4">
+              <div className="flex items-center gap-2 border-b border-neutral-800 pb-2.5">
+                <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-black text-xs">
+                  1
+                </div>
+                <h3 className="text-xs font-black uppercase text-white tracking-wider">
+                  Identificação do Cliente
+                </h3>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
+                  WhatsApp / Celular com DDD: *
+                </label>
+                <div className="relative">
+                  <input
+                    type="tel"
+                    required
+                    value={clienteTelefone}
+                    onChange={(e) => {
+                      const formatted = formatPhone(e.target.value);
+                      setClienteTelefone(formatted);
+                    }}
+                    onBlur={() => handleBuscarClientePorTelefone(clienteTelefone)}
+                    placeholder="(19) 9-9999-9999"
+                    className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm font-mono text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors"
+                  />
+                  {isSearchingPhone && (
+                    <RefreshCw className="w-4 h-4 text-amber-500 animate-spin absolute right-3 top-1/2 -translate-y-1/2" />
+                  )}
+                </div>
+                <span className="text-[10px] text-neutral-500 mt-1 block">
+                  Se você já fez pedidos antes, seus dados de entrega serão carregados automaticamente.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
+                  Seu Nome Completo: *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={clienteNome}
+                  onChange={(e) => setClienteNome(e.target.value.toUpperCase())}
+                  placeholder="EX: MARIA APARECIDA DA SILVA"
+                  className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white uppercase placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* 2. SEÇÃO DE ENDEREÇO DE ENTREGA (VIACEP & BAIRRO MÁGICO) */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 sm:p-5 space-y-4">
+              <div className="flex items-center gap-2 border-b border-neutral-800 pb-2.5">
+                <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-black text-xs">
+                  2
+                </div>
+                <h3 className="text-xs font-black uppercase text-white tracking-wider">
+                  Endereço para Entrega
+                </h3>
+              </div>
+
+              {/* CEP com Busca ViaCEP */}
+              <div>
+                <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
+                  CEP de Piracicaba (opcional):
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={clienteCep}
+                      onChange={(e) => {
+                        const masked = formatCep(e.target.value);
+                        setClienteCep(masked);
+                        if (cleanDigits(masked).length === 8) {
+                          handleBuscarViaCep(masked);
+                        }
+                      }}
+                      onBlur={() => handleBuscarViaCep(clienteCep)}
+                      placeholder="13400-000"
+                      className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm font-mono text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors"
+                    />
+                    {isSearchingCep && (
+                      <RefreshCw className="w-4 h-4 text-amber-500 animate-spin absolute right-3 top-1/2 -translate-y-1/2" />
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleBuscarViaCep(clienteCep)}
+                    className="px-3.5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-xs font-bold uppercase rounded-xl transition-colors cursor-pointer"
+                  >
+                    Buscar CEP
+                  </button>
+                </div>
+              </div>
+
+              {/* Rua e Número */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
+                    Rua / Avenida: *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={clienteRua}
+                    onChange={(e) => setClienteRua(e.target.value.toUpperCase())}
+                    placeholder="EX: RUA GOVERNADOR PEDRO DE TOLEDO"
+                    className="w-full px-3.5 py-2 bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white uppercase placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
+                    Número: *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={clienteNumero}
+                    onChange={(e) => setClienteNumero(e.target.value.toUpperCase())}
+                    placeholder="EX: 1250"
+                    className="w-full px-3.5 py-2 bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white uppercase placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Bairro com Cálculo de Taxa Mágica */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
+                  Bairro (Piracicaba): *
+                </label>
+
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    required
+                    value={clienteBairro}
+                    onChange={(e) => handleAlterarBairro(e.target.value.toUpperCase())}
+                    placeholder="DIGITE O BAIRRO (EX: CENTRO, VILA REZENDE...)"
+                    className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white uppercase placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors"
+                  />
+
+                  {/* Seletor rápido de bairros se houver cadastrados */}
+                  {bairros.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-[10px] text-neutral-400 font-bold uppercase shrink-0">
+                        Ou selecione:
+                      </span>
+                      <select
+                        value={clienteBairro}
+                        onChange={(e) => handleAlterarBairro(e.target.value)}
+                        className="w-full px-2 py-1 bg-neutral-850 border border-neutral-700 rounded-lg text-xs text-neutral-200 uppercase focus:outline-none"
+                      >
+                        <option value="">SELECIONE DA LISTA DE PIRACICABA...</option>
+                        {bairros.map((b) => (
+                          <option key={b.bairro} value={b.bairro}>
+                            {b.bairro} — {formatBRL(b.taxa)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Badge da Taxa de Entrega Calculada */}
+                  <div className="flex items-center justify-between p-2.5 bg-neutral-950/80 rounded-xl border border-neutral-800 text-xs">
+                    <span className="text-neutral-400 flex items-center gap-1.5 font-bold">
+                      <Bike className="w-4 h-4 text-amber-500" />
+                      Taxa de Entrega para este Bairro:
+                    </span>
+                    <span className="font-mono text-amber-400 font-black">
+                      {taxaEntrega === 0 ? 'GRÁTIS' : formatBRL(taxaEntrega)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Complemento */}
+              <div>
+                <label className="text-[11px] font-bold text-neutral-300 block mb-1 uppercase">
+                  Complemento / Ponto de Referência (opcional):
+                </label>
+                <input
+                  type="text"
+                  value={clienteComplemento}
+                  onChange={(e) => setClienteComplemento(e.target.value.toUpperCase())}
+                  placeholder="EX: APTO 42 BLOCO B / EM FRENTE À PADARIA"
+                  className="w-full px-3.5 py-2 bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white uppercase placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* 3. SEÇÃO DE FORMA DE PAGAMENTO */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 sm:p-5 space-y-4">
+              <div className="flex items-center gap-2 border-b border-neutral-800 pb-2.5">
+                <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-black text-xs">
+                  3
+                </div>
+                <h3 className="text-xs font-black uppercase text-white tracking-wider">
+                  Como Deseja Pagar?
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* PIX */}
+                <label
+                  className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                    metodoPagamento === 'pix'
+                      ? 'bg-amber-500/10 border-amber-500 text-white'
+                      : 'bg-neutral-850 border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="forma_pg"
+                    value="pix"
+                    checked={metodoPagamento === 'pix'}
+                    onChange={() => setMetodoPagamento('pix')}
+                    className="sr-only"
+                  />
+                  <QrCode className="w-5 h-5 text-cyan-400 shrink-0" />
+                  <div>
+                    <strong className="text-xs uppercase block">PIX</strong>
+                    <span className="text-[10px] text-neutral-400 block">
+                      Chave informada no pedido ou na entrega
+                    </span>
+                  </div>
+                </label>
+
+                {/* Dinheiro */}
+                <label
+                  className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                    metodoPagamento === 'dinheiro'
+                      ? 'bg-amber-500/10 border-amber-500 text-white'
+                      : 'bg-neutral-850 border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="forma_pg"
+                    value="dinheiro"
+                    checked={metodoPagamento === 'dinheiro'}
+                    onChange={() => setMetodoPagamento('dinheiro')}
+                    className="sr-only"
+                  />
+                  <Banknote className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <div>
+                    <strong className="text-xs uppercase block">Dinheiro em Espécie</strong>
+                    <span className="text-[10px] text-neutral-400 block">Pagar na entrega ao motoboy</span>
+                  </div>
+                </label>
+
+                {/* Cartão de Crédito */}
+                <label
+                  className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                    metodoPagamento === 'cartao_credito'
+                      ? 'bg-amber-500/10 border-amber-500 text-white'
+                      : 'bg-neutral-850 border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="forma_pg"
+                    value="cartao_credito"
+                    checked={metodoPagamento === 'cartao_credito'}
+                    onChange={() => setMetodoPagamento('cartao_credito')}
+                    className="sr-only"
+                  />
+                  <CreditCard className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div>
+                    <strong className="text-xs uppercase block">Cartão de Crédito</strong>
+                    <span className="text-[10px] text-neutral-400 block">Levar maquininha na entrega</span>
+                  </div>
+                </label>
+
+                {/* Cartão de Débito */}
+                <label
+                  className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                    metodoPagamento === 'cartao_debito'
+                      ? 'bg-amber-500/10 border-amber-500 text-white'
+                      : 'bg-neutral-850 border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="forma_pg"
+                    value="cartao_debito"
+                    checked={metodoPagamento === 'cartao_debito'}
+                    onChange={() => setMetodoPagamento('cartao_debito')}
+                    className="sr-only"
+                  />
+                  <CreditCard className="w-5 h-5 text-blue-400 shrink-0" />
+                  <div>
+                    <strong className="text-xs uppercase block">Cartão de Débito</strong>
+                    <span className="text-[10px] text-neutral-400 block">Levar maquininha na entrega</span>
+                  </div>
+                </label>
+
+                {/* Vale Refeição */}
+                <label
+                  className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all sm:col-span-2 ${
+                    metodoPagamento === 'vale_refeicao'
+                      ? 'bg-amber-500/10 border-amber-500 text-white'
+                      : 'bg-neutral-850 border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="forma_pg"
+                    value="vale_refeicao"
+                    checked={metodoPagamento === 'vale_refeicao'}
+                    onChange={() => setMetodoPagamento('vale_refeicao')}
+                    className="sr-only"
+                  />
+                  <UtensilsCrossed className="w-5 h-5 text-purple-400 shrink-0" />
+                  <div>
+                    <strong className="text-xs uppercase block">Vale Refeição / Alimentação</strong>
+                    <span className="text-[10px] text-neutral-400 block">
+                      Alelo, Ticket, Sodexo, VR Benefícios (Levar maquininha)
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Opção de Troco para Dinheiro */}
+              {metodoPagamento === 'dinheiro' && (
+                <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2 mt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-neutral-300 uppercase">
+                      Precisa de troco?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPrecisaTroco(!precisaTroco)}
+                      className={`px-3 py-1 rounded-lg text-xs font-black uppercase transition-colors cursor-pointer ${
+                        precisaTroco
+                          ? 'bg-amber-500 text-black'
+                          : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      {precisaTroco ? 'SIM' : 'NÃO'}
+                    </button>
+                  </div>
+
+                  {precisaTroco && (
+                    <div className="pt-2 border-t border-neutral-800/80">
+                      <label className="text-[11px] font-bold text-neutral-400 block mb-1 uppercase">
+                        Troco para quanto em dinheiro? (R$):
+                      </label>
+                      <input
+                        type="text"
+                        required={precisaTroco}
+                        value={trocoPara}
+                        onChange={(e) => setTrocoPara(e.target.value)}
+                        placeholder={`Mínimo: ${formatBRL(cartTotalComEntrega)}`}
+                        className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* RESUMO DOS VALORES */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-2 text-xs">
+              <div className="flex justify-between text-neutral-400">
+                <span>Subtotal dos Itens ({cartTotalItens}):</span>
+                <span className="font-mono text-white font-bold">{formatBRL(cartSubtotal)}</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Taxa de Entrega:</span>
+                <span className="font-mono text-white font-bold">
+                  {taxaEntrega === 0 ? 'GRÁTIS' : formatBRL(taxaEntrega)}
+                </span>
+              </div>
+              <div className="flex justify-between text-base font-black text-amber-400 pt-2 border-t border-neutral-800">
+                <span>Total a Pagar:</span>
+                <span className="font-mono">{formatBRL(cartTotalComEntrega)}</span>
+              </div>
+            </div>
+
+            {/* BOTÃO FINALIZAR FIXADO */}
+            <aside className="fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 border-t border-neutral-800 backdrop-blur-md p-4">
+              <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] font-bold text-neutral-400 uppercase block">Total do Pedido</span>
+                  <span className="text-xl font-black text-amber-400 font-mono">
+                    {formatBRL(cartTotalComEntrega)}
+                  </span>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-6 py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-black uppercase text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer transition-all disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Enviando Pedido...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>Finalizar e Enviar Pedido</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </aside>
+          </form>
+        </main>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // TELA PRINCIPAL (CARDÁPIO / VITRINE DO CLIENTE)
+  // =========================================================================
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-amber-500 selection:text-black pb-28">
       {/* Top Header Mobile-First */}
@@ -335,6 +1401,7 @@ export default function ClientApp() {
             {produtosFiltrados.map((prod) => {
               const preco = Number(prod.preco_delivery) || Number(prod.preco_salao) || 0;
               const cat = categorias.find((c) => Number(c.id) === Number(prod.categoria_id));
+              const hasOpcionais = prod.opcionais && prod.opcionais.length > 0;
 
               return (
                 <div
@@ -373,6 +1440,11 @@ export default function ClientApp() {
                           {prod.descricao}
                         </p>
                       )}
+                      {hasOpcionais && (
+                        <span className="text-[10px] text-amber-300 font-bold block mt-1">
+                          + Opcionais disponíveis
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -389,11 +1461,11 @@ export default function ClientApp() {
 
                     <button
                       type="button"
-                      onClick={() => handleAdicionarItem(prod)}
+                      onClick={() => handleIniciarAdicionar(prod)}
                       className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-black uppercase text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                      <span>Adicionar</span>
+                      <span>{hasOpcionais ? 'Personalizar' : 'Adicionar'}</span>
                     </button>
                   </div>
                 </div>
@@ -403,40 +1475,172 @@ export default function ClientApp() {
         )}
       </main>
 
-      {/* Barra Inferior Sticky com Esqueleto Visual do Carrinho */}
+      {/* Modal de Opcionais e Observação ao Adicionar */}
+      {selectedProdutoOpcionais && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div>
+                <span className="text-[10px] font-black text-amber-400 uppercase tracking-wider block">
+                  Personalizar Item
+                </span>
+                <h3 className="text-sm font-black text-white uppercase">
+                  {selectedProdutoOpcionais.nome}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedProdutoOpcionais(null)}
+                className="text-neutral-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Lista de Opcionais */}
+            {selectedProdutoOpcionais.opcionais &&
+              selectedProdutoOpcionais.opcionais.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-neutral-300 uppercase block">
+                    Deseja adicionar adicionais?
+                  </span>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {selectedProdutoOpcionais.opcionais.map((opc) => {
+                      const isSelected = tempOpcionais.some((o) => o.id === opc.id);
+                      return (
+                        <label
+                          key={opc.id}
+                          className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'bg-amber-500/10 border-amber-500 text-white'
+                              : 'bg-neutral-850 border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                if (isSelected) {
+                                  setTempOpcionais((prev) => prev.filter((o) => o.id !== opc.id));
+                                } else {
+                                  setTempOpcionais((prev) => [...prev, opc]);
+                                }
+                              }}
+                              className="w-4 h-4 rounded text-amber-500 bg-neutral-800 border-neutral-700 focus:ring-0"
+                            />
+                            <span className="text-xs font-bold uppercase">{opc.nome}</span>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-amber-400">
+                            +{formatBRL(opc.preco_adicional)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+            {/* Observações */}
+            <div>
+              <label className="text-xs font-bold text-neutral-300 uppercase block mb-1">
+                Alguma observação para a cozinha?
+              </label>
+              <textarea
+                rows={2}
+                value={tempObservacao}
+                onChange={(e) => setTempObservacao(e.target.value)}
+                placeholder="Ex: sem cebola, feijão separado, carne bem passada..."
+                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            {/* Quantidade e Botão Confirmar */}
+            <div className="pt-2 border-t border-neutral-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 bg-neutral-800 rounded-xl p-1 border border-neutral-700">
+                <button
+                  type="button"
+                  onClick={() => setTempQuantidade((q) => Math.max(1, q - 1))}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-neutral-700 text-white"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-xs font-mono font-black text-white w-6 text-center">
+                  {tempQuantidade}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTempQuantidade((q) => q + 1)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-neutral-700 text-white"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  adicionarAoCarrinho(
+                    selectedProdutoOpcionais,
+                    tempOpcionais,
+                    tempObservacao,
+                    tempQuantidade
+                  )
+                }
+                className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20"
+              >
+                <span>Adicionar</span>
+                <span>•</span>
+                <span className="font-mono">
+                  {formatBRL(
+                    ((Number(selectedProdutoOpcionais.preco_delivery) ||
+                      Number(selectedProdutoOpcionais.preco_salao) ||
+                      0) +
+                      tempOpcionais.reduce((a, b) => a + (Number(b.preco_adicional) || 0), 0)) *
+                      tempQuantidade
+                  )}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Barra Inferior Sticky com Botão da Sacola */}
       <aside className="fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 border-t border-neutral-800 backdrop-blur-md p-3.5 shadow-2xl">
         <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="relative p-2.5 bg-neutral-800 rounded-xl text-amber-400 border border-neutral-700">
               <ShoppingBag className="w-5 h-5" />
-              {carrinhoItensCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.2 rounded-full bg-amber-500 text-black text-[10px] font-black min-w-[18px] text-center shadow-md">
-                  {carrinhoItensCount}
+              {cartTotalItens > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.2 rounded-full bg-amber-500 text-black text-[10px] font-black min-w-[18px] text-center shadow-md animate-bounce">
+                  {cartTotalItens}
                 </span>
               )}
             </div>
             <div>
               <span className="text-xs font-black text-white block uppercase">
-                {carrinhoItensCount === 0
+                {cartTotalItens === 0
                   ? 'Sacola Vazia'
-                  : `${carrinhoItensCount} ${carrinhoItensCount === 1 ? 'item' : 'itens'}`}
+                  : `${cartTotalItens} ${cartTotalItens === 1 ? 'item' : 'itens'}`}
               </span>
               <span className="text-[11px] font-mono text-amber-400 font-bold">
-                {formatBRL(carrinhoTotal)}
+                {formatBRL(cartSubtotal)}
               </span>
             </div>
           </div>
 
           <button
             type="button"
-            disabled={carrinhoItensCount === 0}
-            className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all ${
-              carrinhoItensCount > 0
+            disabled={cartTotalItens === 0}
+            onClick={() => setCheckoutStep('cart')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+              cartTotalItens > 0
                 ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/20 cursor-pointer active:scale-95'
                 : 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700'
             }`}
           >
             <span>Ver Sacola</span>
+            <ChevronRight className="w-4 h-4 stroke-[3]" />
           </button>
         </div>
       </aside>
