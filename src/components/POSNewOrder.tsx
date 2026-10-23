@@ -10,6 +10,7 @@ import {
   CardapioDiarioConfig,
   FormaPagamentoConfig,
   CaixaDiario,
+  TipoUsuario,
 } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { UpperInput, UpperTextarea } from './UpperInput';
@@ -59,6 +60,7 @@ interface POSNewOrderProps {
   selectedMesaNumber?: number;
   formasPagamento?: FormaPagamentoConfig[];
   caixa?: CaixaDiario;
+  currentRole?: TipoUsuario;
   onOrderCreated: (pedido: Pedido) => void;
   onPrintReceipt: (pedido: Pedido) => void;
   onTogglePauseProduto: (id: number) => void;
@@ -74,6 +76,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   selectedMesaNumber,
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
   caixa,
+  currentRole,
   onOrderCreated,
   onPrintReceipt,
   onTogglePauseProduto,
@@ -133,11 +136,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const [motoboyTipo, setMotoboyTipo] = useState<'proprio' | 'app'>('proprio');
 
   // Multi-Payment state (Combinação de Pagamentos)
-  const [pagamentosMultiplos, setPagamentosMultiplos] = useState<
-    { id: string; forma: FormaPagamento; valor: number }[]
+  const [pagamentosParciais, setPagamentosParciais] = useState<
+    { forma: string; valor: number }[]
   >([]);
-  const [novaFormaMultiplo, setNovaFormaMultiplo] = useState<FormaPagamento>('pix');
-  const [novoValorMultiplo, setNovoValorMultiplo] = useState('');
+  const [novaFormaParcial, setNovaFormaParcial] = useState<string>('pix');
+  const [novoValorParcial, setNovoValorParcial] = useState('');
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -261,26 +264,26 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const trocoCalculado =
     precisaTroco && Number(trocoPara) > total ? Number(trocoPara) - total : 0;
 
-  // Multi-Payment calculations
-  const totalPagoMultiplo = pagamentosMultiplos.reduce((acc, p) => acc + p.valor, 0);
-  const restanteMultiplo = Math.max(0, total - totalPagoMultiplo);
+  // Multi-Payment calculations (Combinação de Pagamentos)
+  const totalPagoParcial = pagamentosParciais.reduce((acc, p) => acc + p.valor, 0);
+  const restanteParcial = Math.max(0, total - totalPagoParcial);
 
-  const handleAddPagamentoMultiplo = () => {
-    const val = parseFloat(novoValorMultiplo.replace(',', '.'));
+  const handleAddPagamentoParcial = () => {
+    const valStr = novoValorParcial.trim() !== '' ? novoValorParcial : (restanteParcial > 0 ? restanteParcial.toFixed(2) : '0');
+    const val = parseFloat(valStr.replace(',', '.'));
     if (isNaN(val) || val <= 0) return;
-    setPagamentosMultiplos((prev) => [
+    setPagamentosParciais((prev) => [
       ...prev,
       {
-        id: 'pg-pos-' + Date.now(),
-        forma: novaFormaMultiplo,
+        forma: novaFormaParcial,
         valor: val,
       },
     ]);
-    setNovoValorMultiplo('');
+    setNovoValorParcial('');
   };
 
-  const handleRemovePagamentoMultiplo = (id: string) => {
-    setPagamentosMultiplos((prev) => prev.filter((p) => p.id !== id));
+  const handleRemovePagamentoParcial = (index: number) => {
+    setPagamentosParciais((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Submit Order
@@ -319,8 +322,8 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       }
 
       if (formaPagamento === 'multiplo') {
-        if (totalPagoMultiplo < total - 0.05) {
-          const msg = `O VALOR PAGO (${formatBRL(totalPagoMultiplo)}) É INFERIOR AO TOTAL DO PEDIDO (${formatBRL(
+        if (totalPagoParcial < total - 0.05) {
+          const msg = `O VALOR PAGO (${formatBRL(totalPagoParcial)}) É INFERIOR AO TOTAL DO PEDIDO (${formatBRL(
             total
           )}). ADICIONE OS PAGAMENTOS RESTANTES.`;
           setPaymentErrorMsg(msg);
@@ -372,10 +375,10 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
         tipoPedido === 'salão'
           ? []
           : formaPagamento === 'multiplo'
-          ? pagamentosMultiplos.map((p, idx) => ({
+          ? pagamentosParciais.map((p, idx) => ({
               id: Date.now() + idx,
               pedido_id: 0,
-              forma: p.forma,
+              forma: p.forma as FormaPagamento,
               valor: p.valor,
               criado_em: new Date().toISOString(),
             }))
@@ -396,7 +399,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
         tipoPedido !== 'salão'
           ? formaPagamento === 'multiplo'
             ? 'multiplo'
-            : formaPagamento
+            : (formaPagamento || 'dinheiro')
           : undefined;
 
       const novoPedido = await criarPedidoSupabase({
@@ -416,8 +419,8 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
       // Reset cart and form
       setCart([]);
-      setPagamentosMultiplos([]);
-      setNovoValorMultiplo('');
+      setPagamentosParciais([]);
+      setNovoValorParcial('');
       if (tipoPedido !== 'salão') {
         setClienteNome('');
         setClienteTelefone('');
@@ -436,35 +439,37 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     }
   };
 
+  // Se o cardápio diário estiver montado:
+  const hasCardapioMontado = !!cardapioDiario?.itens && cardapioDiario.itens.length > 0;
+
   // Filter products: Bebidas (Cat 4) e Sobremesas (Cat 5) são SEMPRE FIXOS E DISPONÍVEIS
+  // Pratos (Categorias 1, 2, 3): SÓ podem ser exibidos se listados em cardapioDiario.itens e autorizados para o canal
   const filteredProdutos = produtos.filter((prod) => {
     const isBebidaOuSobremesa = prod.categoria_id === 4 || prod.categoria_id === 5;
 
-    // Se o cardápio diário estiver montado (cardapioDiario?.itens configurados com itens):
-    const hasCardapioMontado = !!cardapioDiario?.itens && cardapioDiario.itens.length > 0;
-
-    if (!isBebidaOuSobremesa && hasCardapioMontado && !modoGerencialTodosDias) {
-      const itemConfig = cardapioDiario!.itens.find((it) => it.produto_id === prod.id);
-      // Bloqueia a exibição de qualquer prato que não tenha sido expressamente ativado para o dia
-      if (!itemConfig) return false;
-
-      // Para pedidos de delivery ou retirada: exibe APENAS produtos com disponivel_delivery === true
-      if (tipoPedido === 'delivery' || tipoPedido === 'retirada') {
-        const isDelivery = !!itemConfig.disponivel_delivery || itemConfig.canal === 'delivery_balcao';
-        if (!isDelivery) return false;
-      } else if (tipoPedido === 'salão') {
-        // Para pedidos de salão (mesas): exibe APENAS produtos com disponivel_salao === true
-        const isSalao = !!itemConfig.disponivel_salao || itemConfig.canal === 'mesas';
-        if (!isSalao) return false;
-      }
-    } else if (!isBebidaOuSobremesa) {
-      // Se não houver cardápio ativo configurado ou for override gerencial:
-      if (!modoGerencialTodosDias) {
-        if (!prod.dia_semana.includes(todayDay)) {
+    if (!isBebidaOuSobremesa) {
+      if (modoGerencialTodosDias) {
+        if (selectedDayFilter !== 0 && !prod.dia_semana.includes(selectedDayFilter)) {
           return false;
         }
-      } else if (selectedDayFilter !== 0 && !prod.dia_semana.includes(selectedDayFilter)) {
-        return false;
+      } else {
+        // Sem fallback permissivo: exige cardápio montado pelo gerente
+        if (!hasCardapioMontado) {
+          return false;
+        }
+
+        const itemConfig = cardapioDiario!.itens.find((it) => it.produto_id === prod.id);
+        if (!itemConfig) return false;
+
+        // Para pedidos de delivery ou retirada: exibe APENAS produtos com disponivel_delivery === true
+        if (tipoPedido === 'delivery' || tipoPedido === 'retirada') {
+          const isDelivery = !!itemConfig.disponivel_delivery || itemConfig.canal === 'delivery_balcao';
+          if (!isDelivery) return false;
+        } else if (tipoPedido === 'salão') {
+          // Para pedidos de salão (mesas): exibe APENAS produtos com disponivel_salao === true
+          const isSalao = !!itemConfig.disponivel_salao || itemConfig.canal === 'mesas';
+          if (!isSalao) return false;
+        }
       }
     }
 
@@ -546,27 +551,27 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                   <span className="text-xs font-black uppercase text-amber-400">
                     CARDÁPIO DO DIA: {todayName}
                   </span>
-                  {cardapioDiario?.status === 'aberto' ? (
+                  {hasCardapioMontado ? (
                     <span className="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800 font-bold uppercase flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      MONTAGEM DO DIA ATIVA ({cardapioDiario.itens.length} ITENS)
+                      MONTAGEM DO DIA ATIVA ({cardapioDiario!.itens.length} ITENS)
                     </span>
                   ) : (
                     <span className="text-[10px] bg-amber-950 text-amber-300 px-2 py-0.5 rounded border border-amber-800 font-bold uppercase">
-                      FILTRO PADRÃO ({todayName})
+                      Aguardando montagem do cardápio pelo gerente
                     </span>
                   )}
                 </div>
                 <p className="text-[11px] text-neutral-400 mt-0.5">
-                  {cardapioDiario?.status === 'aberto'
+                  {hasCardapioMontado
                     ? `Canal ${tipoPedido === 'salão' ? 'Salão (Pratos)' : 'Delivery/Balcão (Marmitex)'} sincronizado. Bebidas e sobremesas sempre ativas.`
-                    : 'Exibindo pratos programados para hoje. Bebidas e sobremesas sempre ativas.'}
+                    : 'Aguardando montagem do cardápio pelo gerente. Bebidas e sobremesas sempre ativas.'}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {onOpenCardapioBuilder && (
+              {onOpenCardapioBuilder && (!currentRole || !['atendente', 'garcom', 'cozinha'].includes(currentRole)) && (
                 <button
                   type="button"
                   onClick={onOpenCardapioBuilder}
@@ -683,6 +688,32 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Aviso quando não houver cardápio diário montado pelo gerente */}
+        {!hasCardapioMontado && !modoGerencialTodosDias && (
+          <div className="p-3.5 bg-amber-950/60 border border-amber-700/80 rounded-xl flex items-center gap-3 text-amber-200 text-xs shadow-md">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+            <div className="flex flex-col">
+              <span className="font-extrabold uppercase tracking-wide">
+                Aguardando montagem do cardápio pelo gerente
+              </span>
+              <span className="text-[11px] text-amber-300/80">
+                Pratos das categorias 1, 2 e 3 aguardam aprovação diária da gerência. Bebidas e sobremesas continuam visíveis.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {filteredProdutos.length === 0 && (
+          <div className="py-12 px-4 text-center text-neutral-400 bg-neutral-900/60 rounded-xl border border-neutral-800">
+            <Utensils className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
+            <p className="text-xs font-bold uppercase text-amber-300">
+              {!hasCardapioMontado
+                ? 'Aguardando montagem do cardápio pelo gerente'
+                : 'NENHUM PRODUTO DISPONÍVEL NESTA SELEÇÃO'}
+            </p>
+          </div>
+        )}
 
         {/* Product Catalog: Blocos (Cards Grid) vs Lista (Table) */}
         {viewMode === 'bloco' ? (
@@ -1266,28 +1297,29 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
               {/* Múltiplos Pagamentos (Combinação de Pagamentos) */}
               {formaPagamento === 'multiplo' && (
-                <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 space-y-2.5 animate-in fade-in">
+                <div className="p-3.5 rounded-xl bg-neutral-900 border border-neutral-800 space-y-3 animate-in fade-in">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-black uppercase text-purple-300 flex items-center gap-1.5">
-                      <Layers className="w-4 h-4" />
-                      Combinação de Pagamentos
+                      <Layers className="w-4 h-4 text-purple-400" />
+                      COMBINAÇÃO DE PAGAMENTOS
                     </span>
-                    <span
-                      className={`text-[10px] font-black font-mono px-2 py-0.5 rounded ${
-                        restanteMultiplo <= 0
-                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                          : 'bg-amber-950 text-amber-300 border border-amber-800'
-                      }`}
-                    >
-                      {restanteMultiplo <= 0 ? '✓ 100% QUITADO' : `FALTA: ${formatBRL(restanteMultiplo)}`}
-                    </span>
+                    {restanteParcial > 0 ? (
+                      <span className="text-[11px] font-black font-mono px-2.5 py-1 rounded bg-amber-950 text-amber-300 border border-amber-700 shadow-xs">
+                        FALTA: {formatBRL(restanteParcial)}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-black font-mono px-2.5 py-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 shadow-xs">
+                        TOTALMENTE PAGO
+                      </span>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-1.5">
+                  {/* Formulário de Adição Rápida */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <select
-                      value={novaFormaMultiplo}
-                      onChange={(e) => setNovaFormaMultiplo(e.target.value as FormaPagamento)}
-                      className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      value={novaFormaParcial}
+                      onChange={(e) => setNovaFormaParcial(e.target.value)}
+                      className="px-3 py-2 bg-neutral-900 text-white border border-neutral-700 rounded-lg text-xs font-bold uppercase focus:outline-none focus:ring-1 focus:ring-purple-500"
                     >
                       {formasPagamento
                         .filter((fp) => fp.ativo !== false && fp.id !== 'multiplo')
@@ -1299,51 +1331,53 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                     </select>
 
                     <div className="relative flex-1">
-                      <span className="absolute left-2.5 top-1.5 text-neutral-500 text-xs font-bold">R$</span>
+                      <span className="absolute left-2.5 top-2 text-neutral-400 text-xs font-bold">R$</span>
                       <input
-                        type="text"
-                        value={novoValorMultiplo}
-                        onChange={(e) => setNovoValorMultiplo(e.target.value)}
-                        placeholder={restanteMultiplo > 0 ? restanteMultiplo.toFixed(2) : '0.00'}
-                        className="w-full pl-8 pr-2 py-1.5 bg-neutral-800 border border-neutral-700 text-white font-mono font-bold rounded-lg text-xs"
+                        type="number"
+                        step="0.01"
+                        value={novoValorParcial !== '' ? novoValorParcial : (restanteParcial > 0 ? restanteParcial.toFixed(2) : '')}
+                        onChange={(e) => setNovoValorParcial(e.target.value)}
+                        placeholder={restanteParcial > 0 ? restanteParcial.toFixed(2) : '0.00'}
+                        className="w-full pl-8 pr-2 py-2 bg-neutral-800 border border-neutral-700 text-white font-mono font-bold rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-purple-500"
                       />
                     </div>
 
                     <button
                       type="button"
-                      onClick={handleAddPagamentoMultiplo}
-                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-black uppercase flex items-center gap-1 cursor-pointer"
+                      onClick={handleAddPagamentoParcial}
+                      className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Adicionar</span>
+                      <span>+ ADICIONAR</span>
                     </button>
                   </div>
 
-                  {/* List of partial payments */}
-                  <div className="space-y-1 pt-1 max-h-28 overflow-y-auto">
-                    {pagamentosMultiplos.length === 0 ? (
-                      <div className="text-[10px] text-neutral-500 italic p-1.5 bg-neutral-950 rounded text-center">
+                  {/* Lista dos Pagamentos Adicionados */}
+                  <div className="space-y-1.5 pt-1 max-h-36 overflow-y-auto">
+                    {pagamentosParciais.length === 0 ? (
+                      <div className="text-[11px] text-neutral-500 italic p-2 bg-neutral-950 rounded-lg text-center border border-neutral-850">
                         Nenhum pagamento parcial adicionado ainda.
                       </div>
                     ) : (
-                      pagamentosMultiplos.map((pg) => (
+                      pagamentosParciais.map((pg, pIdx) => (
                         <div
-                          key={pg.id}
-                          className="flex items-center justify-between p-1.5 bg-neutral-950 rounded border border-neutral-800 text-[11px]"
+                          key={pIdx}
+                          className="flex items-center justify-between p-2 bg-neutral-950 rounded-lg border border-neutral-800 text-xs"
                         >
-                          <span className="font-bold uppercase text-neutral-300">
+                          <span className="font-bold uppercase text-neutral-200">
                             {pg.forma.replace('_', ' ')}
                           </span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2.5">
                             <span className="font-mono font-black text-amber-400">
                               {formatBRL(pg.valor)}
                             </span>
                             <button
                               type="button"
-                              onClick={() => handleRemovePagamentoMultiplo(pg.id)}
-                              className="text-neutral-500 hover:text-red-400 p-0.5 cursor-pointer"
+                              onClick={() => handleRemovePagamentoParcial(pIdx)}
+                              className="text-neutral-500 hover:text-red-400 font-bold px-1.5 py-0.5 rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+                              title="Remover pagamento"
                             >
-                              ✕
+                              [X]
                             </button>
                           </div>
                         </div>
@@ -1399,50 +1433,70 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
               )}
 
               {/* Submit CTA */}
-              <button
-                onClick={handleSubmitOrder}
-                disabled={isSubmitting || !isCaixaAberto}
-                className={`w-full py-3 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-colors mt-2 ${
-                  !isCaixaAberto
-                    ? 'bg-neutral-800 text-neutral-500 opacity-40 cursor-not-allowed border border-neutral-700'
-                    : isSubmitting
-                    ? 'opacity-60 cursor-wait'
-                    : tipoPedido === 'delivery'
-                    ? 'bg-blue-600 hover:bg-blue-500 cursor-pointer'
-                    : tipoPedido === 'salão'
-                    ? 'bg-amber-600 hover:bg-amber-500 cursor-pointer'
-                    : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer'
-                }`}
-              >
-                {tipoPedido === 'delivery' ? (
-                  <>
-                    <Bike className="w-5 h-5" />
-                    <span>
-                      {isSubmitting
-                        ? `ENVIANDO PARA ENTREGA... (${formatBRL(total)})`
-                        : `ENVIAR PARA ENTREGA (${formatBRL(total)})`}
-                    </span>
-                  </>
-                ) : tipoPedido === 'salão' ? (
-                  <>
-                    <Utensils className="w-5 h-5" />
-                    <span>
-                      {isSubmitting
-                        ? 'ENVIANDO COMANDA...'
-                        : `LANÇAR COMANDA NA MESA #${mesaId} (${formatBRL(total)})`}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span>
-                      {isSubmitting
-                        ? 'FINALIZANDO PEDIDO...'
-                        : `FINALIZAR E RECEBER (${formatBRL(total)})`}
-                    </span>
-                  </>
-                )}
-              </button>
+              {(() => {
+                const isMultiploIncompleto =
+                  tipoPedido !== 'salão' &&
+                  formaPagamento === 'multiplo' &&
+                  totalPagoParcial < total - 0.01;
+
+                const isSubmitDisabled =
+                  isSubmitting ||
+                  !isCaixaAberto ||
+                  cart.length === 0 ||
+                  (tipoPedido !== 'salão' && !formaPagamento) ||
+                  isMultiploIncompleto;
+
+                return (
+                  <button
+                    onClick={handleSubmitOrder}
+                    disabled={isSubmitDisabled}
+                    className={`w-full py-3 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-colors mt-2 ${
+                      isSubmitDisabled
+                        ? 'bg-neutral-800 text-neutral-500 opacity-40 cursor-not-allowed border border-neutral-700'
+                        : isSubmitting
+                        ? 'opacity-60 cursor-wait'
+                        : tipoPedido === 'delivery'
+                        ? 'bg-blue-600 hover:bg-blue-500 cursor-pointer'
+                        : tipoPedido === 'salão'
+                        ? 'bg-amber-600 hover:bg-amber-500 cursor-pointer'
+                        : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer'
+                    }`}
+                  >
+                    {tipoPedido === 'delivery' ? (
+                      <>
+                        <Bike className="w-5 h-5" />
+                        <span>
+                          {isSubmitting
+                            ? `ENVIANDO PARA ENTREGA... (${formatBRL(total)})`
+                            : isMultiploIncompleto
+                            ? `PAGAMENTO INCOMPLETO (FALTA ${formatBRL(restanteParcial)})`
+                            : `ENVIAR PARA ENTREGA (${formatBRL(total)})`}
+                        </span>
+                      </>
+                    ) : tipoPedido === 'salão' ? (
+                      <>
+                        <Utensils className="w-5 h-5" />
+                        <span>
+                          {isSubmitting
+                            ? 'ENVIANDO COMANDA...'
+                            : `LANÇAR COMANDA NA MESA #${mesaId} (${formatBRL(total)})`}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-5 h-5" />
+                        <span>
+                          {isSubmitting
+                            ? 'FINALIZANDO PEDIDO...'
+                            : isMultiploIncompleto
+                            ? `PAGAMENTO INCOMPLETO (FALTA ${formatBRL(restanteParcial)})`
+                            : `FINALIZAR E RECEBER (${formatBRL(total)})`}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
             </div>
           )}
         </div>

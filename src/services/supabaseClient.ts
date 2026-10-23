@@ -1030,7 +1030,7 @@ export async function abrirCaixaSupabase(
   observacoes?: string
 ): Promise<CaixaDiario> {
   await checkCaixaSchema();
-  const dataHoje = new Date().toISOString().split('T')[0];
+  const dataHoje = new Date().toLocaleDateString('en-CA');
   const now = new Date().toISOString();
   const novoCaixa: CaixaDiario = {
     id: 1,
@@ -1119,7 +1119,7 @@ export async function fecharCaixaSupabase(
   observacoes?: string
 ): Promise<CaixaDiario> {
   await checkCaixaSchema();
-  const dataHoje = caixaAtual.data_caixa || new Date().toISOString().split('T')[0];
+  const dataHoje = caixaAtual.data_caixa || new Date().toLocaleDateString('en-CA');
   const now = new Date().toISOString();
   const fechado: CaixaDiario = {
     ...caixaAtual,
@@ -1195,7 +1195,7 @@ export async function zerarFinanceiroDiaSupabase(
   caixaAtual: CaixaDiario
 ): Promise<CaixaDiario> {
   await checkCaixaSchema();
-  const dataHoje = caixaAtual.data_caixa || new Date().toISOString().split('T')[0];
+  const dataHoje = caixaAtual.data_caixa || new Date().toLocaleDateString('en-CA');
   const now = new Date().toISOString();
 
   const zerado: CaixaDiario = {
@@ -1390,7 +1390,7 @@ export async function registrarMultiplasMovimentacoesCaixaSupabase(
     const obsAtualizada = `${baseObs ? baseObs + ' | ' : ''}${resumoNovas}`.slice(0, 500);
 
     const payload: Record<string, any> = {
-      data_caixa: existingRow?.data_caixa || caixaAtual.data_caixa || new Date().toISOString().split('T')[0],
+      data_caixa: existingRow?.data_caixa || caixaAtual.data_caixa || new Date().toLocaleDateString('en-CA'),
       status: caixaAtual.status || 'aberto',
       observacoes: obsAtualizada,
     };
@@ -1756,7 +1756,7 @@ export async function salvarCardapioDiarioSupabase(
   cardapio: CardapioDiarioConfig
 ): Promise<{ success: boolean; data?: CardapioDiarioConfig; error?: string }> {
   try {
-    const hoje = cardapio.data || new Date().toISOString().split('T')[0];
+    const hoje = cardapio.data || new Date().toLocaleDateString('en-CA');
 
     // 1. Tabela 'cardapio_diario' (data, produto_id, canal)
     try {
@@ -1846,7 +1846,7 @@ export async function salvarCardapioDiarioSupabase(
 export async function fetchCardapioDiarioSupabase(
   dataStr?: string
 ): Promise<CardapioDiarioConfig | null> {
-  const hoje = dataStr || new Date().toISOString().split('T')[0];
+  const hoje = dataStr || new Date().toLocaleDateString('en-CA');
 
   try {
     // 1. Tenta buscar em 'cardapio_diario' (data, produto_id, canal)
@@ -2251,7 +2251,7 @@ export async function resetarMesasVaziasSupabase(
   reservas: Reserva[] = []
 ): Promise<Mesa[]> {
   const mesasAtualizadas: Mesa[] = [];
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = new Date().toLocaleDateString('en-CA');
 
   // Identifica reservas ativas para o dia atual
   const reservasHoje = reservas.filter(

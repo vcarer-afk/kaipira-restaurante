@@ -88,7 +88,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
   const dataFormatada = `${nomeDiaSemana}, ${String(now.getDate()).padStart(2, '0')}/${String(
     now.getMonth() + 1
   ).padStart(2, '0')}/${now.getFullYear()}`;
-  const dataHojeISO = now.toISOString().split('T')[0];
+  const dataHojeISO = now.toLocaleDateString('en-CA');
 
   // Sync internal state if external props change
   useEffect(() => {

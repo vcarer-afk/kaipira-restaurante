@@ -9,6 +9,7 @@ import {
   ConfiguracoesSistema,
   UsuarioSistema,
   Produto,
+  Mesa,
 } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { formatBRL, formatDateTime, playAlertChime } from '../utils/formatters';
@@ -54,6 +55,7 @@ interface CashRegisterProps {
   caixa: CaixaDiario;
   formasPagamento?: FormaPagamentoConfig[];
   pedidos?: Pedido[];
+  mesas?: Mesa[];
   produtos?: Produto[];
   configuracoes?: ConfiguracoesSistema;
   currentRole?: string;
@@ -100,6 +102,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   caixa,
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
   pedidos = [],
+  mesas = [],
   produtos = [],
   configuracoes,
   currentRole,
@@ -189,7 +192,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   const movs = useMemo(() => caixa.movimentacoes || [], [caixa.movimentacoes]);
 
   // REGRA DO USUÁRIO: Entregas Delivery pendentes de conferência do dia atual do caixa
-  const dataHojeIso = new Date().toISOString().slice(0, 10);
+  const dataHojeIso = new Date().toLocaleDateString('en-CA');
   const dataFiltroCaixa = caixa.data_caixa || dataHojeIso;
 
   const deliveryOrdersPendentes = useMemo(() => {
@@ -479,6 +482,23 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
   const handleConfirmFechar = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const mesasAbertas = mesas.filter((m) => m.status === 'ocupada' || m.status === 'conta');
+    const entregasPendentes = pedidos.filter(
+      (p) => p.tipo === 'delivery' && p.status !== 'cancelado' && p.conferencia_entrega !== 'conferido'
+    );
+
+    if (mesasAbertas.length > 0 || entregasPendentes.length > 0) {
+      alert(
+        "IMPOSSÍVEL FECHAR O CAIXA:\n\nExistem " +
+          mesasAbertas.length +
+          " mesa(s) em aberto e " +
+          entregasPendentes.length +
+          " entrega(s) pendente(s) de conferência."
+      );
+      return;
+    }
+
     const val = Number(valorFechamento || dinheiroNaGaveta);
     onFecharCaixa(val, obsFechamento);
     playAlertChime('ready');

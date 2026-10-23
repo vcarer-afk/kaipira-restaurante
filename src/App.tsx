@@ -153,7 +153,7 @@ export default function App() {
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>(INITIAL_USUARIOS);
   const [caixa, setCaixa] = useState<CaixaDiario>({
     id: 1,
-    data_caixa: new Date().toISOString().split('T')[0],
+    data_caixa: new Date().toLocaleDateString('en-CA'),
     valor_abertura: 0.0,
     status: 'aberto',
     observacoes: '',
@@ -163,7 +163,7 @@ export default function App() {
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [bairros, setBairros] = useState<BairroTaxa[]>(BAIRROS_PIRACICABA);
   const [cardapioDiario, setCardapioDiario] = useState<CardapioDiarioConfig>({
-    data: new Date().toISOString().split('T')[0],
+    data: new Date().toLocaleDateString('en-CA'),
     status: 'aguardando',
     itens: [],
   });
@@ -248,7 +248,7 @@ export default function App() {
         const rawMesas = mesasRes.value.data as any[];
         const cloudPedidos = cloudPeds;
         const cloudReservas = (reservasRes.status === 'fulfilled' && reservasRes.value.data) ? (reservasRes.value.data as Reserva[]) : [];
-        const hojeStr = new Date().toISOString().split('T')[0];
+        const hojeStr = new Date().toLocaleDateString('en-CA');
 
         const mappedMesas: Mesa[] = rawMesas.map((m) => {
           const num = Number(m.numero || m.id);
@@ -329,7 +329,7 @@ export default function App() {
           const cloudMovs: MovimentacaoCaixa[] = Array.isArray(row.movimentacoes) ? row.movimentacoes : [];
           setCaixa({
             id: row.id || 1,
-            data_caixa: row.data_caixa || new Date().toISOString().split('T')[0],
+            data_caixa: row.data_caixa || new Date().toLocaleDateString('en-CA'),
             status: (row.status as any) || 'aberto',
             valor_abertura: isNaN(valAbertura) ? 0 : valAbertura,
             valor_fechamento: row.valor_fechamento !== null && row.valor_fechamento !== undefined ? Number(row.valor_fechamento) : undefined,
@@ -341,7 +341,7 @@ export default function App() {
       } else {
         setCaixa({
           id: 1,
-          data_caixa: new Date().toISOString().split('T')[0],
+          data_caixa: new Date().toLocaleDateString('en-CA'),
           valor_abertura: 0.0,
           status: 'aberto',
           observacoes: '',
@@ -555,7 +555,7 @@ export default function App() {
                 const cloudMovs: MovimentacaoCaixa[] = Array.isArray(row.movimentacoes) ? row.movimentacoes : [];
                 setCaixa({
                   id: row.id || 1,
-                  data_caixa: row.data_caixa || new Date().toISOString().split('T')[0],
+                  data_caixa: row.data_caixa || new Date().toLocaleDateString('en-CA'),
                   status: (row.status as any) || 'aberto',
                   valor_abertura: isNaN(valAbertura) ? 0 : valAbertura,
                   valor_fechamento: row.valor_fechamento !== null && row.valor_fechamento !== undefined ? Number(row.valor_fechamento) : undefined,
@@ -870,17 +870,7 @@ export default function App() {
     pedidosIds?: number[],
     troco?: number
   ) => {
-    // 1. Zera e libera a mesa localmente e na nuvem Supabase
-    setMesas((prev) =>
-      prev.map((m) =>
-        m.numero === numero
-          ? { ...m, status: 'livre', cliente_nome: undefined, pessoas: undefined }
-          : m
-      )
-    );
-    await fecharMesaSupabase(numero);
-
-    // 2. Conclui os pedidos vinculados à mesa
+    // 1. PRIMEIRO: Conclui os pedidos vinculados à mesa e atualiza no Supabase
     if (pedidosIds && pedidosIds.length > 0) {
       setPedidos((prev) =>
         prev.map((p) => {
@@ -907,7 +897,12 @@ export default function App() {
       }
     }
 
-    // 3. Se houver débito em conta de mensalista, atualiza saldo devedor
+    // 2. SEGUNDO: Insere os pagamentos no banco Supabase
+    if (pedidosIds && pedidosIds.length > 0 && pagamentos && pagamentos.length > 0) {
+      await registrarPagamentosMesaSupabase(pedidosIds, pagamentos);
+    }
+
+    // Se houver débito em conta de mensalista, atualiza saldo devedor
     if (clienteMensalistaId && pagamentos) {
       const valorMensalista = pagamentos
         .filter((pg) => pg.forma === 'mensalista')
@@ -931,7 +926,7 @@ export default function App() {
       }
     }
 
-    // 4. Registra movimentações no faturamento do caixa (Dinheiro, PIX, Débito, Crédito, etc.)
+    // Registra movimentações no faturamento do caixa (Dinheiro, PIX, Débito, Crédito, etc.)
     if (pagamentos && pagamentos.length > 0) {
       const validPgs = pagamentos.filter((pg) => pg.valor > 0);
       if (validPgs.length > 0) {
@@ -946,10 +941,15 @@ export default function App() {
       }
     }
 
-    // Persiste pagamentos da mesa no banco de dados Supabase
-    if (pedidosIds && pedidosIds.length > 0 && pagamentos && pagamentos.length > 0) {
-      await registrarPagamentosMesaSupabase(pedidosIds, pagamentos);
-    }
+    // 3. TERCEIRO E ÚLTIMO: Libera a mesa no banco Supabase e atualiza o estado local setMesas
+    await fecharMesaSupabase(numero);
+    setMesas((prev) =>
+      prev.map((m) =>
+        m.numero === numero
+          ? { ...m, status: 'livre', cliente_nome: undefined, pessoas: undefined }
+          : m
+      )
+    );
   };
 
   // Toggle quick pause for product
@@ -1466,6 +1466,7 @@ export default function App() {
             selectedMesaNumber={selectedMesaNumber}
             formasPagamento={formasPagamento}
             caixa={caixa}
+            currentRole={currentRole}
             onOrderCreated={async (novo) => {
               // Se for retirada (balcão) com pagamento imediato, confirma pagamento no ato
               const isConfirmadoBalcao =
@@ -1599,6 +1600,7 @@ export default function App() {
             currentRole={currentRole}
             currentPerfil={currentPerfil}
             usuarios={usuarios}
+            mesas={mesas}
             onAbrirCaixa={handleAbrirCaixa}
             onFecharCaixa={handleFecharCaixa}
             onMovimentacao={handleMovimentacaoCaixa}
