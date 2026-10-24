@@ -7,6 +7,7 @@ import {
   Cliente,
   FormaPagamento,
   ConfiguracoesSistema,
+  CardapioDiarioConfig,
 } from '../types';
 import { formatBRL, formatTime } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
@@ -89,6 +90,7 @@ interface AdminDashboardProps {
   estoque: ItemEstoque[];
   clientes: Cliente[];
   configuracoes?: ConfiguracoesSistema;
+  cardapioDiario?: CardapioDiarioConfig;
   currentRole?: string;
   onNavigate: (tab: ActiveTab) => void;
   onAbrirCaixa: (valor: number, observacoes?: string) => void;
@@ -108,6 +110,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   estoque,
   clientes,
   configuracoes,
+  cardapioDiario,
   currentRole = 'admin',
   onNavigate,
   onAbrirCaixa,
@@ -296,6 +299,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   });
 
+  // Semáforo da Operação (Status em Tempo Real)
+  const isCaixaAberto = (caixa?.status || '').toLowerCase() === 'aberto';
+  const cardapioEfetivo =
+    configuracoes?.cardapio_diario_cache?.status === 'publicado'
+      ? configuracoes.cardapio_diario_cache
+      : cardapioDiario;
+  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes(
+    (cardapioEfetivo?.status || '').toLowerCase()
+  );
+  const isVitrineAberta = isCaixaAberto && isCardapioAtivo && configuracoes?.delivery_site_ativo !== false;
+  const isPdvLiberado = isCaixaAberto && isCardapioAtivo;
+
   const handleConfirmAbrir = (e: React.FormEvent) => {
     e.preventDefault();
     onAbrirCaixa(Number(valorAbertura || 0), obsAbertura);
@@ -445,6 +460,82 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
         </div>
       )}
+
+      {/* Semáforo da Operação (Status em Tempo Real) */}
+      <div className="bg-neutral-850 p-4 rounded-2xl border border-neutral-800 shadow-md flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-neutral-900 border border-neutral-700/80 rounded-xl text-amber-400 shrink-0">
+            <Radio className="w-5 h-5 animate-pulse text-amber-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-black uppercase tracking-wider text-white">
+                Semáforo da Operação (Status em Tempo Real)
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700 uppercase">
+                Monitor Operacional
+              </span>
+            </div>
+            <p className="text-[11px] text-neutral-400 mt-0.5">
+              Diagnóstico contínuo do Caixa, Cardápio Diário, Vitrine do Cliente e Atendimento no PDV.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 w-full lg:w-auto">
+          {/* Caixa */}
+          <div className={`px-3 py-2 rounded-xl border flex items-center gap-2.5 text-xs font-mono font-bold uppercase transition-all ${
+            isCaixaAberto
+              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80'
+              : 'bg-red-950/80 text-red-300 border-red-800/80'
+          }`}>
+            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isCaixaAberto ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+            <div className="leading-tight">
+              <span className="text-[9px] text-neutral-400 block uppercase font-sans font-semibold">Caixa</span>
+              <span>{isCaixaAberto ? 'ABERTO' : 'FECHADO'}</span>
+            </div>
+          </div>
+
+          {/* Cardápio */}
+          <div className={`px-3 py-2 rounded-xl border flex items-center gap-2.5 text-xs font-mono font-bold uppercase transition-all ${
+            isCardapioAtivo
+              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80'
+              : 'bg-amber-950/80 text-amber-300 border-amber-800/80'
+          }`}>
+            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isCardapioAtivo ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            <div className="leading-tight">
+              <span className="text-[9px] text-neutral-400 block uppercase font-sans font-semibold">Cardápio</span>
+              <span>{isCardapioAtivo ? 'CONFIRMADO' : 'AGUARDANDO'}</span>
+            </div>
+          </div>
+
+          {/* Vitrine Site */}
+          <div className={`px-3 py-2 rounded-xl border flex items-center gap-2.5 text-xs font-mono font-bold uppercase transition-all ${
+            isVitrineAberta
+              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80'
+              : 'bg-red-950/80 text-red-300 border-red-800/80'
+          }`}>
+            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isVitrineAberta ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+            <div className="leading-tight">
+              <span className="text-[9px] text-neutral-400 block uppercase font-sans font-semibold">Vitrine Site</span>
+              <span>{isVitrineAberta ? 'ABERTA' : 'FECHADA'}</span>
+            </div>
+          </div>
+
+          {/* PDV / Restaurante */}
+          <div className={`px-3 py-2 rounded-xl border flex items-center gap-2.5 text-xs font-mono font-bold uppercase transition-all ${
+            isPdvLiberado
+              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80'
+              : 'bg-red-950/80 text-red-300 border-red-800/80'
+          }`}>
+            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isPdvLiberado ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+            <div className="leading-tight">
+              <span className="text-[9px] text-neutral-400 block uppercase font-sans font-semibold">PDV / Mesas</span>
+              <span>{isPdvLiberado ? 'LIBERADO' : 'BLOQUEADO'}</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* CASH REGISTER QUICK STATUS & ACTION BAR */}
       <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${

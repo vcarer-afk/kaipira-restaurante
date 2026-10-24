@@ -227,20 +227,28 @@ export default function ClientApp() {
     };
   }, [loadData]);
 
+  // Cardápio Efetivo: espelho das configuracoes ou cardapioDiario
+  const cardapioEfetivo = configuracoes?.cardapio_diario_cache?.status === 'publicado' 
+    ? configuracoes.cardapio_diario_cache 
+    : cardapioDiario;
+
+  const statusCardapioStr = (cardapioEfetivo?.status || '').toLowerCase();
+  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes(statusCardapioStr);
+
   // Regra de Filtro de Produtos para Delivery do Cliente:
-  // (categoria_id === 4 || categoria_id === 5) OU (está presente em cardapioDiario.itens E possui disponivel_delivery === true)
+  // (categoria_id === 4 || categoria_id === 5) OU (está presente em cardapioEfetivo.itens E possui disponivel_delivery === true)
   const produtosDisponiveis = useMemo(() => {
     return produtos.filter((p) => {
       if (p.pausado) return false;
 
       const isCategoriaFixa = Number(p.categoria_id) === 4 || Number(p.categoria_id) === 5;
-      const isInCardapioDelivery = cardapioDiario?.itens?.some(
+      const isInCardapioDelivery = cardapioEfetivo?.itens?.some(
         (it) => Number(it.produto_id) === Number(p.id) && it.disponivel_delivery === true
       );
 
       return isCategoriaFixa || !!isInCardapioDelivery;
     });
-  }, [produtos, cardapioDiario]);
+  }, [produtos, cardapioEfetivo]);
 
   // Produtos filtrados por categoria selecionada e texto de busca
   const produtosFiltrados = useMemo(() => {
@@ -546,11 +554,8 @@ export default function ClientApp() {
     }
   };
 
-  // Condição Exata de Abertura da Vitrine (Regra 3):
+  // Condição Exata de Abertura da Vitrine (Regra 3 com Cardápio Efetivo):
   const isCaixaAberto = (caixa?.status || '').toLowerCase() === 'aberto';
-  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes(
-    (cardapioDiario?.status || '').toLowerCase()
-  );
   const isDeliverySiteAtivo = configuracoes?.delivery_site_ativo !== false;
 
   const isVitrineAberta = isCaixaAberto && isCardapioAtivo && isDeliverySiteAtivo;

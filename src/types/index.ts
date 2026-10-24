@@ -241,4 +241,5 @@ export interface ConfiguracoesSistema {
   // Kill Switches de Delivery
   delivery_site_ativo?: boolean;
   delivery_interno_ativo?: boolean;
+  cardapio_diario_cache?: CardapioDiarioConfig;
 }

@@ -1271,11 +1271,12 @@ export default function AdminApp() {
       console.warn('Aviso ao definir cardápio para aguardando:', cErr);
     }
 
-    // Desativa as vendas na vitrine e no PDV
+    // Desativa as vendas na vitrine e no PDV e espelha cardápio em aguardando
     await handleSaveConfiguracoes({
       ...configuracoes,
       delivery_site_ativo: false,
       delivery_interno_ativo: false,
+      cardapio_diario_cache: cardapioAguardando,
     });
   };
 
@@ -1303,11 +1304,12 @@ export default function AdminApp() {
         console.warn('Aviso ao definir cardápio para aguardando:', cErr);
       }
 
-      // Desativa as vendas na vitrine e no PDV
+      // Desativa as vendas na vitrine e no PDV e espelha cardápio em aguardando
       await handleSaveConfiguracoes({
         ...configuracoes,
         delivery_site_ativo: false,
         delivery_interno_ativo: false,
+        cardapio_diario_cache: cardapioAguardando,
       });
     } catch (err) {
       console.error('Erro ao zerar financeiro do dia:', err);
@@ -1394,16 +1396,25 @@ export default function AdminApp() {
   };
 
   const handleSaveCardapioDiario = async (novo: CardapioDiarioConfig) => {
-    // 1. Força o status do cardápio para publicado
-    const cardapioPublicado: CardapioDiarioConfig = { ...novo, status: 'publicado' };
+    const cardapioPublicado: CardapioDiarioConfig = {
+      ...novo,
+      status: 'publicado',
+      data: new Date().toISOString().split('T')[0],
+      confirmado_em: new Date().toISOString(),
+    };
     setCardapioDiario(cardapioPublicado);
-    await salvarCardapioDiarioSupabase(cardapioPublicado);
+    try {
+      await salvarCardapioDiarioSupabase(cardapioPublicado);
+    } catch (e) {
+      console.warn('Fallback cardapio_diario:', e);
+    }
 
-    // 2. Libera a vitrine e o PDV automaticamente
-    const novasConfig = {
+    // Salva junto nas configurações (que já sincroniza 100% com a Vitrine)
+    const novasConfig: ConfiguracoesSistema = {
       ...configuracoes,
       delivery_site_ativo: true,
       delivery_interno_ativo: true,
+      cardapio_diario_cache: cardapioPublicado,
     };
     await handleSaveConfiguracoes(novasConfig);
   };
@@ -1454,6 +1465,7 @@ export default function AdminApp() {
             estoque={estoque}
             clientes={clientes}
             configuracoes={configuracoes}
+            cardapioDiario={cardapioDiario}
             onNavigate={(tab) => {
               setActiveTab(tab);
               if (tab !== 'pdv') setSelectedMesaNumber(undefined);
