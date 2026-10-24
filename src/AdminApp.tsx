@@ -1261,6 +1261,8 @@ export default function AdminApp() {
   const handleFecharCaixa = async (valor: number, observacoes?: string) => {
     const fechado = await fecharCaixaSupabase(caixa, valor, observacoes);
     setCaixa(fechado);
+    
+    // Desativa as vendas na vitrine e no PDV
     await handleSaveConfiguracoes({
       ...configuracoes,
       delivery_site_ativo: false,
@@ -1268,27 +1270,11 @@ export default function AdminApp() {
     });
   };
 
-  // Rotina Administrativa: Zerar financeiro do dia atual (Caixa, Faturamento, Pedidos, Mesas, Delivery)
   const handleZerarFinanceiroDia = async () => {
     try {
       const zerado = await zerarFinanceiroDiaSupabase(caixa);
-      const caixaFechado: CaixaDiario = {
-        ...zerado,
-        status: 'fechado',
-        valor_fechamento: 0,
-      };
-      setCaixa(caixaFechado);
-      // Garante sincronização explícita de fechamento no Supabase
-      try {
-        await fecharCaixaSupabase(zerado, 0, 'CAIXA FECHADO NO RESET DO FINANCEIRO DO DIA');
-      } catch (fErr) {
-        console.warn('Aviso ao sincronizar fechamento de caixa pós-reset:', fErr);
-      }
-      await handleSaveConfiguracoes({
-        ...configuracoes,
-        delivery_site_ativo: false,
-        delivery_interno_ativo: false,
-      });
+      // Força o caixa a ficar fechado no sistema
+      setCaixa({ ...zerado, status: 'fechado', valor_fechamento: 0 });
       setPedidos([]);
       setMesas((prev) =>
         prev.map((m) => ({
@@ -1298,6 +1284,13 @@ export default function AdminApp() {
           pessoas: undefined,
         }))
       );
+      
+      // Desativa as vendas na vitrine e no PDV
+      await handleSaveConfiguracoes({
+        ...configuracoes,
+        delivery_site_ativo: false,
+        delivery_interno_ativo: false,
+      });
     } catch (err) {
       console.error('Erro ao zerar financeiro do dia:', err);
     }
@@ -1382,19 +1375,19 @@ export default function AdminApp() {
     setReservas((prev) => [...prev, nova]);
   };
 
-  // Cardápio Diário operations via Supabase
   const handleSaveCardapioDiario = async (novo: CardapioDiarioConfig) => {
-    const publicado: CardapioDiarioConfig = {
-      ...novo,
-      status: 'publicado',
-    };
-    setCardapioDiario(publicado);
-    await salvarCardapioDiarioSupabase(publicado);
-    await handleSaveConfiguracoes({
+    // 1. Força o status do cardápio para publicado
+    const cardapioPublicado: CardapioDiarioConfig = { ...novo, status: 'publicado' };
+    setCardapioDiario(cardapioPublicado);
+    await salvarCardapioDiarioSupabase(cardapioPublicado);
+
+    // 2. Libera a vitrine e o PDV automaticamente
+    const novasConfig = {
       ...configuracoes,
       delivery_site_ativo: true,
       delivery_interno_ativo: true,
-    });
+    };
+    await handleSaveConfiguracoes(novasConfig);
   };
 
   const pendingKdsCount = pedidos.filter((p) => ['pendente', 'em_preparacao'].includes(p.status)).length;

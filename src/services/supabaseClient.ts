@@ -112,8 +112,18 @@ export async function fetchConfiguracoesFromSupabase(
       ledFonte: dadosObj.ledFonte || (data as any).led_fonte || 'mono',
       ledVoz: dadosObj.ledVoz || (data as any).led_voz || 'padrao',
       ledCampainha: dadosObj.ledCampainha || (data as any).led_campainha || 'ding_dong',
-      delivery_site_ativo: dadosObj.delivery_site_ativo !== undefined ? dadosObj.delivery_site_ativo : true,
-      delivery_interno_ativo: dadosObj.delivery_interno_ativo !== undefined ? dadosObj.delivery_interno_ativo : true,
+      delivery_site_ativo:
+        (data as any).delivery_site_ativo !== undefined
+          ? (data as any).delivery_site_ativo
+          : dadosObj.delivery_site_ativo !== undefined
+          ? dadosObj.delivery_site_ativo
+          : true,
+      delivery_interno_ativo:
+        (data as any).delivery_interno_ativo !== undefined
+          ? (data as any).delivery_interno_ativo
+          : dadosObj.delivery_interno_ativo !== undefined
+          ? dadosObj.delivery_interno_ativo
+          : true,
     };
   } catch (err) {
     console.warn('Falha na requisição Supabase configuracoes:', err);
@@ -146,6 +156,8 @@ export async function saveConfiguracoesToSupabase(
     modo_operacao: novas.modoOperacao || 'producao',
     supabase_url: novas.supabaseUrl,
     supabase_anon_key: novas.supabaseAnonKey,
+    delivery_site_ativo: novas.delivery_site_ativo,
+    delivery_interno_ativo: novas.delivery_interno_ativo,
     banco_status: 'conectado',
     dados: novas,
     atualizado_em: new Date().toISOString(),
