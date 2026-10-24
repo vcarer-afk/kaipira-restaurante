@@ -234,12 +234,14 @@ export default function ClientApp() {
   //const statusCardapioStr = (cardapioEfetivo?.status || '').toLowerCase();
   //const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes(statusCardapioStr);
 
-// Cardápio Efetivo: espelho das configuracoes ou cardapioDiario
-  const cardapioEfetivo = configuracoes?.cardapio_diario_cache?.status 
+// Cardápio Efetivo: Prioriza o cache salvo nas configurações ou o cardápio diário
+  const cardapioEfetivo = configuracoes?.cardapio_diario_cache?.status || configuracoes?.cardapio_diario_cache?.itens
     ? configuracoes.cardapio_diario_cache 
     : cardapioDiario;
 
   const statusCardapioStr = (cardapioEfetivo?.status || '').toLowerCase();
+  
+  // Se o cardápio tiver itens cadastrados para hoje ou status válido, consideramos ativo imediatamente!
   const isCardapioAtivo = 
     ['publicado', 'aberto', 'confirmado', 'ativo'].includes(statusCardapioStr) || 
     (cardapioEfetivo?.itens && cardapioEfetivo.itens.length > 0);
