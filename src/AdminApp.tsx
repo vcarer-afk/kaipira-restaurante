@@ -214,7 +214,14 @@ export default function AdminApp() {
     try {
       const data = await fetchConfiguracoesFromSupabase();
       if (data && typeof data === 'object' && data.nomeRestaurante) {
-        setConfiguracoes((prev) => ({ ...prev, ...data }));
+        setConfiguracoes((prev) => ({
+          ...prev,
+          ...data,
+          delivery_site_ativo:
+            data.delivery_site_ativo !== undefined ? data.delivery_site_ativo : (prev.delivery_site_ativo ?? true),
+          delivery_interno_ativo:
+            data.delivery_interno_ativo !== undefined ? data.delivery_interno_ativo : (prev.delivery_interno_ativo ?? true),
+        }));
         setCloudConfigSyncedAt(new Date());
       }
     } catch (err) {
@@ -1260,7 +1267,18 @@ export default function AdminApp() {
   const handleZerarFinanceiroDia = async () => {
     try {
       const zerado = await zerarFinanceiroDiaSupabase(caixa);
-      setCaixa(zerado);
+      const caixaFechado: CaixaDiario = {
+        ...zerado,
+        status: 'fechado',
+        valor_fechamento: 0,
+      };
+      setCaixa(caixaFechado);
+      // Garante sincronização explícita de fechamento no Supabase
+      try {
+        await fecharCaixaSupabase(zerado, 0, 'CAIXA FECHADO NO RESET DO FINANCEIRO DO DIA');
+      } catch (fErr) {
+        console.warn('Aviso ao sincronizar fechamento de caixa pós-reset:', fErr);
+      }
       setPedidos([]);
       setMesas((prev) =>
         prev.map((m) => ({
@@ -1273,6 +1291,17 @@ export default function AdminApp() {
     } catch (err) {
       console.error('Erro ao zerar financeiro do dia:', err);
     }
+  };
+
+  // Rotina Administrativa: Kill Switches de Delivery
+  const handleToggleKillSwitch = async (chave: 'delivery_site_ativo' | 'delivery_interno_ativo') => {
+    const atual = configuracoes[chave] !== false;
+    const novasConfig: ConfiguracoesSistema = {
+      ...configuracoes,
+      [chave]: !atual,
+    };
+    setConfiguracoes(novasConfig);
+    await handleSaveConfiguracoes(novasConfig);
   };
 
   // Rotina Administrativa: Alternar entre Modo Produção e Modo Testes
@@ -1407,6 +1436,7 @@ export default function AdminApp() {
             onZerarFinanceiro={handleZerarFinanceiroDia}
             onToggleModoOperacao={handleToggleModoOperacao}
             onConfirmarPagamento={handleConfirmarPagamentoPedido}
+            onToggleKillSwitch={handleToggleKillSwitch}
           />
         )}
 
@@ -1489,6 +1519,7 @@ export default function AdminApp() {
             selectedMesaNumber={selectedMesaNumber}
             formasPagamento={formasPagamento}
             caixa={caixa}
+            configuracoes={configuracoes}
             currentRole={currentRole}
             clientes={clientes}
             onSaveCliente={handleSaveCliente}
@@ -1550,6 +1581,7 @@ export default function AdminApp() {
             reservas={reservas}
             produtos={produtos}
             clientes={clientes}
+            caixa={caixa}
             configuracoes={configuracoes}
             formasPagamento={formasPagamento}
             onOpenOrderForMesa={(num) => {

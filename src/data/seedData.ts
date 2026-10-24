@@ -34,6 +34,8 @@ export const INITIAL_CONFIGURACOES: ConfiguracoesSistema = {
   ledFonte: 'mono',
   ledVoz: 'padrao',
   ledCampainha: 'ding_dong',
+  delivery_site_ativo: true,
+  delivery_interno_ativo: true,
 };
 
 export const BAIRROS_PIRACICABA: BairroTaxa[] = [

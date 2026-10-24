@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mesa, Pedido, Reserva, FormaPagamento, Cliente, ConfiguracoesSistema, FormaPagamentoConfig, Produto } from '../types';
+import { Mesa, Pedido, Reserva, FormaPagamento, Cliente, ConfiguracoesSistema, FormaPagamentoConfig, Produto, CaixaDiario } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { formatBRL, formatDateTime } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
@@ -27,6 +27,7 @@ import {
   ArrowRight,
   RotateCcw,
   Percent,
+  Lock,
 } from 'lucide-react';
 
 interface TablesSaloonProps {
@@ -47,6 +48,7 @@ interface TablesSaloonProps {
     troco?: number
   ) => Promise<void> | void;
   onCreateReserva: (reserva: Partial<Reserva>) => void;
+  caixa?: CaixaDiario;
   onPrintReceipt: (pedido: Pedido) => void;
   onResetMesas?: () => Promise<void> | void;
 }
@@ -63,6 +65,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   reservas,
   produtos = [],
   clientes = [],
+  caixa,
   configuracoes,
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
   onOpenOrderForMesa,
@@ -72,6 +75,23 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   onPrintReceipt,
   onResetMesas,
 }) => {
+  // A Regra de Ouro: Sem Caixa, Sem Venda
+  if (caixa?.status === 'fechado') {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center bg-neutral-900 border border-neutral-800 rounded-3xl my-6 shadow-2xl">
+        <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-5 shadow-xl">
+          <Lock className="w-10 h-10" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mb-2">
+          ⚠️ CAIXA FECHADO
+        </h2>
+        <p className="text-sm text-neutral-400 max-w-md leading-relaxed mb-6">
+          Você precisa abrir o caixa do dia no Painel Administrativo para liberar o PDV e as Mesas.
+        </p>
+      </div>
+    );
+  }
+
   // Helper para garantir exibição da descrição completa do produto em todas as telas
   const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
     if (it.produto_nome && !it.produto_nome.trim().startsWith('#') && !it.produto_nome.toLowerCase().startsWith('prod #')) {

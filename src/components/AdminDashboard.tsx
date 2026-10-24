@@ -42,6 +42,9 @@ import {
   FlaskConical,
   PieChart,
   ChevronRight,
+  Power,
+  Ban,
+  Radio,
 } from 'lucide-react';
 
 function describeArc(
@@ -95,6 +98,7 @@ interface AdminDashboardProps {
   onZerarFinanceiro?: () => Promise<void> | void;
   onToggleModoOperacao?: (novoModo: 'producao' | 'testes') => Promise<void> | void;
   onConfirmarPagamento?: (pedidoId: number, forma?: FormaPagamento, conferidoPor?: string) => Promise<void> | void;
+  onToggleKillSwitch?: (chave: 'delivery_site_ativo' | 'delivery_interno_ativo') => Promise<void> | void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -113,6 +117,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onZerarFinanceiro,
   onToggleModoOperacao,
   onConfirmarPagamento,
+  onToggleKillSwitch,
 }) => {
   const isAdminOrMaster = currentRole === 'admin' || currentRole === 'master' || currentRole === 'supervisor';
   // Cash Register quick modals
@@ -520,6 +525,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 rounded-xl text-xs font-bold transition-colors"
           >
             Ver Extrato
+          </button>
+        </div>
+      </div>
+
+      {/* Kill Switches de Emergência (Delivery Site e Delivery Interno) */}
+      <div className="bg-neutral-850 p-4 rounded-2xl border border-neutral-800 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-neutral-900 border border-neutral-700/80 rounded-xl text-amber-400 shrink-0">
+            <Radio className="w-5 h-5 animate-pulse" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-black uppercase tracking-wider text-white">
+                Controle de Emergência de Entregas (Kill Switches)
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-neutral-800 text-amber-300 border border-neutral-700 uppercase">
+                Operação Delivery
+              </span>
+            </div>
+            <p className="text-[11px] text-neutral-400 mt-0.5">
+              Encerre ou reative instantaneamente as entregas caso a cozinha atinja capacidade máxima.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          {/* Kill Switch 1: Delivery do Site */}
+          <button
+            type="button"
+            onClick={() => onToggleKillSwitch && onToggleKillSwitch('delivery_site_ativo')}
+            className={`flex-1 md:flex-initial px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 uppercase transition-all shadow-sm cursor-pointer border ${
+              configuracoes?.delivery_site_ativo !== false
+                ? 'bg-emerald-950/80 hover:bg-red-950 text-emerald-300 hover:text-red-300 border-emerald-800 hover:border-red-800'
+                : 'bg-red-900 hover:bg-emerald-900 text-white border-red-700'
+            }`}
+            title="Encerrar ou reativar pedidos de delivery pelo site"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                configuracoes?.delivery_site_ativo !== false ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
+              }`}
+            />
+            <span>
+              {configuracoes?.delivery_site_ativo !== false
+                ? 'Encerrar Entregas (Site)'
+                : 'Reativar Entregas (Site)'}
+            </span>
+          </button>
+
+          {/* Kill Switch 2: Delivery Interno / PDV */}
+          <button
+            type="button"
+            onClick={() => onToggleKillSwitch && onToggleKillSwitch('delivery_interno_ativo')}
+            className={`flex-1 md:flex-initial px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 uppercase transition-all shadow-sm cursor-pointer border ${
+              configuracoes?.delivery_interno_ativo !== false
+                ? 'bg-emerald-950/80 hover:bg-red-950 text-emerald-300 hover:text-red-300 border-emerald-800 hover:border-red-800'
+                : 'bg-red-900 hover:bg-emerald-900 text-white border-red-700'
+            }`}
+            title="Encerrar ou reativar pedidos de delivery no PDV interno"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                configuracoes?.delivery_interno_ativo !== false ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
+              }`}
+            />
+            <span>
+              {configuracoes?.delivery_interno_ativo !== false
+                ? 'Encerrar Entregas (Restaurante/PDV)'
+                : 'Reativar Entregas (PDV)'}
+            </span>
           </button>
         </div>
       </div>

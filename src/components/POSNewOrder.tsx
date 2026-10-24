@@ -12,6 +12,7 @@ import {
   CaixaDiario,
   TipoUsuario,
   Cliente,
+  ConfiguracoesSistema,
 } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { UpperInput, UpperTextarea } from './UpperInput';
@@ -70,6 +71,7 @@ interface POSNewOrderProps {
   onTogglePauseProduto: (id: number) => void;
   cardapioDiario?: CardapioDiarioConfig;
   onOpenCardapioBuilder?: () => void;
+  configuracoes?: ConfiguracoesSistema;
 }
 
 export const POSNewOrder: React.FC<POSNewOrderProps> = ({
@@ -89,13 +91,22 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   onTogglePauseProduto,
   cardapioDiario,
   onOpenCardapioBuilder,
+  configuracoes,
 }) => {
   const isCaixaAberto = caixa?.status === 'aberto';
+  const deliveryInternoAtivo = configuracoes?.delivery_interno_ativo !== false;
 
   // Order Mode
-  const [tipoPedido, setTipoPedido] = useState<TipoPedido>(
-    selectedMesaNumber ? 'salão' : 'delivery'
-  );
+  const [tipoPedido, setTipoPedido] = useState<TipoPedido>(() => {
+    if (selectedMesaNumber) return 'salão';
+    return deliveryInternoAtivo ? 'delivery' : 'retirada';
+  });
+
+  useEffect(() => {
+    if (!deliveryInternoAtivo && tipoPedido === 'delivery') {
+      setTipoPedido('retirada');
+    }
+  }, [deliveryInternoAtivo, tipoPedido]);
 
   // Day of week filter (strictly current day of the week)
   const DIAS_NOMES: Record<number, string> = {
@@ -568,6 +579,23 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     return true;
   });
 
+  // A Regra de Ouro: Sem Caixa, Sem Venda
+  if (caixa?.status === 'fechado') {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center bg-neutral-900 border border-neutral-800 rounded-3xl my-6 shadow-2xl">
+        <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-5 shadow-xl">
+          <Lock className="w-10 h-10" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mb-2">
+          ⚠️ CAIXA FECHADO
+        </h2>
+        <p className="text-sm text-neutral-400 max-w-md leading-relaxed mb-6">
+          Você precisa abrir o caixa do dia no Painel Administrativo para liberar o PDV e as Mesas.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* Banner de Bloqueio Obrigatório quando Caixa estiver Fechado */}
@@ -582,17 +610,19 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       <div className="lg:col-span-7 flex flex-col gap-4">
         {/* Order Mode Switcher */}
         <div className="bg-neutral-850 p-1.5 rounded-xl border border-neutral-800 flex items-center gap-1">
-          <button
-            onClick={() => setTipoPedido('delivery')}
-            className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-colors ${
-              tipoPedido === 'delivery'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-            }`}
-          >
-            <Bike className="w-4 h-4" />
-            <span>DELIVERY PRÓPRIO</span>
-          </button>
+          {deliveryInternoAtivo && (
+            <button
+              onClick={() => setTipoPedido('delivery')}
+              className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-colors ${
+                tipoPedido === 'delivery'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Bike className="w-4 h-4" />
+              <span>DELIVERY PRÓPRIO</span>
+            </button>
+          )}
 
           <button
             onClick={() => setTipoPedido('retirada')}

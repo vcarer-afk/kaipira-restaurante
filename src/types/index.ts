@@ -238,4 +238,7 @@ export interface ConfiguracoesSistema {
   ledFonte?: string;
   ledVoz?: string;
   ledCampainha?: string;
+  // Kill Switches de Delivery
+  delivery_site_ativo?: boolean;
+  delivery_interno_ativo?: boolean;
 }

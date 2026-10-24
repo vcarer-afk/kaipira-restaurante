@@ -112,6 +112,8 @@ export async function fetchConfiguracoesFromSupabase(
       ledFonte: dadosObj.ledFonte || (data as any).led_fonte || 'mono',
       ledVoz: dadosObj.ledVoz || (data as any).led_voz || 'padrao',
       ledCampainha: dadosObj.ledCampainha || (data as any).led_campainha || 'ding_dong',
+      delivery_site_ativo: dadosObj.delivery_site_ativo !== undefined ? dadosObj.delivery_site_ativo : true,
+      delivery_interno_ativo: dadosObj.delivery_interno_ativo !== undefined ? dadosObj.delivery_interno_ativo : true,
     };
   } catch (err) {
     console.warn('Falha na requisição Supabase configuracoes:', err);
@@ -1224,11 +1226,11 @@ export async function zerarFinanceiroDiaSupabase(
     ...caixaAtual,
     data_caixa: dataHoje,
     valor_abertura: 0,
-    valor_fechamento: undefined,
-    status: 'aberto',
+    valor_fechamento: 0,
+    status: 'fechado',
     observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
     aberto_em: now,
-    fechado_em: undefined,
+    fechado_em: now,
     movimentacoes: [],
   };
 
@@ -1299,20 +1301,20 @@ export async function zerarFinanceiroDiaSupabase(
       delete conferenciasSessao[Number(key)];
     }
 
-    // 4. Zera o caixa_diario na nuvem Supabase
+    // 4. Zera e fecha o caixa_diario na nuvem Supabase
     try {
       await supabase.from('caixa_diario').update({
         valor_abertura: 0.00,
-        valor_fechamento: null,
-        status: 'aberto',
+        valor_fechamento: 0.00,
+        status: 'fechado',
         observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
       }).neq('id', 0);
     } catch {}
     try {
       await supabase.from('caixa_diario').update({
         valor_apertura: 0.00,
-        valor_fechamento: null,
-        status: 'aberto',
+        valor_fechamento: 0.00,
+        status: 'fechado',
         observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
       }).neq('id', 0);
     } catch {}
@@ -1328,8 +1330,8 @@ export async function zerarFinanceiroDiaSupabase(
     const payload: Record<string, any> = {
       data_caixa: existingRow?.data_caixa || dataHoje,
       valor_abertura: 0.00,
-      valor_fechamento: null,
-      status: 'aberto',
+      valor_fechamento: 0.00,
+      status: 'fechado',
       observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
     };
     if (caixaAberturaCol !== 'valor_abertura') {

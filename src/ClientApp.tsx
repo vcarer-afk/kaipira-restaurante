@@ -309,32 +309,36 @@ export default function ClientApp() {
     setCart((prev) => prev.filter((it) => it.cartItemId !== cartItemId));
   };
 
-  // Busca do Cliente no Supabase pelo Telefone
+  // Busca do Cliente no Supabase pelo Telefone com normalização estrita
   const handleBuscarClientePorTelefone = async (telValue: string) => {
-    const rawDigits = cleanDigits(telValue);
-    if (rawDigits.length < 10) return;
+    const cleanInput = telValue.replace(/\D/g, '');
+    if (cleanInput.length < 10) return;
 
     setIsSearchingPhone(true);
     try {
       const { data: clients } = await supabase
         .from('clientes')
         .select('*')
-        .or(`telefone.eq.${telValue},telefone.eq.${rawDigits},telefone.eq.${formatPhone(telValue)}`)
-        .limit(1);
+        .limit(200);
 
       if (clients && clients.length > 0) {
-        const c = clients[0] as Cliente;
-        setClienteMatchedId(c.id);
-        if (c.nome) setClienteNome(c.nome);
-        if (c.cep) setClienteCep(c.cep);
-        if (c.endereco) setClienteRua(c.endereco);
-        if (c.numero) setClienteNumero(c.numero);
-        if (c.bairro) {
-          setClienteBairro(c.bairro);
-          const taxa = calcularTaxaParaBairro(c.bairro);
-          setTaxaEntrega(taxa);
+        const c = clients.find(
+          (cli: Cliente) => (cli.telefone || '').replace(/\D/g, '') === cleanInput
+        );
+
+        if (c) {
+          setClienteMatchedId(c.id);
+          if (c.nome) setClienteNome(c.nome);
+          if (c.cep) setClienteCep(c.cep);
+          if (c.endereco) setClienteRua(c.endereco);
+          if (c.numero) setClienteNumero(c.numero);
+          if (c.bairro) {
+            setClienteBairro(c.bairro);
+            const taxa = calcularTaxaParaBairro(c.bairro);
+            setTaxaEntrega(taxa);
+          }
+          if (c.complemento) setClienteComplemento(c.complemento);
         }
-        if (c.complemento) setClienteComplemento(c.complemento);
       }
     } catch (err) {
       console.warn('Erro ao consultar cliente por telefone:', err);
@@ -487,18 +491,24 @@ export default function ClientApp() {
     }
   };
 
-  // Se o carregamento terminou e o cardapioDiario não estiver 'aberto', exibe a tela de Restaurante Fechado
+  // Se o carregamento terminou e o cardapioDiario não estiver 'aberto', ou delivery do site pausado pelo kill switch
   const isAberto = cardapioDiario && cardapioDiario.status === 'aberto';
+  const isDeliverySiteAtivo = configuracoes?.delivery_site_ativo !== false;
 
-  if (!loading && !isAberto) {
+  if (!loading && (!isAberto || !isDeliverySiteAtivo)) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between selection:bg-amber-500 selection:text-black">
         <header className="bg-neutral-900/90 border-b border-neutral-800 p-4 sticky top-0 z-20 backdrop-blur-md">
           <div className="max-w-md mx-auto flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center text-black font-black shadow-lg shadow-amber-500/20">
-                <Flame className="w-6 h-6" />
-              </div>
+              <img
+                src="/logo.jpg"
+                alt={configuracoes?.nomeRestaurante || 'Restaurante Kaipira'}
+                className="w-10 h-10 object-cover rounded-xl border border-amber-500/50 shadow-md"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = '/logo.png';
+                }}
+              />
               <div>
                 <h1 className="text-base font-black tracking-tight text-white uppercase">
                   {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'}
@@ -520,21 +530,36 @@ export default function ClientApp() {
         </header>
 
         <main className="flex-1 max-w-md mx-auto p-6 flex flex-col items-center justify-center text-center">
-          <div className="relative mb-6">
-            <div className="w-24 h-24 rounded-3xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-amber-500 shadow-2xl">
-              <Clock className="w-12 h-12 stroke-[1.5]" />
+          <div className="flex justify-center mb-5">
+            <img
+              src="/logo.jpg"
+              alt={configuracoes?.nomeRestaurante || 'Restaurante Kaipira'}
+              className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl border-2 border-amber-500/60 shadow-2xl shadow-amber-500/20"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = '/logo.png';
+              }}
+            />
+          </div>
+
+          <div className="relative mb-5">
+            <div className="w-20 h-20 rounded-3xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-amber-500 shadow-2xl">
+              <Clock className="w-10 h-10 stroke-[1.5]" />
             </div>
             <span className="absolute -bottom-1 -right-1 px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-400 text-[10px] font-black uppercase tracking-wider">
-              Fechado
+              {!isDeliverySiteAtivo ? 'Pausado' : 'Fechado'}
             </span>
           </div>
 
-          <h2 className="text-2xl font-black uppercase tracking-tight text-white mb-2">
-            Restaurante Fechado no Momento
+          <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mb-2">
+            {!isDeliverySiteAtivo
+              ? 'Entregas do Site Pausadas'
+              : 'Restaurante Fechado no Momento'}
           </h2>
 
           <p className="text-neutral-400 text-sm leading-relaxed mb-6">
-            Nosso cardápio do dia ainda não foi liberado para delivery ou nosso horário de atendimento foi encerrado.
+            {!isDeliverySiteAtivo
+              ? 'No momento não estamos aceitando novos pedidos para entrega pelo site.'
+              : 'Nosso cardápio do dia ainda não foi liberado para delivery ou nosso horário de atendimento foi encerrado.'}
           </p>
 
           <div className="w-full bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4 text-left space-y-3 mb-6">
@@ -1289,30 +1314,10 @@ export default function ClientApp() {
   // =========================================================================
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-amber-500 selection:text-black pb-28">
-      {/* Top Header Mobile-First */}
+      {/* Top Header Mobile-First com Logo Centralizada */}
       <header className="bg-neutral-900/95 border-b border-neutral-800 sticky top-0 z-30 backdrop-blur-md">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center text-black font-black shadow-lg shadow-amber-500/20 shrink-0">
-              <Flame className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-black tracking-tight text-white uppercase">
-                  {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'}
-                </h1>
-                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Aberto
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-400 font-medium">
-                {configuracoes?.horarioFuncionamento || 'Almoço das 11h às 14h'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
+        <div className="max-w-2xl mx-auto px-4 pt-4 pb-3 flex flex-col items-center text-center relative">
+          <div className="absolute right-4 top-4">
             <Link
               to="/admin"
               className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors"
@@ -1321,6 +1326,31 @@ export default function ClientApp() {
               <Lock className="w-4 h-4" />
             </Link>
           </div>
+
+          {/* Logo Centralizada com cantos arredondados, borda temática e sombra */}
+          <div className="relative mb-2.5">
+            <img
+              src="/logo.jpg"
+              alt={configuracoes?.nomeRestaurante || 'Restaurante Kaipira'}
+              className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-2xl border-2 border-amber-500/70 shadow-xl shadow-amber-500/10"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = '/logo.png';
+              }}
+            />
+          </div>
+
+          <div className="flex items-center gap-2 justify-center">
+            <h1 className="text-base sm:text-lg font-black tracking-tight text-white uppercase">
+              {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'}
+            </h1>
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Aberto
+            </span>
+          </div>
+          <p className="text-[11px] text-neutral-400 font-medium mt-0.5">
+            {configuracoes?.horarioFuncionamento || 'Almoço das 11h às 14h'}
+          </p>
         </div>
 
         {/* Barra de Pesquisa */}
