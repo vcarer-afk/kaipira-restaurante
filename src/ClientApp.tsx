@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Flame,
@@ -36,6 +36,7 @@ import {
   Cliente,
   Pedido,
   Opcional,
+  CaixaDiario,
 } from './types';
 import {
   fetchConfiguracoesFromSupabase,
@@ -44,6 +45,7 @@ import {
   fetchCardapioDiarioSupabase,
   fetchBairrosSupabase,
   fetchFormasPagamentoSupabase,
+  fetchCaixaDiarioSupabase,
   salvarClienteSupabase,
   criarPedidoSupabase,
 } from './services/supabaseClient';
@@ -82,9 +84,11 @@ export default function ClientApp() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [cardapioDiario, setCardapioDiario] = useState<CardapioDiarioConfig | null>(null);
+  const [caixa, setCaixa] = useState<CaixaDiario | null>(null);
   const [bairros, setBairros] = useState<BairroTaxa[]>([]);
   const [formasPagamento, setFormasPagamento] = useState<FormaPagamentoConfig[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState<boolean>(false);
 
   // Navegação e Filtros da Vitrine
   const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('menu');
@@ -122,55 +126,106 @@ export default function ClientApp() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [pedidoConcluido, setPedidoConcluido] = useState<Pedido | null>(null);
 
-  // Carregamento inicial de dados
-  useEffect(() => {
-    let isMounted = true;
+  // Carregamento de dados com suporte a recarga silenciosa
+  const loadData = useCallback(async (isSilent = false) => {
+    try {
+      if (!isSilent) setLoading(true);
+      else setIsRefreshingStatus(true);
 
-    async function loadData() {
-      try {
-        setLoading(true);
-        const [confRes, prodsRes, catsRes, cardapioRes, bairrosRes, formasRes] =
-          await Promise.allSettled([
-            fetchConfiguracoesFromSupabase(),
-            fetchProdutosSupabase(),
-            fetchCategoriasSupabase(),
-            fetchCardapioDiarioSupabase(),
-            fetchBairrosSupabase(),
-            fetchFormasPagamentoSupabase(),
-          ]);
+      const [confRes, prodsRes, catsRes, cardapioRes, bairrosRes, formasRes, caixaRes] =
+        await Promise.allSettled([
+          fetchConfiguracoesFromSupabase(),
+          fetchProdutosSupabase(),
+          fetchCategoriasSupabase(),
+          fetchCardapioDiarioSupabase(),
+          fetchBairrosSupabase(),
+          fetchFormasPagamentoSupabase(),
+          fetchCaixaDiarioSupabase(),
+        ]);
 
-        if (!isMounted) return;
-
-        if (confRes.status === 'fulfilled' && confRes.value) {
-          setConfiguracoes(confRes.value);
-        }
-        if (prodsRes.status === 'fulfilled' && prodsRes.value) {
-          setProdutos(prodsRes.value);
-        }
-        if (catsRes.status === 'fulfilled' && catsRes.value) {
-          setCategorias(catsRes.value);
-        }
-        if (cardapioRes.status === 'fulfilled' && cardapioRes.value) {
-          setCardapioDiario(cardapioRes.value);
-        }
-        if (bairrosRes.status === 'fulfilled' && bairrosRes.value) {
-          setBairros(bairrosRes.value);
-        }
-        if (formasRes.status === 'fulfilled' && formasRes.value) {
-          setFormasPagamento(formasRes.value.filter((f) => f.ativo));
-        }
-      } catch (err) {
-        console.warn('Erro ao carregar vitrine do cliente:', err);
-      } finally {
-        if (isMounted) setLoading(false);
+      if (confRes.status === 'fulfilled' && confRes.value) {
+        setConfiguracoes(confRes.value);
       }
+      if (prodsRes.status === 'fulfilled' && prodsRes.value) {
+        setProdutos(prodsRes.value);
+      }
+      if (catsRes.status === 'fulfilled' && catsRes.value) {
+        setCategorias(catsRes.value);
+      }
+      if (cardapioRes.status === 'fulfilled' && cardapioRes.value) {
+        setCardapioDiario(cardapioRes.value);
+      }
+      if (bairrosRes.status === 'fulfilled' && bairrosRes.value) {
+        setBairros(bairrosRes.value);
+      }
+      if (formasRes.status === 'fulfilled' && formasRes.value) {
+        setFormasPagamento(formasRes.value.filter((f) => f.ativo));
+      }
+      if (caixaRes.status === 'fulfilled' && caixaRes.value) {
+        setCaixa(caixaRes.value);
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar vitrine do cliente:', err);
+    } finally {
+      setLoading(false);
+      setIsRefreshingStatus(false);
     }
-
-    loadData();
-    return () => {
-      isMounted = false;
-    };
   }, []);
+
+  // Carregamento inicial de dados e sincronização em tempo real (Supabase Realtime)
+  useEffect(() => {
+    loadData();
+
+    // Sincronização Realtime via canais do Supabase
+    const channel = supabase
+      .channel('client_app_realtime_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'configuracoes' },
+        async (payload: any) => {
+          if (payload.new) {
+            const loaded = payload.new.dados || payload.new;
+            setConfiguracoes((prev) => ({ ...prev, ...loaded }));
+          } else {
+            const conf = await fetchConfiguracoesFromSupabase();
+            if (conf) setConfiguracoes(conf);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cardapio_diario' },
+        async () => {
+          const cd = await fetchCardapioDiarioSupabase();
+          if (cd) setCardapioDiario(cd);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'caixa_diario' },
+        async (payload: any) => {
+          if (payload.new) {
+            setCaixa(payload.new as CaixaDiario);
+          } else {
+            const cx = await fetchCaixaDiarioSupabase();
+            if (cx) setCaixa(cx);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'produtos' },
+        async () => {
+          const prs = await fetchProdutosSupabase();
+          if (prs) setProdutos(prs);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [loadData]);
 
   // Regra de Filtro de Produtos para Delivery do Cliente:
   // (categoria_id === 4 || categoria_id === 5) OU (está presente em cardapioDiario.itens E possui disponivel_delivery === true)
@@ -491,12 +546,16 @@ export default function ClientApp() {
     }
   };
 
-  // Trava Estrita: A vitrine SÓ deve liberar produtos e permitir adicionar ao carrinho se configuracoes.delivery_site_ativo === true E cardapioDiario.status === 'publicado'. Caso contrário, mantenha a tela de "Restaurante Fechado no momento".
-  const isDeliverySiteAtivo = configuracoes?.delivery_site_ativo === true;
-  const isCardapioPublicado = cardapioDiario?.status === 'publicado';
-  const isVitrineLiberada = isDeliverySiteAtivo && isCardapioPublicado;
+  // Condição Exata de Abertura da Vitrine (Regra 3):
+  const isCaixaAberto = (caixa?.status || '').toLowerCase() === 'aberto';
+  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes(
+    (cardapioDiario?.status || '').toLowerCase()
+  );
+  const isDeliverySiteAtivo = configuracoes?.delivery_site_ativo !== false;
 
-  if (!loading && !isVitrineLiberada) {
+  const isVitrineAberta = isCaixaAberto && isCardapioAtivo && isDeliverySiteAtivo;
+
+  if (!loading && !isVitrineAberta) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between selection:bg-amber-500 selection:text-black">
         <header className="bg-neutral-900/90 border-b border-neutral-800 p-4 sticky top-0 z-20 backdrop-blur-md">
@@ -556,9 +615,13 @@ export default function ClientApp() {
           </h2>
 
           <p className="text-neutral-400 text-sm leading-relaxed mb-6">
-            {!isDeliverySiteAtivo
-              ? 'No momento não estamos aceitando novos pedidos para entrega pelo site.'
-              : 'O cardápio do dia ainda não foi liberado no painel administrativo ou o horário de atendimento foi encerrado.'}
+            {!isCaixaAberto
+              ? 'O caixa diário ainda não foi aberto no painel administrativo.'
+              : !isCardapioAtivo
+              ? 'O cardápio do dia ainda não foi confirmado pelo gerente.'
+              : !isDeliverySiteAtivo
+              ? 'No momento as entregas pelo site estão pausadas.'
+              : 'Aguarde a liberação do atendimento para efetuar seu pedido.'}
           </p>
 
           <div className="w-full bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4 text-left space-y-3 mb-6">
@@ -584,15 +647,56 @@ export default function ClientApp() {
           </div>
 
           <button
-            onClick={() => window.location.reload()}
-            className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-black font-black uppercase rounded-xl text-xs tracking-wider transition-all shadow-lg shadow-amber-500/10 cursor-pointer"
+            type="button"
+            onClick={() => loadData(true)}
+            disabled={isRefreshingStatus}
+            className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-black font-black uppercase rounded-xl text-xs tracking-wider transition-all shadow-lg shadow-amber-500/10 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
           >
-            Verificar Novamente
+            <RefreshCw className={`w-4 h-4 ${isRefreshingStatus ? 'animate-spin' : ''}`} />
+            <span>{isRefreshingStatus ? 'Consultando Supabase...' : 'Atualizar Status'}</span>
           </button>
         </main>
 
-        <footer className="p-4 text-center border-t border-neutral-900 text-[11px] text-neutral-600">
-          © {new Date().getFullYear()} {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'} · Cardápio Digital
+        {/* Rodapé com Diagnóstico em Tempo Real para Testes e Produção */}
+        <footer className="p-4 border-t border-neutral-900 bg-neutral-950 text-[11px] text-neutral-400 flex flex-col items-center gap-2.5">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
+                isCaixaAberto
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                  : 'bg-red-950/80 text-red-300 border-red-800'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isCaixaAberto ? 'bg-emerald-400' : 'bg-red-400'}`} />
+              Caixa: {isCaixaAberto ? 'ABERTO' : 'FECHADO'}
+            </span>
+
+            <span
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
+                isCardapioAtivo
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                  : 'bg-amber-950/80 text-amber-300 border-amber-800'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isCardapioAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              Cardápio: {isCardapioAtivo ? 'CONFIRMADO' : 'AGUARDANDO'}
+            </span>
+
+            <span
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
+                isDeliverySiteAtivo
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                  : 'bg-amber-950/80 text-amber-300 border-amber-800'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isDeliverySiteAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              Entregas Site: {isDeliverySiteAtivo ? 'ATIVO' : 'PAUSADO'}
+            </span>
+          </div>
+
+          <div className="text-[10px] text-neutral-600">
+            © {new Date().getFullYear()} {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'} · Cardápio Digital
+          </div>
         </footer>
       </div>
     );

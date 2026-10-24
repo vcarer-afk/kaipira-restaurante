@@ -76,7 +76,7 @@ export async function fetchConfiguracoesFromSupabase(
     const { data, error } = await client
       .from('configuracoes')
       .select('*')
-      .order('id', { ascending: true })
+      .order('id', { ascending: false })
       .limit(1)
       .maybeSingle();
 
@@ -1061,6 +1061,44 @@ async function checkCaixaSchema() {
   }
 }
 
+/**
+ * Busca o registro mais recente de caixa_diario (.order('id', { ascending: false }).limit(1))
+ */
+export async function fetchCaixaDiarioSupabase(): Promise<CaixaDiario | null> {
+  try {
+    const { data: rows, error } = await supabase
+      .from('caixa_diario')
+      .select('*')
+      .order('id', { ascending: false })
+      .limit(1);
+
+    if (error || !rows || rows.length === 0) return null;
+    const r = rows[0];
+    let movs: MovimentacaoCaixa[] = [];
+    if (r.observacoes && typeof r.observacoes === 'string' && r.observacoes.includes('MOVS_JSON:')) {
+      try {
+        const parts = r.observacoes.split('MOVS_JSON:');
+        movs = JSON.parse(parts[1]);
+      } catch {}
+    }
+
+    return {
+      id: Number(r.id),
+      data_caixa: r.data_caixa,
+      valor_abertura: Number(r.valor_abertura ?? r.valor_apertura) || 0,
+      valor_fechamento: r.valor_fechamento !== null && r.valor_fechamento !== undefined ? Number(r.valor_fechamento) : undefined,
+      status: r.status || 'fechado',
+      observacoes: r.observacoes || '',
+      aberto_em: r.aberto_em || r.created_at,
+      fechado_em: r.fechado_em,
+      movimentacoes: movs,
+    };
+  } catch (err) {
+    console.warn('Erro ao buscar caixa diario mais recente:', err);
+    return null;
+  }
+}
+
 export async function abrirCaixaSupabase(
   valor_abertura: number,
   observacoes?: string
@@ -1939,12 +1977,14 @@ export async function fetchCardapioDiarioSupabase(
         const { data: confData } = await supabase
           .from('configuracoes')
           .select('dados')
-          .eq('id', 1)
+          .order('id', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         if (confData?.dados?.cardapio_diario_atual?.data === hoje) {
-          const rawStatus = confData.dados.cardapio_diario_atual.status;
-          status = rawStatus === 'aberto' ? 'publicado' : (rawStatus || status);
+          const rawStatus = (confData.dados.cardapio_diario_atual.status || '').toLowerCase();
+          const isAtivo = ['publicado', 'aberto', 'confirmado'].includes(rawStatus);
+          status = isAtivo ? 'publicado' : (rawStatus === 'aguardando' ? 'aguardando' : status);
           confirmado_em = confData.dados.cardapio_diario_atual.confirmado_em;
           confirmado_por = confData.dados.cardapio_diario_atual.confirmado_por;
         }
@@ -1965,7 +2005,8 @@ export async function fetchCardapioDiarioSupabase(
     const { data: confData } = await supabase
       .from('configuracoes')
       .select('dados')
-      .eq('id', 1)
+      .order('id', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (confData?.dados?.cardapio_diario_atual) {
@@ -1977,9 +2018,13 @@ export async function fetchCardapioDiarioSupabase(
           disponivel_salao: !!it.disponivel_salao || it.canal === 'mesas',
         }));
 
+        const isSavedAtivo = ['publicado', 'aberto', 'confirmado'].includes(
+          ((saved.status || '') as string).toLowerCase()
+        );
+
         return {
           data: hoje,
-          status: saved.status || 'aguardando',
+          status: isSavedAtivo ? 'publicado' : (saved.status || 'aguardando'),
           confirmado_em: saved.confirmado_em,
           confirmado_por: saved.confirmado_por,
           itens: normalizedItens,

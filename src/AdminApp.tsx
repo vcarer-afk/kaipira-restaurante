@@ -1261,7 +1261,16 @@ export default function AdminApp() {
   const handleFecharCaixa = async (valor: number, observacoes?: string) => {
     const fechado = await fecharCaixaSupabase(caixa, valor, observacoes);
     setCaixa(fechado);
-    
+
+    // Atualiza também o cardapioDiario para status: 'aguardando' no Supabase
+    const cardapioAguardando: CardapioDiarioConfig = { ...cardapioDiario, status: 'aguardando' };
+    setCardapioDiario(cardapioAguardando);
+    try {
+      await salvarCardapioDiarioSupabase(cardapioAguardando);
+    } catch (cErr) {
+      console.warn('Aviso ao definir cardápio para aguardando:', cErr);
+    }
+
     // Desativa as vendas na vitrine e no PDV
     await handleSaveConfiguracoes({
       ...configuracoes,
@@ -1284,7 +1293,16 @@ export default function AdminApp() {
           pessoas: undefined,
         }))
       );
-      
+
+      // Atualiza também o cardapioDiario para status: 'aguardando' no Supabase
+      const cardapioAguardando: CardapioDiarioConfig = { ...cardapioDiario, status: 'aguardando' };
+      setCardapioDiario(cardapioAguardando);
+      try {
+        await salvarCardapioDiarioSupabase(cardapioAguardando);
+      } catch (cErr) {
+        console.warn('Aviso ao definir cardápio para aguardando:', cErr);
+      }
+
       // Desativa as vendas na vitrine e no PDV
       await handleSaveConfiguracoes({
         ...configuracoes,

@@ -596,7 +596,8 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     );
   }
 
-  if (cardapioDiario?.status !== 'publicado') {
+  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes((cardapioDiario?.status || '').toLowerCase());
+  if (!isCardapioAtivo) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center bg-neutral-900 border border-yellow-500/30 rounded-3xl my-6 shadow-2xl">
         <div className="w-20 h-20 rounded-3xl bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center text-yellow-400 mb-5 shadow-xl">
