@@ -228,13 +228,22 @@ export default function ClientApp() {
   }, [loadData]);
 
   // Cardápio Efetivo: espelho das configuracoes ou cardapioDiario
-  const cardapioEfetivo = configuracoes?.cardapio_diario_cache?.status === 'publicado' 
+ // const cardapioEfetivo = configuracoes?.cardapio_diario_cache?.status === 'publicado' 
+  //  ? configuracoes.cardapio_diario_cache 
+  //  : cardapioDiario;
+  //const statusCardapioStr = (cardapioEfetivo?.status || '').toLowerCase();
+  //const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes(statusCardapioStr);
+
+// Cardápio Efetivo: espelho das configuracoes ou cardapioDiario
+  const cardapioEfetivo = configuracoes?.cardapio_diario_cache?.status 
     ? configuracoes.cardapio_diario_cache 
     : cardapioDiario;
 
   const statusCardapioStr = (cardapioEfetivo?.status || '').toLowerCase();
-  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes(statusCardapioStr);
-
+  const isCardapioAtivo = 
+    ['publicado', 'aberto', 'confirmado', 'ativo'].includes(statusCardapioStr) || 
+    (cardapioEfetivo?.itens && cardapioEfetivo.itens.length > 0);
+  
   // Regra de Filtro de Produtos para Delivery do Cliente:
   // (categoria_id === 4 || categoria_id === 5) OU (está presente em cardapioEfetivo.itens E possui disponivel_delivery === true)
   const produtosDisponiveis = useMemo(() => {
