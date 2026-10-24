@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pedido, ConfiguracoesSistema, Produto } from '../types';
+import { Pedido, ConfiguracoesSistema, Produto, Cliente } from '../types';
 import { formatBRL, formatDateTime } from '../utils/formatters';
 import { Printer, X } from 'lucide-react';
 
@@ -8,10 +8,55 @@ interface ThermalReceiptProps {
   onClose: () => void;
   configuracoes?: ConfiguracoesSistema;
   produtos?: Produto[];
+  clientes?: Cliente[];
 }
 
-export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose, configuracoes, produtos }) => {
+export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose, configuracoes, produtos, clientes }) => {
   if (!pedido) return null;
+
+  const pedAny = pedido as any;
+  const clienteResolved =
+    pedido.cliente ||
+    (clientes && pedido.cliente_id ? clientes.find((c) => String(c.id) === String(pedido.cliente_id)) : undefined);
+
+  const clienteNome =
+    clienteResolved?.nome ||
+    pedAny.cliente_nome ||
+    pedAny.nome ||
+    (pedido.tipo === 'delivery' ? 'CLIENTE DELIVERY' : 'CONSUMIDOR BALCÃO');
+
+  const clienteTelefone =
+    clienteResolved?.telefone ||
+    pedAny.telefone ||
+    pedAny.cliente_telefone ||
+    '';
+
+  const clienteEndereco =
+    clienteResolved?.endereco ||
+    pedAny.endereco ||
+    pedAny.rua ||
+    pedAny.logradouro ||
+    '';
+
+  const clienteNumero =
+    clienteResolved?.numero ||
+    pedAny.numero ||
+    'S/N';
+
+  const clienteComplemento =
+    clienteResolved?.complemento ||
+    pedAny.complemento ||
+    '';
+
+  const clienteBairro =
+    clienteResolved?.bairro ||
+    pedAny.bairro ||
+    'PIRACICABA';
+
+  const clienteCep =
+    clienteResolved?.cep ||
+    pedAny.cep ||
+    '';
 
   const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
     if (it.produto_nome && !it.produto_nome.trim().startsWith('#') && !it.produto_nome.toLowerCase().startsWith('prod #')) {
@@ -86,18 +131,18 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
             </div>
 
             {/* Customer Details for Delivery / Balcao */}
-            {pedido.cliente && (
+            {(pedido.tipo === 'delivery' || !!clienteNome) && (
               <div className="py-2 border-b border-dashed border-black text-[10px]">
-                <p className="font-bold">CLIENTE: {pedido.cliente.nome}</p>
-                <p>TEL: {pedido.cliente.telefone}</p>
+                <p className="font-bold">CLIENTE: {clienteNome}</p>
+                {clienteTelefone && <p>TEL: {clienteTelefone}</p>}
                 {pedido.tipo === 'delivery' && (
                   <>
                     <p className="font-semibold mt-1">
-                      END: {pedido.cliente.endereco}, Nº {pedido.cliente.numero}
+                      END: {clienteEndereco ? `${clienteEndereco}, Nº ${clienteNumero}` : 'ENDEREÇO NÃO INFORMADO'}
                     </p>
-                    {pedido.cliente.complemento && <p>COMPL: {pedido.cliente.complemento}</p>}
-                    <p>BAIRRO: {pedido.cliente.bairro} - PIRACICABA</p>
-                    <p>CEP: {pedido.cliente.cep}</p>
+                    {clienteComplemento && <p>COMPL: {clienteComplemento}</p>}
+                    <p>BAIRRO: {clienteBairro} - PIRACICABA</p>
+                    {clienteCep && <p>CEP: {clienteCep}</p>}
                   </>
                 )}
               </div>

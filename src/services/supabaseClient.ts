@@ -509,6 +509,17 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
     const conferidosNuvem = await carregarConferenciasNuvem();
     const conferidosLocais = { ...conferidosNuvem, ...getConferenciasLocais() };
 
+    // Carrega clientes para mapeamento retroativo cliente_id -> cliente
+    const cliMap = new Map<string, any>();
+    try {
+      const { data: clis } = await supabase.from('clientes').select('*');
+      if (clis && clis.length > 0) {
+        clis.forEach((c: any) => {
+          if (c.id) cliMap.set(String(c.id), c);
+        });
+      }
+    } catch {}
+
     // 1. Tenta carregar pedidos com relacionamento dos itens e pagamentos
     const { data: pedidosData, error } = await supabase
       .from('pedidos')
@@ -531,13 +542,15 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           ? 'conferido'
           : p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined);
 
+        const cliResolvido = p.cliente || (p.cliente_id ? cliMap.get(String(p.cliente_id)) : undefined);
+
         return {
           id: Number(p.id),
           codigo_senha: Number(p.codigo_senha || p.id),
           tipo: p.tipo,
           status: p.status,
           cliente_id: p.cliente_id,
-          cliente: p.cliente,
+          cliente: cliResolvido,
           mesa_id: p.mesa_id ? Number(p.mesa_id) : undefined,
           precisa_troco: !!p.precisa_troco,
           troco_para: p.troco_para ? Number(p.troco_para) : undefined,
@@ -608,13 +621,15 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           ? 'conferido'
           : p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined);
 
+        const cliResolvido = p.cliente || (p.cliente_id ? cliMap.get(String(p.cliente_id)) : undefined);
+
         return {
           id: Number(p.id),
           codigo_senha: Number(p.codigo_senha || p.id),
           tipo: p.tipo,
           status: p.status,
           cliente_id: p.cliente_id,
-          cliente: p.cliente,
+          cliente: cliResolvido,
           mesa_id: p.mesa_id ? Number(p.mesa_id) : undefined,
           precisa_troco: !!p.precisa_troco,
           troco_para: p.troco_para ? Number(p.troco_para) : undefined,
@@ -2001,7 +2016,7 @@ export async function fetchCardapioDiarioSupabase(
       };
     }
 
-    // 2. Fallback: configuracoes.dados.cardapio_diario_atual
+    // 2. Fallback: configuracoes.dados.cardapio_diario_cache ou cardapio_diario_atual
     const { data: confData } = await supabase
       .from('configuracoes')
       .select('dados')
@@ -2009,9 +2024,9 @@ export async function fetchCardapioDiarioSupabase(
       .limit(1)
       .maybeSingle();
 
-    if (confData?.dados?.cardapio_diario_atual) {
-      const saved = confData.dados.cardapio_diario_atual;
-      if (saved.data === hoje) {
+    const saved = confData?.dados?.cardapio_diario_cache || confData?.dados?.cardapio_diario_atual;
+    if (saved) {
+      if (!saved.data || saved.data === hoje) {
         const normalizedItens: ItemCardapioDiario[] = (saved.itens || []).map((it: any) => ({
           produto_id: Number(it.produto_id),
           disponivel_delivery: !!it.disponivel_delivery || it.canal === 'delivery_balcao',

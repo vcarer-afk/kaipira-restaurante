@@ -234,21 +234,19 @@ export default function ClientApp() {
 
   const statusCardapioStr = (cardapioEfetivo?.status || '').toLowerCase();
 
-  // Regra de Filtro de Produtos para Delivery do Cliente:
-  // (categoria_id === 4 || categoria_id === 5) OU (está presente em cardapioEfetivo.itens E possui disponivel_delivery === true)
+  // Regra Estrita de Filtro de Produtos para Delivery do Cliente:
+  // O produto SÓ deve aparecer na vitrine se estiver explicitamente presente em cardapioEfetivo.itens com disponivel_delivery === true
   const produtosDisponiveis = useMemo(() => {
+    if (!cardapioEfetivo?.itens || cardapioEfetivo.itens.length === 0) {
+      return [];
+    }
+
     return produtos.filter((p) => {
       if (p.pausado) return false;
 
-      const cardapioTemItens = (cardapioEfetivo?.itens || []).length > 0;
-      if (!cardapioTemItens) return true;
-
-      const isCategoriaFixa = Number(p.categoria_id) === 4 || Number(p.categoria_id) === 5;
-      const isInCardapioDelivery = cardapioEfetivo?.itens?.some(
+      return cardapioEfetivo.itens.some(
         (it) => Number(it.produto_id) === Number(p.id) && it.disponivel_delivery === true
       );
-
-      return isCategoriaFixa || !!isInCardapioDelivery;
     });
   }, [produtos, cardapioEfetivo]);
 
@@ -556,15 +554,13 @@ export default function ClientApp() {
     }
   };
 
-  // Em modo de testes/homologação, garantimos que a vitrine abra liberando os produtos para o cliente
+  // Condição de Abertura da Vitrine do Cliente com Kill Switch
   const isCaixaAberto = caixa ? (caixa?.status || '').toLowerCase() === 'aberto' : true;
   const isDeliverySiteAtivo = configuracoes ? configuracoes?.delivery_site_ativo !== false : true;
-  
-  // Força o cardápio a ser considerado ativo para permitir testes na vitrine
-  const isCardapioAtivo = true; 
+  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes((cardapioEfetivo?.status || '').toLowerCase()) || true;
 
-  // Destranca permanentemente a vitrine para os testes do desenvolvedor
-  const isVitrineAberta = true;
+  // Vitrine respeita o Kill Switch de entregas e status do caixa
+  const isVitrineAberta = isDeliverySiteAtivo && isCaixaAberto;
 
   if (!loading && !isVitrineAberta) {
     return (

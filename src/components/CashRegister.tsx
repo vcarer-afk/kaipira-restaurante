@@ -10,6 +10,7 @@ import {
   UsuarioSistema,
   Produto,
   Mesa,
+  Cliente,
 } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { formatBRL, formatDateTime, playAlertChime } from '../utils/formatters';
@@ -57,6 +58,7 @@ interface CashRegisterProps {
   pedidos?: Pedido[];
   mesas?: Mesa[];
   produtos?: Produto[];
+  clientes?: Cliente[];
   configuracoes?: ConfiguracoesSistema;
   currentRole?: string;
   currentPerfil?: any;
@@ -104,6 +106,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   pedidos = [],
   mesas = [],
   produtos = [],
+  clientes = [],
   configuracoes,
   currentRole,
   currentPerfil,
@@ -114,6 +117,32 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   onConferirEntrega,
   onConfirmarPagamento,
 }) => {
+  // Helper para resolver dados do cliente retroativamente via clientes ou dados do pedido
+  const resolveCliente = (p: Pedido | null | undefined): Cliente | undefined => {
+    if (!p) return undefined;
+    if (p.cliente && p.cliente.nome) return p.cliente;
+    if (p.cliente_id && clientes && clientes.length > 0) {
+      const found = clientes.find((c) => String(c.id) === String(p.cliente_id));
+      if (found) return found;
+    }
+    const pedAny = p as any;
+    if (pedAny.cliente_nome || pedAny.nome) {
+      return {
+        id: p.cliente_id || '1',
+        nome: pedAny.cliente_nome || pedAny.nome,
+        telefone: pedAny.telefone || '',
+        endereco: pedAny.endereco || '',
+        numero: pedAny.numero || '',
+        bairro: pedAny.bairro || 'PIRACICABA',
+        cep: pedAny.cep || '',
+        eh_mensalista: false,
+        saldo_devedor: 0,
+        criado_em: p.criado_em,
+      } as Cliente;
+    }
+    return p.cliente;
+  };
+
   // Helper para garantir exibição da descrição completa do produto em todas as telas
   const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
     if (it.produto_nome && !it.produto_nome.trim().startsWith('#') && !it.produto_nome.toLowerCase().startsWith('prod #') && !it.produto_nome.toLowerCase().startsWith('produto #')) {
@@ -1433,24 +1462,29 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                           </div>
 
                           {/* Dados do Cliente e Endereço de Entrega */}
-                          <div className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-1">
-                            <div className="flex justify-between items-baseline">
-                              <span className="font-bold text-white uppercase">
-                                {p.cliente?.nome || 'CLIENTE NÃO IDENTIFICADO'}
-                              </span>
-                              {p.cliente?.telefone && (
-                                <span className="text-[11px] text-neutral-400 font-mono">
-                                  {p.cliente.telefone}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-neutral-300">
-                              {p.cliente?.endereco || 'ENDEREÇO NÃO CADASTRADO'}
-                              {p.cliente?.numero ? `, Nº ${p.cliente.numero}` : ''}
-                              {p.cliente?.complemento ? ` (${p.cliente.complemento})` : ''} -{' '}
-                              <strong className="text-amber-400">{p.cliente?.bairro || 'PIRACICABA'}</strong>
-                            </p>
-                          </div>
+                          {(() => {
+                            const cli = resolveCliente(p);
+                            return (
+                              <div className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-1">
+                                <div className="flex justify-between items-baseline">
+                                  <span className="font-bold text-white uppercase">
+                                    {cli?.nome || (p.tipo === 'delivery' ? 'CLIENTE DELIVERY' : 'CLIENTE BALCÃO')}
+                                  </span>
+                                  {cli?.telefone && (
+                                    <span className="text-[11px] text-neutral-400 font-mono">
+                                      {cli.telefone}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-neutral-300">
+                                  {cli?.endereco || 'PIRACICABA'}
+                                  {cli?.numero ? `, Nº ${cli.numero}` : ''}
+                                  {cli?.complemento ? ` (${cli.complemento})` : ''} -{' '}
+                                  <strong className="text-amber-400">{cli?.bairro || 'PIRACICABA'}</strong>
+                                </p>
+                              </div>
+                            );
+                          })()}
 
                           {/* Detalhe dos Produtos, Quantidades, Valores e Subtotal (Regra solicitada) */}
                           <div className="space-y-1">
@@ -1608,18 +1642,25 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
                             {/* Cliente & Destino */}
                             <td className="py-3.5 px-3 align-top">
-                              <div className="font-bold text-white uppercase text-xs">
-                                {p.cliente?.nome || 'CLIENTE NÃO IDENTIFICADO'}
-                              </div>
-                              <div className="text-[11px] text-neutral-300 truncate max-w-[200px] mt-0.5">
-                                {p.cliente?.endereco || 'PIRACICABA'}
-                                {p.cliente?.numero ? `, Nº ${p.cliente.numero}` : ''}
-                                {p.cliente?.complemento ? ` (${p.cliente.complemento})` : ''}
-                              </div>
-                              <div className="text-[10.5px] text-amber-400 font-bold mt-0.5">
-                                {p.cliente?.bairro || 'PIRACICABA'}
-                                {p.cliente?.telefone ? ` · ${p.cliente.telefone}` : ''}
-                              </div>
+                              {(() => {
+                                const cli = resolveCliente(p);
+                                return (
+                                  <>
+                                    <div className="font-bold text-white uppercase text-xs">
+                                      {cli?.nome || (p.tipo === 'delivery' ? 'CLIENTE DELIVERY' : 'CLIENTE BALCÃO')}
+                                    </div>
+                                    <div className="text-[11px] text-neutral-300 truncate max-w-[200px] mt-0.5">
+                                      {cli?.endereco || 'PIRACICABA'}
+                                      {cli?.numero ? `, Nº ${cli.numero}` : ''}
+                                      {cli?.complemento ? ` (${cli.complemento})` : ''}
+                                    </div>
+                                    <div className="text-[10.5px] text-amber-400 font-bold mt-0.5">
+                                      {cli?.bairro || 'PIRACICABA'}
+                                      {cli?.telefone ? ` · ${cli.telefone}` : ''}
+                                    </div>
+                                  </>
+                                );
+                              })()}
                             </td>
 
                             {/* Itens / Descrição do Produto */}
@@ -2577,20 +2618,26 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
             </div>
 
             {/* Informações da Entrega */}
-            <div className="bg-neutral-850 p-3.5 rounded-xl border border-neutral-800 space-y-2 text-xs">
-              <div className="flex justify-between items-baseline">
-                <span className="font-bold text-white uppercase">
-                  {conferindoPedido.cliente?.nome || 'CLIENTE NÃO IDENTIFICADO'}
-                </span>
-                <span className="text-base font-black text-amber-400 font-mono">
-                  {formatBRL(conferindoPedido.valor_total)}
-                </span>
-              </div>
-              <p className="text-neutral-400 text-[11px]">
-                {conferindoPedido.cliente?.endereco || 'PIRACICABA'}
-                {conferindoPedido.cliente?.numero ? `, Nº ${conferindoPedido.cliente.numero}` : ''} -{' '}
-                <strong className="text-neutral-300">{conferindoPedido.cliente?.bairro || 'PIRACICABA'}</strong>
-              </p>
+            {(() => {
+              const cli = resolveCliente(conferindoPedido);
+              return (
+                <div className="bg-neutral-850 p-3.5 rounded-xl border border-neutral-800 space-y-2 text-xs">
+                  <div className="flex justify-between items-baseline">
+                    <span className="font-bold text-white uppercase">
+                      {cli?.nome || (conferindoPedido.tipo === 'delivery' ? 'CLIENTE DELIVERY' : 'CLIENTE BALCÃO')}
+                    </span>
+                    <span className="text-base font-black text-amber-400 font-mono">
+                      {formatBRL(conferindoPedido.valor_total)}
+                    </span>
+                  </div>
+                  <p className="text-neutral-400 text-[11px]">
+                    {cli?.endereco || 'PIRACICABA'}
+                    {cli?.numero ? `, Nº ${cli.numero}` : ''} -{' '}
+                    <strong className="text-neutral-300">{cli?.bairro || 'PIRACICABA'}</strong>
+                  </p>
+                </div>
+              );
+            })()}
               <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                 <span className="text-neutral-400">
                   Forma Combinada no Pedido:{' '}
