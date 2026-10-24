@@ -1919,7 +1919,7 @@ export async function fetchCardapioDiarioSupabase(
 
       const itensMapeados = Array.from(itemMap.values());
 
-      let status: 'aguardando' | 'aberto' = itensMapeados.length > 0 ? 'aberto' : 'aguardando';
+      let status: 'aguardando' | 'aberto' | 'publicado' = itensMapeados.length > 0 ? 'publicado' : 'aguardando';
       let confirmado_em: string | undefined = undefined;
       let confirmado_por: string | undefined = undefined;
 
@@ -1931,7 +1931,8 @@ export async function fetchCardapioDiarioSupabase(
           .maybeSingle();
 
         if (confData?.dados?.cardapio_diario_atual?.data === hoje) {
-          status = confData.dados.cardapio_diario_atual.status || status;
+          const rawStatus = confData.dados.cardapio_diario_atual.status;
+          status = rawStatus === 'aberto' ? 'publicado' : (rawStatus || status);
           confirmado_em = confData.dados.cardapio_diario_atual.confirmado_em;
           confirmado_por = confData.dados.cardapio_diario_atual.confirmado_por;
         }

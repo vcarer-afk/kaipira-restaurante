@@ -1261,6 +1261,11 @@ export default function AdminApp() {
   const handleFecharCaixa = async (valor: number, observacoes?: string) => {
     const fechado = await fecharCaixaSupabase(caixa, valor, observacoes);
     setCaixa(fechado);
+    await handleSaveConfiguracoes({
+      ...configuracoes,
+      delivery_site_ativo: false,
+      delivery_interno_ativo: false,
+    });
   };
 
   // Rotina Administrativa: Zerar financeiro do dia atual (Caixa, Faturamento, Pedidos, Mesas, Delivery)
@@ -1279,6 +1284,11 @@ export default function AdminApp() {
       } catch (fErr) {
         console.warn('Aviso ao sincronizar fechamento de caixa pós-reset:', fErr);
       }
+      await handleSaveConfiguracoes({
+        ...configuracoes,
+        delivery_site_ativo: false,
+        delivery_interno_ativo: false,
+      });
       setPedidos([]);
       setMesas((prev) =>
         prev.map((m) => ({
@@ -1374,8 +1384,17 @@ export default function AdminApp() {
 
   // Cardápio Diário operations via Supabase
   const handleSaveCardapioDiario = async (novo: CardapioDiarioConfig) => {
-    setCardapioDiario(novo);
-    await salvarCardapioDiarioSupabase(novo);
+    const publicado: CardapioDiarioConfig = {
+      ...novo,
+      status: 'publicado',
+    };
+    setCardapioDiario(publicado);
+    await salvarCardapioDiarioSupabase(publicado);
+    await handleSaveConfiguracoes({
+      ...configuracoes,
+      delivery_site_ativo: true,
+      delivery_interno_ativo: true,
+    });
   };
 
   const pendingKdsCount = pedidos.filter((p) => ['pendente', 'em_preparacao'].includes(p.status)).length;
@@ -1582,6 +1601,7 @@ export default function AdminApp() {
             produtos={produtos}
             clientes={clientes}
             caixa={caixa}
+            cardapioDiario={cardapioDiario}
             configuracoes={configuracoes}
             formasPagamento={formasPagamento}
             onOpenOrderForMesa={(num) => {

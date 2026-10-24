@@ -55,7 +55,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     }));
   });
 
-  const [statusAbertura, setStatusAbertura] = useState<'aguardando' | 'aberto'>(
+  const [statusAbertura, setStatusAbertura] = useState<'aguardando' | 'aberto' | 'publicado'>(
     cardapioDiario.status || 'aguardando'
   );
   const [confirmadoEm, setConfirmadoEm] = useState<string | undefined>(
@@ -298,7 +298,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
     const timeIso = new Date().toISOString();
     const configAtualizada: CardapioDiarioConfig = {
       data: dataHojeISO,
-      status: 'aberto',
+      status: 'publicado',
       confirmado_em: timeIso,
       confirmado_por: currentPerfil?.nome || 'ADMINISTRADOR',
       itens: selectedItems,
@@ -306,7 +306,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
 
     try {
       await onSaveCardapio(configAtualizada);
-      setStatusAbertura('aberto');
+      setStatusAbertura('publicado');
       setConfirmadoEm(timeIso);
       setSaveSuccessMessage(
         'CARDÁPIO DO DIA GRAVADO NO SUPABASE COM SUCESSO! OPERAÇÃO LIBERADA.'
@@ -423,7 +423,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
               className="flex-1 sm:flex-none px-6 py-3.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs sm:text-sm font-black uppercase flex items-center justify-center gap-2.5 shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-50"
             >
               <CheckCircle2 className="w-5 h-5 text-white" />
-              <span>{isSaving ? 'Gravando no Supabase...' : 'CONFIRMAR E ABRIR DIA'}</span>
+              <span>{isSaving ? 'Gravando no Supabase...' : 'Confirmar'}</span>
             </button>
           </div>
         </div>

@@ -491,11 +491,12 @@ export default function ClientApp() {
     }
   };
 
-  // Se o carregamento terminou e o cardapioDiario não estiver 'aberto', ou delivery do site pausado pelo kill switch
-  const isAberto = cardapioDiario && cardapioDiario.status === 'aberto';
-  const isDeliverySiteAtivo = configuracoes?.delivery_site_ativo !== false;
+  // Trava Estrita: A vitrine SÓ deve liberar produtos e permitir adicionar ao carrinho se configuracoes.delivery_site_ativo === true E cardapioDiario.status === 'publicado'. Caso contrário, mantenha a tela de "Restaurante Fechado no momento".
+  const isDeliverySiteAtivo = configuracoes?.delivery_site_ativo === true;
+  const isCardapioPublicado = cardapioDiario?.status === 'publicado';
+  const isVitrineLiberada = isDeliverySiteAtivo && isCardapioPublicado;
 
-  if (!loading && (!isAberto || !isDeliverySiteAtivo)) {
+  if (!loading && !isVitrineLiberada) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between selection:bg-amber-500 selection:text-black">
         <header className="bg-neutral-900/90 border-b border-neutral-800 p-4 sticky top-0 z-20 backdrop-blur-md">
@@ -546,20 +547,18 @@ export default function ClientApp() {
               <Clock className="w-10 h-10 stroke-[1.5]" />
             </div>
             <span className="absolute -bottom-1 -right-1 px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-400 text-[10px] font-black uppercase tracking-wider">
-              {!isDeliverySiteAtivo ? 'Pausado' : 'Fechado'}
+              Fechado
             </span>
           </div>
 
           <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mb-2">
-            {!isDeliverySiteAtivo
-              ? 'Entregas do Site Pausadas'
-              : 'Restaurante Fechado no Momento'}
+            Restaurante Fechado no momento
           </h2>
 
           <p className="text-neutral-400 text-sm leading-relaxed mb-6">
             {!isDeliverySiteAtivo
               ? 'No momento não estamos aceitando novos pedidos para entrega pelo site.'
-              : 'Nosso cardápio do dia ainda não foi liberado para delivery ou nosso horário de atendimento foi encerrado.'}
+              : 'O cardápio do dia ainda não foi liberado no painel administrativo ou o horário de atendimento foi encerrado.'}
           </p>
 
           <div className="w-full bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4 text-left space-y-3 mb-6">
@@ -1316,6 +1315,12 @@ export default function ClientApp() {
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-amber-500 selection:text-black pb-28">
       {/* Top Header Mobile-First com Logo Centralizada */}
       <header className="bg-neutral-900/95 border-b border-neutral-800 sticky top-0 z-30 backdrop-blur-md">
+        {/* Banner de Aviso de Horário de Entregas */}
+        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 py-2 px-4 text-center text-xs font-semibold flex items-center justify-center gap-2 shadow-inner">
+          <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>Aviso: As entregas sairão a partir das 10:30hs</span>
+        </div>
+
         <div className="max-w-2xl mx-auto px-4 pt-4 pb-3 flex flex-col items-center text-center relative">
           <div className="absolute right-4 top-4">
             <Link

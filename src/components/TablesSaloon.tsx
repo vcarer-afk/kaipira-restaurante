@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mesa, Pedido, Reserva, FormaPagamento, Cliente, ConfiguracoesSistema, FormaPagamentoConfig, Produto, CaixaDiario } from '../types';
+import { Mesa, Pedido, Reserva, FormaPagamento, Cliente, ConfiguracoesSistema, FormaPagamentoConfig, Produto, CaixaDiario, CardapioDiarioConfig } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
 import { formatBRL, formatDateTime } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
@@ -49,6 +49,7 @@ interface TablesSaloonProps {
   ) => Promise<void> | void;
   onCreateReserva: (reserva: Partial<Reserva>) => void;
   caixa?: CaixaDiario;
+  cardapioDiario?: CardapioDiarioConfig;
   onPrintReceipt: (pedido: Pedido) => void;
   onResetMesas?: () => Promise<void> | void;
 }
@@ -66,6 +67,7 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   produtos = [],
   clientes = [],
   caixa,
+  cardapioDiario,
   configuracoes,
   formasPagamento = INITIAL_FORMAS_PAGAMENTO,
   onOpenOrderForMesa,
@@ -75,11 +77,11 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
   onPrintReceipt,
   onResetMesas,
 }) => {
-  // A Regra de Ouro: Sem Caixa, Sem Venda
-  if (caixa?.status === 'fechado') {
+  // Trava Dupla no PDV e Mesas: O PDV e as Mesas SÓ podem ser operados se caixa.status === 'aberto' E cardapioDiario.status === 'publicado'
+  if (caixa?.status !== 'aberto') {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center bg-neutral-900 border border-neutral-800 rounded-3xl my-6 shadow-2xl">
-        <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-5 shadow-xl">
+        <div className="w-20 h-20 rounded-3xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 mb-5 shadow-xl">
           <Lock className="w-10 h-10" />
         </div>
         <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mb-2">
@@ -87,6 +89,22 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
         </h2>
         <p className="text-sm text-neutral-400 max-w-md leading-relaxed mb-6">
           Você precisa abrir o caixa do dia no Painel Administrativo para liberar o PDV e as Mesas.
+        </p>
+      </div>
+    );
+  }
+
+  if (cardapioDiario?.status !== 'publicado') {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center bg-neutral-900 border border-yellow-500/30 rounded-3xl my-6 shadow-2xl">
+        <div className="w-20 h-20 rounded-3xl bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center text-yellow-400 mb-5 shadow-xl">
+          <AlertCircle className="w-10 h-10" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-yellow-400 mb-2">
+          ⚠️ CARDÁPIO NÃO CONFIRMADO
+        </h2>
+        <p className="text-sm text-neutral-300 max-w-md leading-relaxed mb-6">
+          Confirme o cardápio do dia no painel administrativo para liberar o PDV e a Vitrine.
         </p>
       </div>
     );

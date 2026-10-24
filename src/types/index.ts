@@ -89,7 +89,7 @@ export interface ItemCardapioDiario {
 
 export interface CardapioDiarioConfig {
   data: string; // YYYY-MM-DD
-  status: 'aguardando' | 'aberto';
+  status: 'aguardando' | 'aberto' | 'publicado';
   confirmado_em?: string;
   confirmado_por?: string;
   itens: ItemCardapioDiario[];
