@@ -172,19 +172,62 @@ export default function ClientApp() {
     }
   }, []);
 
+  // Acompanhamento em tempo real do pedido concluído via Supabase Realtime
+  useEffect(() => {
+    if (!pedidoConcluido?.id) return;
+
+    const trackingChannel = supabase
+      .channel(`pedido_tracking_${pedidoConcluido.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pedidos',
+          filter: `id=eq.${pedidoConcluido.id}`,
+        },
+        (payload: any) => {
+          if (payload.new) {
+            setPedidoConcluido((prev) => (prev ? { ...prev, ...payload.new } : payload.new));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      trackingChannel.unsubscribe();
+    };
+  }, [pedidoConcluido?.id]);
+
+  const handleRefreshPedidoStatus = async () => {
+    if (!pedidoConcluido?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from('pedidos')
+        .select('*')
+        .eq('id', pedidoConcluido.id)
+        .single();
+      if (!error && data) {
+        setPedidoConcluido((prev) => (prev ? { ...prev, ...data } : data));
+      }
+    } catch (err) {
+      console.warn('Erro ao atualizar status do pedido:', err);
+    }
+  };
+
   // Carregamento inicial de dados e sincronização em tempo real (Supabase Realtime)
   useEffect(() => {
     loadData();
 
-    // Sincronização Realtime via canais do Supabase
+    // Sincronização Realtime via canal unificado do Supabase
     const channel = supabase
-      .channel('client_app_realtime_sync')
+      .channel('restaurante_kaipira_cloud_sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'configuracoes' },
         async (payload: any) => {
           if (payload.new) {
-            const loaded = payload.new.dados || payload.new;
+            const loaded = payload.new.dados ? { ...payload.new.dados, ...payload.new } : payload.new;
             setConfiguracoes((prev) => ({ ...prev, ...loaded }));
           } else {
             const conf = await fetchConfiguracoesFromSupabase();
@@ -225,6 +268,11 @@ export default function ClientApp() {
           setConfiguracoes((prev) => ({ ...prev, ...payload.payload }));
         }
       })
+      .on('broadcast', { event: 'kill_switch_toggled' }, (payload: any) => {
+        if (payload?.payload) {
+          setConfiguracoes((prev) => ({ ...prev, ...payload.payload }));
+        }
+      })
       .subscribe();
 
     return () => {
@@ -239,21 +287,41 @@ export default function ClientApp() {
 
   const statusCardapioStr = (cardapioEfetivo?.status || '').toLowerCase();
 
-  // Regra Estrita de Filtro de Produtos para Delivery do Cliente:
-  // O produto SÓ deve aparecer na vitrine se estiver explicitamente presente em cardapioEfetivo.itens com disponivel_delivery === true
+  // Regra de Filtro de Produtos para Vitrine / Delivery do Cliente:
+  // 1. Exibe os pratos presentes no cardápio diário selecionado (com disponivel_delivery === true)
+  // 2. Libera também todas as bebidas cadastradas e ativas (não pausadas) para venda no site
   const produtosDisponiveis = useMemo(() => {
-    if (!cardapioEfetivo?.itens || cardapioEfetivo.itens.length === 0) {
-      return [];
-    }
-
     return produtos.filter((p) => {
+      // Se produto está pausado/esgotado no cadastro, nunca aparece
       if (p.pausado) return false;
+
+      // Identifica se o produto é da categoria Bebidas
+      const cat = categorias.find((c) => Number(c.id) === Number(p.categoria_id));
+      const catNome = (cat?.nome || '').toLowerCase();
+      const isBebida =
+        Number(p.categoria_id) === 4 ||
+        catNome.includes('bebida') ||
+        catNome.includes('refrigerante') ||
+        catNome.includes('suco') ||
+        catNome.includes('cerveja') ||
+        catNome.includes('água') ||
+        catNome.includes('agua');
+
+      // Se for bebida disponível, está sempre liberada para venda no site
+      if (isBebida) {
+        return true;
+      }
+
+      // Para pratos e itens do cardápio do dia, valida se o cardápio está ativo e o item liberado
+      if (!cardapioEfetivo?.itens || cardapioEfetivo.itens.length === 0) {
+        return false;
+      }
 
       return cardapioEfetivo.itens.some(
         (it) => Number(it.produto_id) === Number(p.id) && it.disponivel_delivery === true
       );
     });
-  }, [produtos, cardapioEfetivo]);
+  }, [produtos, categorias, cardapioEfetivo]);
 
   // Produtos filtrados por categoria selecionada e texto de busca
   const produtosFiltrados = useMemo(() => {
@@ -796,8 +864,148 @@ export default function ClientApp() {
               </div>
             </div>
 
+            {/* ============================================================= */}
+            {/* NOVO: Acompanhamento em Tempo Real na Vitrine do Cliente      */}
+            {/* ============================================================= */}
+            {(() => {
+              const statusPedido = (pedidoConcluido.status || 'pendente').toLowerCase();
+              let currentStep = 1;
+              if (statusPedido === 'entregue') {
+                currentStep = 4;
+              } else if (statusPedido === 'a_caminho' || statusPedido === 'pronto') {
+                currentStep = 3;
+              } else if (statusPedido === 'em_preparacao') {
+                currentStep = 2;
+              } else {
+                currentStep = 1;
+              }
+
+              const etapasTracking = [
+                { id: 1, label: 'Pedido Confirmado', desc: 'Pedido recebido com sucesso na cozinha' },
+                { id: 2, label: 'Preparando', desc: 'No fogão a lenha sendo preparado com carinho' },
+                { id: 3, label: 'A Caminho', desc: 'Saiu para entrega com o nosso motoboy' },
+                { id: 4, label: 'Entregue', desc: 'Pedido entregue com sucesso no seu endereço' },
+              ];
+
+              return (
+                <div className="bg-neutral-950 border border-amber-500/50 rounded-2xl p-4 mb-5 text-left shadow-xl relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-3 border-b border-neutral-800 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                      </span>
+                      <h3 className="text-xs font-black uppercase text-amber-400 tracking-wider">
+                        Acompanhe sua entrega
+                      </h3>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      <span>Tempo Real</span>
+                    </span>
+                  </div>
+
+                  {/* Fluxo Sequencial Exato: Pedido Confirmado ➔ Preparando ➔ A Caminho ➔ Entregue */}
+                  <div className="bg-neutral-900/80 rounded-xl p-2.5 border border-neutral-800 mb-3">
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-tight text-neutral-400">
+                      <span className={currentStep >= 1 ? 'text-amber-400 font-bold' : 'text-neutral-500'}>
+                        Pedido Confirmado
+                      </span>
+                      <span className="text-neutral-600 font-bold text-xs">➔</span>
+                      <span className={currentStep >= 2 ? 'text-amber-400 font-bold' : 'text-neutral-500'}>
+                        Preparando
+                      </span>
+                      <span className="text-neutral-600 font-bold text-xs">➔</span>
+                      <span className={currentStep >= 3 ? 'text-amber-400 font-bold' : 'text-neutral-500'}>
+                        A Caminho
+                      </span>
+                      <span className="text-neutral-600 font-bold text-xs">➔</span>
+                      <span className={currentStep >= 4 ? 'text-emerald-400 font-bold' : 'text-neutral-500'}>
+                        Entregue
+                      </span>
+                    </div>
+
+                    {/* Barra de Progresso Sequencial */}
+                    <div className="relative flex items-center justify-between mt-3 px-1">
+                      <div className="absolute left-4 right-4 top-1/2 -translate-y-1/2 h-1 bg-neutral-800 z-0">
+                        <div
+                          className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-500"
+                          style={{
+                            width:
+                              currentStep === 1
+                                ? '0%'
+                                : currentStep === 2
+                                ? '33%'
+                                : currentStep === 3
+                                ? '66%'
+                                : '100%',
+                          }}
+                        />
+                      </div>
+
+                      {etapasTracking.map((etp) => {
+                        const isDone = currentStep > etp.id;
+                        const isCurrent = currentStep === etp.id;
+                        return (
+                          <div key={etp.id} className="relative z-10 flex flex-col items-center">
+                            <div
+                              className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black transition-all ${
+                                isDone
+                                  ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/20'
+                                  : isCurrent
+                                  ? 'bg-amber-500 text-black ring-4 ring-amber-500/30 animate-pulse font-extrabold'
+                                  : 'bg-neutral-800 text-neutral-500 border border-neutral-700'
+                              }`}
+                            >
+                              {isDone ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : etp.id}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Card do Status Atual */}
+                  <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 text-xs mb-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-extrabold uppercase text-white flex items-center gap-1.5">
+                        {currentStep === 1 && <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />}
+                        {currentStep === 2 && <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />}
+                        {currentStep === 3 && <Bike className="w-3.5 h-3.5 text-cyan-400 animate-bounce" />}
+                        {currentStep === 4 && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                        <span>Status: {etapasTracking[currentStep - 1].label}</span>
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 font-bold">
+                        {pedidoConcluido.status?.toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="text-neutral-400 text-[11px] leading-relaxed">
+                      {etapasTracking[currentStep - 1].desc}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleRefreshPedidoStatus}
+                    className="w-full py-2 bg-neutral-900 hover:bg-neutral-850 text-neutral-400 hover:text-white rounded-lg text-[10px] font-bold uppercase border border-neutral-800 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3 text-amber-500" />
+                    <span>Atualizar Status</span>
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* Botões de Ação */}
             <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={handleRefreshPedidoStatus}
+                className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black uppercase rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20 cursor-pointer"
+              >
+                <Bike className="w-4 h-4" />
+                <span>Acompanhe sua entrega</span>
+              </button>
               {whatsAppNumero && (
                 <a
                   href={`https://wa.me/55${whatsAppNumero}?text=${msgWhats}`}

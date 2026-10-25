@@ -176,6 +176,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Payment totals for 3D Pie Chart (real positive values only from confirmed orders)
   const paymentSlices = useMemo(() => {
+    if (!Array.isArray(pedidosConfirmados) || pedidosConfirmados.length === 0) {
+      return [];
+    }
+
     const CANONICAL_CONFIG: Record<
       string,
       { label: string; color: string; darkColor: string }
@@ -193,9 +197,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const totals: Record<string, number> = {};
 
     pedidosConfirmados.forEach((p) => {
-      if (p.pagamentos && p.pagamentos.length > 0) {
+      if (!p) return;
+      if (Array.isArray(p.pagamentos) && p.pagamentos.length > 0) {
         p.pagamentos.forEach((pg) => {
-          if (pg.valor && pg.valor > 0) {
+          if (pg && typeof pg.valor === 'number' && !isNaN(pg.valor) && pg.valor > 0) {
             const raw = (pg.forma || 'outro').toLowerCase();
             let key = 'outro';
             if (raw.includes('pix')) key = 'pix';
@@ -209,13 +214,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             totals[key] = (totals[key] || 0) + pg.valor;
           }
         });
+      } else if (p.forma_pagamento && typeof p.valor_total === 'number' && !isNaN(p.valor_total) && p.valor_total > 0) {
+        const raw = (p.forma_pagamento || 'outro').toLowerCase();
+        let key = 'outro';
+        if (raw.includes('pix')) key = 'pix';
+        else if (raw.includes('dinheiro')) key = 'dinheiro';
+        else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
+        else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
+        else if (raw.includes('vale') || raw.includes('refeicao') || raw.includes('refeição') || raw.includes('vr')) key = 'vale_refeicao';
+        else if (raw.includes('mensal')) key = 'mensalista';
+        else key = raw;
+
+        totals[key] = (totals[key] || 0) + p.valor_total;
       }
     });
 
-    const totalGeral = Object.values(totals).reduce((sum, v) => sum + v, 0);
+    const totalGeral = Object.values(totals).reduce((sum, v) => sum + (typeof v === 'number' && !isNaN(v) ? v : 0), 0);
 
     return Object.entries(totals)
-      .filter(([_, val]) => val > 0)
+      .filter(([_, val]) => typeof val === 'number' && !isNaN(val) && val > 0)
       .map(([key, val]) => {
         const cfg = CANONICAL_CONFIG[key] || {
           label: key.toUpperCase(),
@@ -282,22 +299,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const totalDevedorMensalistas = mensalistas.reduce((acc, c) => acc + (c.saldo_devedor || 0), 0);
 
   // Cash in drawer (fundo + suprimentos - sangrias + dinheiro em espécie dos pedidos faturados)
-  let dinheiroGaveta = caixa.valor_abertura || 0;
-  (caixa.movimentacoes || []).forEach((m) => {
-    if (m.tipo === 'suprimento') dinheiroGaveta += m.valor;
-    if (m.tipo === 'sangria') dinheiroGaveta -= m.valor;
-  });
+  let dinheiroGaveta = caixa?.valor_abertura || 0;
+  if (Array.isArray(caixa?.movimentacoes)) {
+    caixa.movimentacoes.forEach((m) => {
+      if (m && typeof m.valor === 'number') {
+        if (m.tipo === 'suprimento') dinheiroGaveta += m.valor;
+        if (m.tipo === 'sangria') dinheiroGaveta -= m.valor;
+      }
+    });
+  }
 
-  pedidosConfirmados.forEach((p) => {
-    if (p.pagamentos) {
-      p.pagamentos.forEach((pg) => {
-        const raw = (pg.forma || '').toLowerCase();
-        if (raw.includes('dinheiro')) {
-          dinheiroGaveta += pg.valor;
-        }
-      });
-    }
-  });
+  if (Array.isArray(pedidosConfirmados)) {
+    pedidosConfirmados.forEach((p) => {
+      if (p && Array.isArray(p.pagamentos)) {
+        p.pagamentos.forEach((pg) => {
+          if (pg && typeof pg.valor === 'number') {
+            const raw = (pg.forma || '').toLowerCase();
+            if (raw.includes('dinheiro')) {
+              dinheiroGaveta += pg.valor;
+            }
+          }
+        });
+      }
+    });
+  }
 
   // Semáforo da Operação (Status em Tempo Real)
   const isCaixaAberto = (caixa?.status || '').toLowerCase() === 'aberto';

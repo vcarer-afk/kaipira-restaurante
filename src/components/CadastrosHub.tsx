@@ -42,6 +42,7 @@ import {
   Check,
   FileCode,
   Utensils,
+  UtensilsCrossed,
   ShoppingBag,
   Phone,
   Mail,
@@ -996,7 +997,22 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   };
 
   // Helper visual category icon for products
-  const renderProductCategoryVisual = (catId: number) => {
+  const renderProductCategoryVisual = (catId: number, urlImagem?: string, prodNome?: string) => {
+    if (urlImagem && urlImagem.trim().length > 0) {
+      return (
+        <div className="w-10 h-10 rounded-xl overflow-hidden border border-neutral-700 bg-neutral-900 shrink-0 shadow-xs">
+          <img
+            src={urlImagem}
+            alt={prodNome || 'Produto'}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.currentTarget as HTMLElement).style.display = 'none';
+            }}
+          />
+        </div>
+      );
+    }
+
     switch (catId) {
       case 2:
         return (
@@ -1025,7 +1041,7 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
       default:
         return (
           <div className="w-10 h-10 rounded-xl bg-amber-950/80 border border-amber-800 text-amber-400 flex items-center justify-center shrink-0">
-            <Utensils className="w-5 h-5" />
+            <UtensilsCrossed className="w-5 h-5" />
           </div>
         );
     }
@@ -1998,7 +2014,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                     >
                       <div>
                         <div className="flex items-start gap-3 mb-2">
-                          {renderProductCategoryVisual(p.categoria_id)}
+                          {renderProductCategoryVisual(p.categoria_id, p.url_imagem, p.nome)}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-800 text-neutral-300 border border-neutral-700">
@@ -2091,7 +2107,27 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                       const cat = categorias.find((c) => c.id === p.categoria_id);
                       return (
                         <tr key={p.id} className="hover:bg-neutral-850/50">
-                          <td className="px-4 py-3 font-bold text-neutral-100 uppercase">{p.nome}</td>
+                          <td className="px-4 py-3 font-bold text-neutral-100 uppercase">
+                            <div className="flex items-center gap-2.5">
+                              {p.url_imagem && p.url_imagem.trim().length > 0 ? (
+                                <div className="w-8 h-8 rounded-lg overflow-hidden border border-neutral-700 bg-neutral-900 shrink-0 shadow-2xs">
+                                  <img
+                                    src={p.url_imagem}
+                                    alt={p.nome}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      (e.currentTarget as HTMLElement).style.display = 'none';
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="w-8 h-8 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-400 flex items-center justify-center shrink-0">
+                                  <UtensilsCrossed className="w-4 h-4 text-amber-500/80" />
+                                </div>
+                              )}
+                              <span>{p.nome}</span>
+                            </div>
+                          </td>
                           <td className="px-4 py-3 uppercase text-neutral-400">{cat?.nome || '-'}</td>
                           <td className="px-4 py-3 font-mono text-amber-400 font-bold">
                             {formatBRL(p.preco_salao)}

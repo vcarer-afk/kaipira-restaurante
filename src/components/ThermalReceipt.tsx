@@ -19,42 +19,61 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
     pedido.cliente ||
     (clientes && pedido.cliente_id ? clientes.find((c) => String(c.id) === String(pedido.cliente_id)) : undefined);
 
-  const clienteNome =
-    clienteResolved?.nome ||
+  const clienteData =
+    clienteResolved ||
+    pedAny.cliente ||
+    pedAny.dados_cliente ||
+    pedAny.cliente_dados ||
+    {};
+
+  const rawNome = (
+    clienteData.nome ||
     pedAny.cliente_nome ||
     pedAny.nome ||
-    (pedido.tipo === 'delivery' ? 'CLIENTE DELIVERY' : 'CONSUMIDOR BALCÃO');
+    ''
+  ).trim();
+
+  const isGenericOrUnidentified =
+    !rawNome ||
+    rawNome.toUpperCase().includes('NÃO IDENTIFICADO') ||
+    rawNome.toUpperCase().includes('NAO IDENTIFICADO');
+
+  const clienteNome = !isGenericOrUnidentified
+    ? rawNome
+    : pedido.tipo === 'delivery'
+    ? 'CLIENTE DELIVERY'
+    : 'CONSUMIDOR BALCÃO';
 
   const clienteTelefone =
-    clienteResolved?.telefone ||
+    clienteData.telefone ||
     pedAny.telefone ||
     pedAny.cliente_telefone ||
     '';
 
   const clienteEndereco =
-    clienteResolved?.endereco ||
+    clienteData.endereco ||
     pedAny.endereco ||
     pedAny.rua ||
     pedAny.logradouro ||
     '';
 
   const clienteNumero =
-    clienteResolved?.numero ||
+    clienteData.numero ||
     pedAny.numero ||
     'S/N';
 
   const clienteComplemento =
-    clienteResolved?.complemento ||
+    clienteData.complemento ||
     pedAny.complemento ||
     '';
 
   const clienteBairro =
-    clienteResolved?.bairro ||
+    clienteData.bairro ||
     pedAny.bairro ||
     'PIRACICABA';
 
   const clienteCep =
-    clienteResolved?.cep ||
+    clienteData.cep ||
     pedAny.cep ||
     '';
 

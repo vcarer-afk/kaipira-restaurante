@@ -23,28 +23,42 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
   const [viewMode, setViewMode] = useState<'blocos' | 'lista'>('blocos');
 
   // Helper para resolver dados completos do cliente
-  const resolveCliente = (p: Pedido): Cliente | undefined => {
-    if (p.cliente && p.cliente.nome) return p.cliente;
-    if (p.cliente_id && clientes && clientes.length > 0) {
-      const found = clientes.find((c) => String(c.id) === String(p.cliente_id));
-      if (found) return found;
-    }
+  const resolveCliente = (p: Pedido): Cliente => {
     const pedAny = p as any;
-    if (pedAny.cliente_nome || pedAny.nome) {
-      return {
-        id: p.cliente_id || '1',
-        nome: pedAny.cliente_nome || pedAny.nome,
-        telefone: pedAny.telefone || '',
-        endereco: pedAny.endereco || '',
-        numero: pedAny.numero || '',
-        bairro: pedAny.bairro || 'PIRACICABA',
-        cep: pedAny.cep || '',
-        eh_mensalista: false,
-        saldo_devedor: 0,
-        criado_em: p.criado_em,
-      } as Cliente;
-    }
-    return p.cliente;
+    const clienteResolved =
+      p.cliente ||
+      (clientes && p.cliente_id ? clientes.find((c) => String(c.id) === String(p.cliente_id)) : undefined);
+
+    const clienteData =
+      clienteResolved ||
+      pedAny.cliente ||
+      pedAny.dados_cliente ||
+      pedAny.cliente_dados ||
+      {};
+
+    const rawNome = (clienteData.nome || pedAny.cliente_nome || pedAny.nome || '').trim();
+    const isGenericOrUnidentified =
+      !rawNome ||
+      rawNome.toUpperCase().includes('NÃO IDENTIFICADO') ||
+      rawNome.toUpperCase().includes('NAO IDENTIFICADO');
+
+    return {
+      id: p.cliente_id || '1',
+      nome: !isGenericOrUnidentified
+        ? rawNome
+        : p.tipo === 'delivery'
+        ? 'CLIENTE DELIVERY'
+        : 'CONSUMIDOR BALCÃO',
+      telefone: clienteData.telefone || pedAny.telefone || pedAny.cliente_telefone || '',
+      endereco: clienteData.endereco || pedAny.endereco || pedAny.rua || pedAny.logradouro || '',
+      numero: clienteData.numero || pedAny.numero || 'S/N',
+      bairro: clienteData.bairro || pedAny.bairro || 'PIRACICABA',
+      complemento: clienteData.complemento || pedAny.complemento || '',
+      cep: clienteData.cep || pedAny.cep || '',
+      eh_mensalista: false,
+      saldo_devedor: 0,
+      criado_em: p.criado_em,
+    } as Cliente;
   };
 
   // Filtra entregadores cadastrados e ativos no sistema
