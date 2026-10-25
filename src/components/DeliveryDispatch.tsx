@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pedido, Produto, UsuarioSistema } from '../types';
+import { Pedido, Produto, UsuarioSistema, Cliente } from '../types';
 import { formatBRL, formatTime } from '../utils/formatters';
 import { Bike, Navigation, CheckCircle2, Clock, Printer, MapPin, Phone, AlertCircle, ShoppingBag, LayoutGrid, List, Send, Check } from 'lucide-react';
 
@@ -7,6 +7,7 @@ interface DeliveryDispatchProps {
   pedidos: Pedido[];
   produtos?: Produto[];
   usuarios?: UsuarioSistema[];
+  clientes?: Cliente[];
   onUpdateStatus: (id: number, status: 'a_caminho' | 'entregue', entregador?: string) => void;
   onPrintReceipt: (pedido: Pedido) => void;
 }
@@ -15,10 +16,36 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
   pedidos,
   produtos = [],
   usuarios = [],
+  clientes = [],
   onUpdateStatus,
   onPrintReceipt,
 }) => {
   const [viewMode, setViewMode] = useState<'blocos' | 'lista'>('blocos');
+
+  // Helper para resolver dados completos do cliente
+  const resolveCliente = (p: Pedido): Cliente | undefined => {
+    if (p.cliente && p.cliente.nome) return p.cliente;
+    if (p.cliente_id && clientes && clientes.length > 0) {
+      const found = clientes.find((c) => String(c.id) === String(p.cliente_id));
+      if (found) return found;
+    }
+    const pedAny = p as any;
+    if (pedAny.cliente_nome || pedAny.nome) {
+      return {
+        id: p.cliente_id || '1',
+        nome: pedAny.cliente_nome || pedAny.nome,
+        telefone: pedAny.telefone || '',
+        endereco: pedAny.endereco || '',
+        numero: pedAny.numero || '',
+        bairro: pedAny.bairro || 'PIRACICABA',
+        cep: pedAny.cep || '',
+        eh_mensalista: false,
+        saldo_devedor: 0,
+        criado_em: p.criado_em,
+      } as Cliente;
+    }
+    return p.cliente;
+  };
 
   // Filtra entregadores cadastrados e ativos no sistema
   const entregadoresCadastrados = (usuarios || []).filter(
