@@ -220,6 +220,11 @@ export default function ClientApp() {
           if (prs) setProdutos(prs);
         }
       )
+      .on('broadcast', { event: 'configuracoes_alteradas' }, (payload: any) => {
+        if (payload?.payload) {
+          setConfiguracoes((prev) => ({ ...prev, ...payload.payload }));
+        }
+      })
       .subscribe();
 
     return () => {

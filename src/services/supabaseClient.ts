@@ -124,6 +124,7 @@ export async function fetchConfiguracoesFromSupabase(
           : dadosObj.delivery_interno_ativo !== undefined
           ? dadosObj.delivery_interno_ativo
           : true,
+      cardapio_diario_cache: dadosObj.cardapio_diario_cache || (dadosObj as any)?.cardapio_diario_atual,
     };
   } catch (err) {
     console.warn('Falha na requisição Supabase configuracoes:', err);
@@ -188,6 +189,15 @@ export async function saveConfiguracoesToSupabase(
       throw finalErr;
     }
   }
+
+  try {
+    const syncChannel = supabase.channel('restaurante_kaipira_cloud_sync');
+    syncChannel.send({
+      type: 'broadcast',
+      event: 'configuracoes_alteradas',
+      payload: novas,
+    });
+  } catch {}
 
   return {
     ...novas,

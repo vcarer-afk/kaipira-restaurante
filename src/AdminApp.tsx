@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Produto,
   Categoria,
@@ -1427,6 +1427,25 @@ export default function AdminApp() {
     return <LoginScreen />;
   }
 
+  // Cardápio efetivo estável: se o cardápio diário ou o cache em configurações estiver publicado para a data corrente (data_caixa ou hoje), mantém ativo
+  const cardapioEfetivo: CardapioDiarioConfig = useMemo(() => {
+    const hoje = caixa?.data_caixa || new Date().toLocaleDateString('en-CA');
+    const hojeIso = new Date().toISOString().split('T')[0];
+
+    const isStateAtivo = ['publicado', 'aberto', 'confirmado'].includes((cardapioDiario?.status || '').toLowerCase());
+    if (isStateAtivo && (cardapioDiario?.data === hoje || cardapioDiario?.data === hojeIso || !cardapioDiario?.data)) {
+      return cardapioDiario;
+    }
+
+    const cache = configuracoes?.cardapio_diario_cache;
+    const isCacheAtivo = ['publicado', 'aberto', 'confirmado'].includes((cache?.status || '').toLowerCase());
+    if (isCacheAtivo && cache && (cache.data === hoje || cache.data === hojeIso || !cache.data)) {
+      return cache;
+    }
+
+    return cardapioDiario;
+  }, [cardapioDiario, configuracoes?.cardapio_diario_cache, caixa?.data_caixa]);
+
   const currentTheme = THEMES[configuracoes.padraoCor] || THEMES.ambar;
 
   return (
@@ -1465,7 +1484,7 @@ export default function AdminApp() {
             estoque={estoque}
             clientes={clientes}
             configuracoes={configuracoes}
-            cardapioDiario={cardapioDiario}
+            cardapioDiario={cardapioEfetivo}
             onNavigate={(tab) => {
               setActiveTab(tab);
               if (tab !== 'pdv') setSelectedMesaNumber(undefined);
@@ -1528,7 +1547,7 @@ export default function AdminApp() {
           <DailyMenuBuilder
             produtos={produtos}
             categorias={categorias}
-            cardapioDiario={cardapioDiario}
+            cardapioDiario={cardapioEfetivo}
             onSaveCardapio={handleSaveCardapioDiario}
             currentPerfil={currentPerfil}
             onClose={() => setActiveTab('dashboard')}
@@ -1590,7 +1609,7 @@ export default function AdminApp() {
             }}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}
             onTogglePauseProduto={handleTogglePauseProduto}
-            cardapioDiario={cardapioDiario}
+            cardapioDiario={cardapioEfetivo}
             onOpenCardapioBuilder={() => setActiveTab('cardapio-dia')}
           />
         )}
@@ -1624,7 +1643,7 @@ export default function AdminApp() {
             produtos={produtos}
             clientes={clientes}
             caixa={caixa}
-            cardapioDiario={cardapioDiario}
+            cardapioDiario={cardapioEfetivo}
             configuracoes={configuracoes}
             formasPagamento={formasPagamento}
             onOpenOrderForMesa={(num) => {
@@ -1645,6 +1664,7 @@ export default function AdminApp() {
             pedidos={pedidos}
             produtos={produtos}
             usuarios={usuarios}
+            clientes={clientes}
             onUpdateStatus={handleUpdateOrderStatus}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}
           />
@@ -1681,6 +1701,7 @@ export default function AdminApp() {
             currentPerfil={currentPerfil}
             usuarios={usuarios}
             mesas={mesas}
+            clientes={clientes}
             onAbrirCaixa={handleAbrirCaixa}
             onFecharCaixa={handleFecharCaixa}
             onMovimentacao={handleMovimentacaoCaixa}
@@ -1735,6 +1756,7 @@ export default function AdminApp() {
       <ThermalReceipt
         pedido={printReceiptPedido}
         produtos={produtos}
+        clientes={clientes}
         onClose={() => setPrintReceiptPedido(null)}
         configuracoes={configuracoes}
       />

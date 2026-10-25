@@ -94,7 +94,13 @@ export const TablesSaloon: React.FC<TablesSaloonProps> = ({
     );
   }
 
-  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes((cardapioDiario?.status || '').toLowerCase());
+  const cardapioEfetivo =
+    cardapioDiario && ['publicado', 'aberto', 'confirmado'].includes((cardapioDiario?.status || '').toLowerCase())
+      ? cardapioDiario
+      : configuracoes?.cardapio_diario_cache?.status === 'publicado'
+      ? configuracoes.cardapio_diario_cache
+      : cardapioDiario;
+  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes((cardapioEfetivo?.status || '').toLowerCase());
   if (!isCardapioAtivo) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center bg-neutral-900 border border-yellow-500/30 rounded-3xl my-6 shadow-2xl">

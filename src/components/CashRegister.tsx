@@ -2635,23 +2635,22 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                     {cli?.numero ? `, Nº ${cli.numero}` : ''} -{' '}
                     <strong className="text-neutral-300">{cli?.bairro || 'PIRACICABA'}</strong>
                   </p>
+                  <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <span className="text-neutral-400">
+                      Forma Combinada no Pedido:{' '}
+                      <strong className="text-amber-400 font-mono uppercase">
+                        {(conferindoPedido.forma_pagamento || conferindoPedido.pagamentos?.[0]?.forma || 'A DEFINIR').replace('_', ' ')}
+                      </strong>
+                    </span>
+                    {conferindoPedido.precisa_troco && conferindoPedido.troco_para && (
+                      <span className="text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60 font-mono font-bold">
+                        Troco p/ {formatBRL(conferindoPedido.troco_para)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })()}
-              <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                <span className="text-neutral-400">
-                  Forma Combinada no Pedido:{' '}
-                  <strong className="text-amber-400 font-mono uppercase">
-                    {(conferindoPedido.forma_pagamento || conferindoPedido.pagamentos?.[0]?.forma || 'A DEFINIR').replace('_', ' ')}
-                  </strong>
-                </span>
-                {conferindoPedido.precisa_troco && conferindoPedido.troco_para && (
-                  <span className="text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60 font-mono font-bold">
-                    Troco p/ {formatBRL(conferindoPedido.troco_para)}
-                  </span>
-                )}
-              </div>
-            </div>
 
             {/* Seleção / Confirmação da Forma Real Recebida */}
             <div className="space-y-2">

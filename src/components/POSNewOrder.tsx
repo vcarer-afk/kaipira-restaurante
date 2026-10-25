@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Produto,
   Categoria,
@@ -530,8 +530,27 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     }
   };
 
+  // Cardápio efetivo estável: se o cardápio diário ou o cache em configurações estiver publicado para a data corrente (data_caixa ou hoje), mantém ativo
+  const cardapioEfetivo = useMemo(() => {
+    const hoje = caixa?.data_caixa || new Date().toLocaleDateString('en-CA');
+    const hojeIso = new Date().toISOString().split('T')[0];
+
+    const isStateAtivo = ['publicado', 'aberto', 'confirmado'].includes((cardapioDiario?.status || '').toLowerCase());
+    if (isStateAtivo && (cardapioDiario?.data === hoje || cardapioDiario?.data === hojeIso || !cardapioDiario?.data)) {
+      return cardapioDiario;
+    }
+
+    const cache = configuracoes?.cardapio_diario_cache;
+    const isCacheAtivo = ['publicado', 'aberto', 'confirmado'].includes((cache?.status || '').toLowerCase());
+    if (isCacheAtivo && (cache?.data === hoje || cache?.data === hojeIso || !cache?.data)) {
+      return cache;
+    }
+
+    return cardapioDiario;
+  }, [cardapioDiario, configuracoes?.cardapio_diario_cache, caixa?.data_caixa]);
+
   // Se o cardápio diário estiver montado:
-  const hasCardapioMontado = !!cardapioDiario?.itens && cardapioDiario.itens.length > 0;
+  const hasCardapioMontado = !!cardapioEfetivo?.itens && cardapioEfetivo.itens.length > 0;
 
   // Filter products: Bebidas (Cat 4) e Sobremesas (Cat 5) são SEMPRE FIXOS E DISPONÍVEIS
   // Pratos (Categorias 1, 2, 3): SÓ podem ser exibidos se listados em cardapioDiario.itens e autorizados para o canal
@@ -549,7 +568,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
           return false;
         }
 
-        const itemConfig = cardapioDiario!.itens.find((it) => it.produto_id === prod.id);
+        const itemConfig = cardapioEfetivo!.itens.find((it) => it.produto_id === prod.id);
         if (!itemConfig) return false;
 
         // Para pedidos de delivery ou retirada: exibe APENAS produtos com disponivel_delivery === true
@@ -596,7 +615,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     );
   }
 
-  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes((cardapioDiario?.status || '').toLowerCase());
+  const isCardapioAtivo = ['publicado', 'aberto', 'confirmado'].includes((cardapioEfetivo?.status || '').toLowerCase());
   if (!isCardapioAtivo) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center bg-neutral-900 border border-yellow-500/30 rounded-3xl my-6 shadow-2xl">

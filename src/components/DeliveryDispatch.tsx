@@ -202,29 +202,35 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
                     </span>
                   </div>
 
-                  {p.cliente && (
-                    <div className="space-y-1 text-xs">
-                      <div className="font-bold text-neutral-100 uppercase">
-                        {p.cliente.nome}
-                      </div>
-                      <div className="flex items-center gap-1 text-neutral-400">
-                        <Phone className="w-3.5 h-3.5 text-neutral-500" />
-                        <span>{p.cliente.telefone}</span>
-                      </div>
-                      <div className="flex items-start gap-1 text-neutral-300">
-                        <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-                        <div>
-                          <span>
-                            {p.cliente.endereco}, Nº {p.cliente.numero}
-                          </span>
-                          {p.cliente.complemento && <span> ({p.cliente.complemento})</span>}
-                          <div className="text-[11px] text-amber-400 font-bold">
-                            BAIRRO: {p.cliente.bairro} · CEP: {p.cliente.cep}
+                  {(() => {
+                    const cli = resolveCliente(p);
+                    if (!cli) return null;
+                    return (
+                      <div className="space-y-1 text-xs">
+                        <div className="font-bold text-neutral-100 uppercase">
+                          {cli.nome}
+                        </div>
+                        {cli.telefone && (
+                          <div className="flex items-center gap-1 text-neutral-400">
+                            <Phone className="w-3.5 h-3.5 text-neutral-500" />
+                            <span>{cli.telefone}</span>
+                          </div>
+                        )}
+                        <div className="flex items-start gap-1 text-neutral-300">
+                          <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                          <div>
+                            <span>
+                              {cli.endereco}{cli.numero ? `, Nº ${cli.numero}` : ''}
+                            </span>
+                            {cli.complemento && <span> ({cli.complemento})</span>}
+                            <div className="text-[11px] text-amber-400 font-bold">
+                              BAIRRO: {cli.bairro || 'PIRACICABA'} {cli.cep ? `· CEP: ${cli.cep}` : ''}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Lista de Produtos com Descrição Completa */}
                   {p.itens && p.itens.length > 0 && (
@@ -338,19 +344,25 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
                     </span>
                   </div>
 
-                  {p.cliente && (
-                    <div className="space-y-1 text-xs">
-                      <div className="font-bold text-white uppercase">
-                        {p.cliente.nome}
+                  {(() => {
+                    const cli = resolveCliente(p);
+                    if (!cli) return null;
+                    return (
+                      <div className="space-y-1 text-xs">
+                        <div className="font-bold text-white uppercase">
+                          {cli.nome}
+                        </div>
+                        <div className="text-neutral-400">
+                          {cli.endereco}{cli.numero ? `, Nº ${cli.numero}` : ''} {cli.bairro ? `- ${cli.bairro}` : ''}
+                        </div>
+                        {cli.telefone && (
+                          <div className="text-[11px] text-neutral-500">
+                            TEL: {cli.telefone}
+                          </div>
+                        )}
                       </div>
-                      <div className="text-neutral-400">
-                        {p.cliente.endereco}, Nº {p.cliente.numero} - {p.cliente.bairro}
-                      </div>
-                      <div className="text-[11px] text-neutral-500">
-                        TEL: {p.cliente.telefone}
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Lista de Produtos com Descrição Completa e Valores */}
                   <div className="p-2 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1">
@@ -454,29 +466,35 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
                     </span>
                   </div>
 
-                  {p.cliente && (
-                    <div className="space-y-1 text-xs">
-                      <div className="font-bold text-neutral-100 uppercase">
-                        {p.cliente.nome}
-                      </div>
-                      <div className="flex items-center gap-1 text-neutral-400">
-                        <Phone className="w-3.5 h-3.5 text-neutral-500" />
-                        <span>{p.cliente.telefone}</span>
-                      </div>
-                      <div className="flex items-start gap-1 text-neutral-300">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                        <div>
-                          <span>
-                            {p.cliente.endereco}, Nº {p.cliente.numero}
-                          </span>
-                          {p.cliente.complemento && <span> ({p.cliente.complemento})</span>}
-                          <div className="text-[11px] text-emerald-400 font-bold">
-                            BAIRRO: {p.cliente.bairro} · CEP: {p.cliente.cep}
+                  {(() => {
+                    const cli = resolveCliente(p);
+                    if (!cli) return null;
+                    return (
+                      <div className="space-y-1 text-xs">
+                        <div className="font-bold text-neutral-100 uppercase">
+                          {cli.nome}
+                        </div>
+                        {cli.telefone && (
+                          <div className="flex items-center gap-1 text-neutral-400">
+                            <Phone className="w-3.5 h-3.5 text-neutral-500" />
+                            <span>{cli.telefone}</span>
+                          </div>
+                        )}
+                        <div className="flex items-start gap-1 text-neutral-300">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                          <div>
+                            <span>
+                              {cli.endereco}{cli.numero ? `, Nº ${cli.numero}` : ''}
+                            </span>
+                            {cli.complemento && <span> ({cli.complemento})</span>}
+                            <div className="text-[11px] text-emerald-400 font-bold">
+                              BAIRRO: {cli.bairro || 'PIRACICABA'} {cli.cep ? `· CEP: ${cli.cep}` : ''}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   <div className="flex items-center gap-2 text-[11px] bg-neutral-900/80 px-2.5 py-1.5 rounded-lg border border-neutral-800 text-neutral-300">
                     <Bike className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -631,25 +649,29 @@ export const DeliveryDispatch: React.FC<DeliveryDispatchProps> = ({
 
                       {/* 3. Cliente (Nome, Telefone, Endereço e Bairro) */}
                       <td className="px-3.5 py-3 max-w-[260px] whitespace-normal">
-                        {p.cliente ? (
-                          <div className="space-y-0.5">
-                            <div className="font-extrabold text-neutral-100 uppercase text-xs truncate">
-                              {p.cliente.nome}
+                        {(() => {
+                          const cli = resolveCliente(p);
+                          if (!cli) return <span className="text-neutral-500 text-xs">Sem cadastro de cliente</span>;
+                          return (
+                            <div className="space-y-0.5">
+                              <div className="font-extrabold text-neutral-100 uppercase text-xs truncate">
+                                {cli.nome}
+                              </div>
+                              {cli.telefone && (
+                                <div className="text-[11px] text-neutral-400 font-mono">
+                                  {cli.telefone}
+                                </div>
+                              )}
+                              <div className="text-[11px] text-neutral-300 truncate">
+                                {cli.endereco}{cli.numero ? `, Nº ${cli.numero}` : ''}{' '}
+                                {cli.complemento ? `(${cli.complemento})` : ''}
+                              </div>
+                              <div className="text-[10px] text-amber-400 font-bold uppercase">
+                                BAIRRO: {cli.bairro || 'PIRACICABA'}
+                              </div>
                             </div>
-                            <div className="text-[11px] text-neutral-400 font-mono">
-                              {p.cliente.telefone}
-                            </div>
-                            <div className="text-[11px] text-neutral-300 truncate">
-                              {p.cliente.endereco}, Nº {p.cliente.numero}{' '}
-                              {p.cliente.complemento ? `(${p.cliente.complemento})` : ''}
-                            </div>
-                            <div className="text-[10px] text-amber-400 font-bold uppercase">
-                              BAIRRO: {p.cliente.bairro}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-neutral-500 text-xs">Sem cadastro de cliente</span>
-                        )}
+                          );
+                        })()}
                       </td>
 
                       {/* 4. Itens (Quantidade e descrição dos pratos) */}
