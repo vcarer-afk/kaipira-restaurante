@@ -56,7 +56,18 @@ function describeArc(
   startAngle: number,
   endAngle: number
 ): string {
+  if (
+    typeof startAngle !== 'number' ||
+    typeof endAngle !== 'number' ||
+    isNaN(startAngle) ||
+    isNaN(endAngle) ||
+    isNaN(innerRadius) ||
+    isNaN(outerRadius)
+  ) {
+    return '';
+  }
   const span = Math.max(0, endAngle - startAngle);
+  if (span <= 0) return '';
   const effectiveEnd = span >= 359.99 ? startAngle + 359.99 : endAngle;
 
   const startRad = ((startAngle - 90) * Math.PI) / 180;
@@ -104,11 +115,11 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
-  pedidos,
-  mesas,
-  caixa,
-  estoque,
-  clientes,
+  pedidos = [],
+  mesas = [],
+  caixa = { status: 'fechado', valor_abertura: 0, movimentacoes: [] } as any,
+  estoque = [],
+  clientes = [],
   configuracoes,
   cardapioDiario,
   currentRole = 'admin',
@@ -138,133 +149,133 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newStockQty, setNewStockQty] = useState('');
   const [newStockMin, setNewStockMin] = useState('');
 
+  // Validação e normalização de listas seguras
+  const safePedidos = Array.isArray(pedidos) ? pedidos : [];
+  const safeMesas = Array.isArray(mesas) ? mesas : [];
+  const safeEstoque = Array.isArray(estoque) ? estoque : [];
+  const safeClientes = Array.isArray(clientes) ? clientes : [];
+
   // Regra Unificada de Faturamento: Delivery com Conferência vs Balcão/Mesas Imediatos
   const isPedidoFaturado = (p: Pedido): boolean => {
-    if (p.status === 'cancelado') return false;
+    if (!p || p.status === 'cancelado') return false;
     if (p.tipo === 'delivery') {
       return p.conferencia_entrega === 'conferido';
     }
     // Balcão e Mesas: faturado se houver pagamentos registrados ou status entregue
-    return (p.pagamentos && p.pagamentos.some((pg) => pg.valor > 0)) || p.pagamento_confirmado === true;
+    return (
+      (p.pagamentos && Array.isArray(p.pagamentos) && p.pagamentos.some((pg) => pg && Number(pg.valor) > 0)) ||
+      p.pagamento_confirmado === true
+    );
   };
 
-  const activeAndCompletedOrders = pedidos.filter((p) => p.status !== 'cancelado');
+  const activeAndCompletedOrders = safePedidos.filter((p) => p && p.status !== 'cancelado');
   const pedidosConfirmados = activeAndCompletedOrders.filter(isPedidoFaturado);
   const pedidosAFaturar = activeAndCompletedOrders.filter((p) => !isPedidoFaturado(p));
 
-  const totalFaturamento = pedidosConfirmados.reduce((acc, p) => acc + p.valor_total, 0);
-  const totalAFaturar = pedidosAFaturar.reduce((acc, p) => acc + p.valor_total, 0);
+  const totalFaturamento = pedidosConfirmados.reduce((acc, p) => acc + (Number(p.valor_total) || 0), 0);
+  const totalAFaturar = pedidosAFaturar.reduce((acc, p) => acc + (Number(p.valor_total) || 0), 0);
 
   const ticketMedio = pedidosConfirmados.length > 0
     ? totalFaturamento / pedidosConfirmados.length
     : 0;
 
   // Breakdown by channel - somente faturados/confirmados
-  const deliveryOrders = pedidosConfirmados.filter((p) => p.tipo === 'delivery');
-  const salaoOrders = pedidosConfirmados.filter((p) => p.tipo === 'salão');
-  const retiradaOrders = pedidosConfirmados.filter((p) => p.tipo === 'retirada');
+  const deliveryOrders = pedidosConfirmados.filter((p) => p && p.tipo === 'delivery');
+  const salaoOrders = pedidosConfirmados.filter((p) => p && p.tipo === 'salão');
+  const retiradaOrders = pedidosConfirmados.filter((p) => p && p.tipo === 'retirada');
 
-  const faturamentoDelivery = deliveryOrders.reduce((acc, p) => acc + p.valor_total, 0);
-  const faturamentoSalao = salaoOrders.reduce((acc, p) => acc + p.valor_total, 0);
-  const faturamentoRetirada = retiradaOrders.reduce((acc, p) => acc + p.valor_total, 0);
-  const totalTaxasEntrega = deliveryOrders.reduce((acc, p) => acc + p.taxa_entrega, 0);
+  const faturamentoDelivery = deliveryOrders.reduce((acc, p) => acc + (Number(p.valor_total) || 0), 0);
+  const faturamentoSalao = salaoOrders.reduce((acc, p) => acc + (Number(p.valor_total) || 0), 0);
+  const faturamentoRetirada = retiradaOrders.reduce((acc, p) => acc + (Number(p.valor_total) || 0), 0);
+  const totalTaxasEntrega = deliveryOrders.reduce((acc, p) => acc + (Number(p.taxa_entrega) || 0), 0);
 
   // Pedidos a faturar por canal
-  const deliveryAFaturar = pedidosAFaturar.filter((p) => p.tipo === 'delivery');
-  const salaoAFaturar = pedidosAFaturar.filter((p) => p.tipo === 'salão');
-  const retiradaAFaturar = pedidosAFaturar.filter((p) => p.tipo === 'retirada');
+  const deliveryAFaturar = pedidosAFaturar.filter((p) => p && p.tipo === 'delivery');
+  const salaoAFaturar = pedidosAFaturar.filter((p) => p && p.tipo === 'salão');
+  const retiradaAFaturar = pedidosAFaturar.filter((p) => p && p.tipo === 'retirada');
 
-  // Payment totals for 3D Pie Chart (real positive values only from confirmed orders)
+  // Payment totals for 3D Pie Chart com blindagem contra valores indefinidos ou nulos
   const paymentSlices = useMemo(() => {
-    if (!Array.isArray(pedidosConfirmados) || pedidosConfirmados.length === 0) {
+    try {
+      if (!pedidosConfirmados || !Array.isArray(pedidosConfirmados)) return [];
+      
+      const CANONICAL_CONFIG: Record<string, { label: string; color: string; darkColor: string }> = {
+        pix: { label: 'PIX', color: '#06b6d4', darkColor: '#0e7490' },
+        dinheiro: { label: 'DINHEIRO', color: '#10b981', darkColor: '#047857' },
+        cartao_credito: { label: 'CRÉDITO', color: '#f59e0b', darkColor: '#b45309' },
+        cartao_debito: { label: 'DÉBITO', color: '#3b82f6', darkColor: '#1d4ed8' },
+        vale_refeicao: { label: 'VALE REFEIÇÃO', color: '#8b5cf6', darkColor: '#6d28d9' },
+        mensalista: { label: 'MENSALISTA', color: '#ec4899', darkColor: '#be185d' },
+        outro: { label: 'OUTROS', color: '#64748b', darkColor: '#334155' },
+      };
+
+      const totals: Record<string, number> = {};
+      pedidosConfirmados.forEach((p) => {
+        if (!p) return;
+        if (p && p.pagamentos && Array.isArray(p.pagamentos) && p.pagamentos.length > 0) {
+          p.pagamentos.forEach((pg) => {
+            if (pg && pg.valor && Number(pg.valor) > 0) {
+              const raw = (pg.forma || 'outro').toLowerCase();
+              let key = 'outro';
+              if (raw.includes('pix')) key = 'pix';
+              else if (raw.includes('dinheiro')) key = 'dinheiro';
+              else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
+              else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
+              else if (raw.includes('vale') || raw.includes('refeicao')) key = 'vale_refeicao';
+              else if (raw.includes('mensal')) key = 'mensalista';
+              else key = raw;
+              totals[key] = (totals[key] || 0) + Number(pg.valor);
+            }
+          });
+        } else if (p && p.forma_pagamento && Number(p.valor_total) > 0) {
+          const raw = (p.forma_pagamento || 'outro').toLowerCase();
+          let key = 'outro';
+          if (raw.includes('pix')) key = 'pix';
+          else if (raw.includes('dinheiro')) key = 'dinheiro';
+          else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
+          else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
+          else if (raw.includes('vale') || raw.includes('refeicao')) key = 'vale_refeicao';
+          else if (raw.includes('mensal')) key = 'mensalista';
+          else key = raw;
+          totals[key] = (totals[key] || 0) + Number(p.valor_total);
+        }
+      });
+
+      const totalGeral = Object.values(totals).reduce((sum, v) => sum + v, 0);
+      return Object.entries(totals)
+        .filter(([_, val]) => val > 0)
+        .map(([key, val]) => {
+          const cfg = CANONICAL_CONFIG[key] || { label: key.toUpperCase(), color: '#64748b', darkColor: '#334155' };
+          return {
+            id: key,
+            label: cfg.label,
+            valor: val,
+            percent: totalGeral > 0 ? (val / totalGeral) * 100 : 0,
+            color: cfg.color,
+            darkColor: cfg.darkColor,
+          };
+        })
+        .sort((a, b) => b.valor - a.valor);
+    } catch (err) {
+      console.warn("Erro recuperado em paymentSlices:", err);
       return [];
     }
-
-    const CANONICAL_CONFIG: Record<
-      string,
-      { label: string; color: string; darkColor: string }
-    > = {
-      pix: { label: 'PIX', color: '#06b6d4', darkColor: '#0e7490' },
-      dinheiro: { label: 'DINHEIRO (ESPÉCIE)', color: '#10b981', darkColor: '#047857' },
-      cartao_credito: { label: 'CARTÃO DE CRÉDITO', color: '#f59e0b', darkColor: '#b45309' },
-      cartao_debito: { label: 'CARTÃO DE DÉBITO', color: '#3b82f6', darkColor: '#1d4ed8' },
-      vale_refeicao: { label: 'VALE REFEIÇÃO / VR', color: '#8b5cf6', darkColor: '#6d28d9' },
-      mensalista: { label: 'CONTA MENSALISTA', color: '#ec4899', darkColor: '#be185d' },
-      multiplo: { label: 'MÚLTIPLOS', color: '#a855f7', darkColor: '#7e22ce' },
-      outro: { label: 'OUTROS', color: '#64748b', darkColor: '#334155' },
-    };
-
-    const totals: Record<string, number> = {};
-
-    pedidosConfirmados.forEach((p) => {
-      if (!p) return;
-      if (Array.isArray(p.pagamentos) && p.pagamentos.length > 0) {
-        p.pagamentos.forEach((pg) => {
-          if (pg && typeof pg.valor === 'number' && !isNaN(pg.valor) && pg.valor > 0) {
-            const raw = (pg.forma || 'outro').toLowerCase();
-            let key = 'outro';
-            if (raw.includes('pix')) key = 'pix';
-            else if (raw.includes('dinheiro')) key = 'dinheiro';
-            else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
-            else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
-            else if (raw.includes('vale') || raw.includes('refeicao') || raw.includes('refeição') || raw.includes('vr')) key = 'vale_refeicao';
-            else if (raw.includes('mensal')) key = 'mensalista';
-            else key = raw;
-
-            totals[key] = (totals[key] || 0) + pg.valor;
-          }
-        });
-      } else if (p.forma_pagamento && typeof p.valor_total === 'number' && !isNaN(p.valor_total) && p.valor_total > 0) {
-        const raw = (p.forma_pagamento || 'outro').toLowerCase();
-        let key = 'outro';
-        if (raw.includes('pix')) key = 'pix';
-        else if (raw.includes('dinheiro')) key = 'dinheiro';
-        else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
-        else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
-        else if (raw.includes('vale') || raw.includes('refeicao') || raw.includes('refeição') || raw.includes('vr')) key = 'vale_refeicao';
-        else if (raw.includes('mensal')) key = 'mensalista';
-        else key = raw;
-
-        totals[key] = (totals[key] || 0) + p.valor_total;
-      }
-    });
-
-    const totalGeral = Object.values(totals).reduce((sum, v) => sum + (typeof v === 'number' && !isNaN(v) ? v : 0), 0);
-
-    return Object.entries(totals)
-      .filter(([_, val]) => typeof val === 'number' && !isNaN(val) && val > 0)
-      .map(([key, val]) => {
-        const cfg = CANONICAL_CONFIG[key] || {
-          label: key.toUpperCase(),
-          color: '#64748b',
-          darkColor: '#334155',
-        };
-        return {
-          id: key,
-          label: cfg.label,
-          valor: val,
-          percent: totalGeral > 0 ? (val / totalGeral) * 100 : 0,
-          color: cfg.color,
-          darkColor: cfg.darkColor,
-        };
-      })
-      .sort((a, b) => b.valor - a.valor);
   }, [pedidosConfirmados]);
 
   // Tables metrics
-  const ocupadas = mesas.filter((m) => m.status === 'ocupada').length;
-  const conta = mesas.filter((m) => m.status === 'conta').length;
-  const livres = mesas.filter((m) => m.status === 'livre').length;
-  const taxaOcupacao = Math.round(((ocupadas + conta) / mesas.length) * 100);
+  const ocupadas = safeMesas.filter((m) => m && m.status === 'ocupada').length;
+  const conta = safeMesas.filter((m) => m && m.status === 'conta').length;
+  const livres = safeMesas.filter((m) => m && m.status === 'livre').length;
+  const taxaOcupacao = safeMesas.length > 0 ? Math.round(((ocupadas + conta) / safeMesas.length) * 100) : 0;
 
   // Kitchen KDS metrics
-  const pendentesKds = pedidos.filter((p) => p.status === 'pendente').length;
-  const emPreparoKds = pedidos.filter((p) => p.status === 'em_preparacao').length;
-  const prontosKds = pedidos.filter((p) => p.status === 'pronto').length;
+  const pendentesKds = safePedidos.filter((p) => p && p.status === 'pendente').length;
+  const emPreparoKds = safePedidos.filter((p) => p && p.status === 'em_preparacao').length;
+  const prontosKds = safePedidos.filter((p) => p && p.status === 'pronto').length;
 
   // Stock alerts (ignora alertas excluídos pelo usuário)
-  const criticalStockItems = estoque.filter(
-    (it) => it.quantidade_atual <= it.estoque_minimo && !dismissedStockAlerts.includes(it.id)
+  const criticalStockItems = safeEstoque.filter(
+    (it) => it && typeof it.quantidade_atual === 'number' && it.quantidade_atual <= it.estoque_minimo && !dismissedStockAlerts.includes(it.id)
   );
 
   const handleOpenAdjustStock = (item: ItemEstoque) => {
@@ -295,14 +306,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Mensalistas
-  const mensalistas = clientes.filter((c) => c.eh_mensalista || c.saldo_devedor > 0);
-  const totalDevedorMensalistas = mensalistas.reduce((acc, c) => acc + (c.saldo_devedor || 0), 0);
+  const mensalistas = safeClientes.filter((c) => c && (c.eh_mensalista || (c.saldo_devedor && c.saldo_devedor > 0)));
+  const totalDevedorMensalistas = mensalistas.reduce((acc, c) => acc + (Number(c.saldo_devedor) || 0), 0);
 
   // Cash in drawer (fundo + suprimentos - sangrias + dinheiro em espécie dos pedidos faturados)
-  let dinheiroGaveta = caixa?.valor_abertura || 0;
-  if (Array.isArray(caixa?.movimentacoes)) {
-    caixa.movimentacoes.forEach((m) => {
-      if (m && typeof m.valor === 'number') {
+  let dinheiroGaveta = Number(caixa?.valor_abertura) || 0;
+  if (caixa && Array.isArray(caixa.movimentacoes)) {
+    caixa.movimentacoes.forEach((m: any) => {
+      if (m && typeof m.valor === 'number' && !isNaN(m.valor)) {
         if (m.tipo === 'suprimento') dinheiroGaveta += m.valor;
         if (m.tipo === 'sangria') dinheiroGaveta -= m.valor;
       }
@@ -311,15 +322,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   if (Array.isArray(pedidosConfirmados)) {
     pedidosConfirmados.forEach((p) => {
-      if (p && Array.isArray(p.pagamentos)) {
+      if (!p) return;
+      if (Array.isArray(p.pagamentos)) {
         p.pagamentos.forEach((pg) => {
-          if (pg && typeof pg.valor === 'number') {
+          if (pg && typeof pg.valor === 'number' && !isNaN(pg.valor)) {
             const raw = (pg.forma || '').toLowerCase();
             if (raw.includes('dinheiro')) {
               dinheiroGaveta += pg.valor;
             }
           }
         });
+      } else if (p.forma_pagamento && typeof p.valor_total === 'number' && !isNaN(p.valor_total)) {
+        const raw = (p.forma_pagamento || '').toLowerCase();
+        if (raw.includes('dinheiro')) {
+          dinheiroGaveta += p.valor_total;
+        }
       }
     });
   }
@@ -564,13 +581,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* CASH REGISTER QUICK STATUS & ACTION BAR */}
       <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${
-        caixa.status === 'aberto'
+        caixa?.status === 'aberto'
           ? 'bg-neutral-850 border-emerald-900/80'
           : 'bg-red-950/30 border-red-800/80'
       }`}>
         <div className="flex items-center gap-3">
           <div className={`p-2.5 rounded-xl border ${
-            caixa.status === 'aberto'
+            caixa?.status === 'aberto'
               ? 'bg-emerald-950 border-emerald-800 text-emerald-400'
               : 'bg-red-950 border-red-800 text-red-400'
           }`}>
@@ -582,16 +599,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 Controle de Caixa Diário:
               </span>
               <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                caixa.status === 'aberto'
+                caixa?.status === 'aberto'
                   ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                   : 'bg-red-950 text-red-300 border border-red-800'
               }`}>
-                {caixa.status === 'aberto' ? 'CAIXA ABERTO' : 'CAIXA FECHADO'}
+                {caixa?.status === 'aberto' ? 'CAIXA ABERTO' : 'CAIXA FECHADO'}
               </span>
             </div>
             <p className="text-[11px] text-neutral-400 mt-0.5">
-              {caixa.status === 'aberto'
-                ? `Aberto em ${caixa.data_caixa} · Fundo inicial: ${formatBRL(caixa.valor_abertura)} · Dinheiro na gaveta: ${formatBRL(dinheiroGaveta)}`
+              {caixa?.status === 'aberto'
+                ? `Aberto em ${caixa?.data_caixa || 'Hoje'} · Fundo inicial: ${formatBRL(caixa?.valor_abertura || 0)} · Dinheiro na gaveta: ${formatBRL(dinheiroGaveta)}`
                 : 'O caixa está fechado no momento. Abra o caixa para iniciar as operações do dia.'}
             </p>
           </div>
@@ -599,12 +616,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {/* Quick Open/Close Action buttons */}
         <div className="flex items-center gap-2 shrink-0">
-          {caixa.status === 'aberto' ? (
+          {caixa?.status === 'aberto' ? (
             <button
               onClick={() => {
-                const mesasAbertas = mesas.filter((m) => m.status === 'ocupada' || m.status === 'conta');
-                const entregasPendentes = pedidos.filter(
-                  (p) => p.tipo === 'delivery' && p.status !== 'cancelado' && p.conferencia_entrega !== 'conferido'
+                const mesasAbertas = safeMesas.filter((m) => m && (m.status === 'ocupada' || m.status === 'conta'));
+                const entregasPendentes = safePedidos.filter(
+                  (p) => p && p.tipo === 'delivery' && p.status !== 'cancelado' && p.conferencia_entrega !== 'conferido'
                 );
 
                 if (mesasAbertas.length > 0 || entregasPendentes.length > 0) {

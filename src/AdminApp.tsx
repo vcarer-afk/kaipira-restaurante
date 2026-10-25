@@ -1419,14 +1419,6 @@ export default function AdminApp() {
     await handleSaveConfiguracoes(novasConfig);
   };
 
-  const pendingKdsCount = pedidos.filter((p) => ['pendente', 'em_preparacao'].includes(p.status)).length;
-  const deliveryProntosCount = pedidos.filter((p) => p.tipo === 'delivery' && p.status === 'pronto').length;
-
-  // IF NOT AUTHENTICATED -> SHOW LOGIN SCREEN FIRST
-  if (!isAuthenticated) {
-    return <LoginScreen />;
-  }
-
   // Cardápio efetivo estável: se o cardápio diário ou o cache em configurações estiver publicado para a data corrente (data_caixa ou hoje), mantém ativo
   const cardapioEfetivo: CardapioDiarioConfig = useMemo(() => {
     const hoje = caixa?.data_caixa || new Date().toLocaleDateString('en-CA');
@@ -1445,6 +1437,14 @@ export default function AdminApp() {
 
     return cardapioDiario;
   }, [cardapioDiario, configuracoes?.cardapio_diario_cache, caixa?.data_caixa]);
+
+  const pendingKdsCount = (pedidos || []).filter((p) => ['pendente', 'em_preparacao'].includes(p.status)).length;
+  const deliveryProntosCount = (pedidos || []).filter((p) => p.tipo === 'delivery' && p.status === 'pronto').length;
+
+  // IF NOT AUTHENTICATED -> SHOW LOGIN SCREEN FIRST
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
 
   const currentTheme = THEMES[configuracoes.padraoCor] || THEMES.ambar;
 

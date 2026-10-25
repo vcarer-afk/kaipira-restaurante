@@ -204,13 +204,15 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     return (p.pagamentos && p.pagamentos.some((pg) => pg.valor > 0)) || p.pagamento_confirmado === true;
   };
 
+  const safePedidosList = Array.isArray(pedidos) ? pedidos : [];
+
   // Pedidos sob a categoria "A Faturar / A Receber" (não confirmados pelo caixa)
   const pedidosAFaturar = useMemo(() => {
-    return pedidos.filter((p) => p.status !== 'cancelado' && !isPedidoFaturado(p));
-  }, [pedidos]);
+    return safePedidosList.filter((p) => p && p.status !== 'cancelado' && !isPedidoFaturado(p));
+  }, [safePedidosList]);
 
   const totalAFaturar = useMemo(() => {
-    return pedidosAFaturar.reduce((acc, p) => acc + p.valor_total, 0);
+    return pedidosAFaturar.reduce((acc, p) => acc + (Number(p.valor_total) || 0), 0);
   }, [pedidosAFaturar]);
 
   // Filter & Search in movements ledger
@@ -218,57 +220,60 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   const [filterTipoMov, setFilterTipoMov] = useState<'todos' | 'sangria' | 'suprimento'>('todos');
 
   // Computations
-  const movs = useMemo(() => caixa.movimentacoes || [], [caixa.movimentacoes]);
+  const movs = useMemo(() => (caixa && Array.isArray(caixa.movimentacoes) ? caixa.movimentacoes : []), [caixa?.movimentacoes]);
 
   // REGRA DO USUÁRIO: Entregas Delivery pendentes de conferência do dia atual do caixa
   const dataHojeIso = new Date().toLocaleDateString('en-CA');
-  const dataFiltroCaixa = caixa.data_caixa || dataHojeIso;
+  const dataFiltroCaixa = caixa?.data_caixa || dataHojeIso;
 
   const deliveryOrdersPendentes = useMemo(() => {
-    return pedidos.filter(
+    return safePedidosList.filter(
       (p) =>
+        p &&
         p.tipo === 'delivery' &&
         p.status !== 'cancelado' &&
         p.conferencia_entrega !== 'conferido' &&
         (!p.criado_em || p.criado_em.startsWith(dataFiltroCaixa) || p.criado_em.startsWith(dataHojeIso))
     );
-  }, [pedidos, dataFiltroCaixa, dataHojeIso]);
+  }, [safePedidosList, dataFiltroCaixa, dataHojeIso]);
 
   const deliveryOrdersConferidos = useMemo(() => {
-    return pedidos.filter(
+    return safePedidosList.filter(
       (p) =>
+        p &&
         p.tipo === 'delivery' &&
         p.status !== 'cancelado' &&
         p.conferencia_entrega === 'conferido' &&
         (!p.criado_em || p.criado_em.startsWith(dataFiltroCaixa) || p.criado_em.startsWith(dataHojeIso))
     );
-  }, [pedidos, dataFiltroCaixa, dataHojeIso]);
+  }, [safePedidosList, dataFiltroCaixa, dataHojeIso]);
 
   const deliveryOrdersAll = useMemo(() => {
-    return pedidos.filter(
+    return safePedidosList.filter(
       (p) =>
+        p &&
         p.tipo === 'delivery' &&
         p.status !== 'cancelado' &&
         (!p.criado_em || p.criado_em.startsWith(dataFiltroCaixa) || p.criado_em.startsWith(dataHojeIso))
     );
-  }, [pedidos, dataFiltroCaixa, dataHojeIso]);
+  }, [safePedidosList, dataFiltroCaixa, dataHojeIso]);
 
   const totalPendenteConferencia = useMemo(() => {
-    return deliveryOrdersPendentes.reduce((sum, p) => sum + p.valor_total, 0);
+    return deliveryOrdersPendentes.reduce((sum, p) => sum + (Number(p.valor_total) || 0), 0);
   }, [deliveryOrdersPendentes]);
 
   const totalConferidoHoje = useMemo(() => {
-    return deliveryOrdersConferidos.reduce((sum, p) => sum + p.valor_total, 0);
+    return deliveryOrdersConferidos.reduce((sum, p) => sum + (Number(p.valor_total) || 0), 0);
   }, [deliveryOrdersConferidos]);
 
   // Pedidos faturados/confirmados de HOJE (Única fonte de faturamento do caixa)
   const pedidosConfirmados = useMemo(() => {
-    return pedidos.filter((p) => {
-      if (!isPedidoFaturado(p)) return false;
+    return safePedidosList.filter((p) => {
+      if (!p || !isPedidoFaturado(p)) return false;
       const criadoEm = p.criado_em || '';
       return !criadoEm || criadoEm.startsWith(dataFiltroCaixa) || criadoEm.startsWith(dataHojeIso);
     });
-  }, [pedidos, dataFiltroCaixa, dataHojeIso]);
+  }, [safePedidosList, dataFiltroCaixa, dataHojeIso]);
 
   // Dynamic dictionary of payment methods (canonical, deduplicated)
   const paymentStats = useMemo(() => {
@@ -318,7 +323,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     });
 
     // 1. O fundo inicial da gaveta
-    let dinheiroGaveta = caixa.valor_abertura || 0;
+    let dinheiroGaveta = Number(caixa?.valor_abertura) || 0;
 
     // 2. Somar Suprimentos e subtrair Sangrias (excluindo qualquer entrada_pedido perdida)
     let totalSangrias = 0;
@@ -326,7 +331,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     let sangriasDinheiro = 0;
     let suprimentosDinheiro = 0;
 
-    (caixa.movimentacoes || []).forEach((m) => {
+    (caixa?.movimentacoes || []).forEach((m) => {
       const formaKey = getFormaCanonica(m.forma || 'dinheiro');
       if (m.tipo === 'suprimento') {
         dinheiroGaveta += m.valor;
@@ -378,7 +383,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       }
     });
 
-    const fundoAbertura = caixa.valor_abertura || 0;
+    const fundoAbertura = Number(caixa?.valor_abertura) || 0;
     const dinheiroGavetaEsperado = dinheiroGaveta;
 
     // Convert statsMap to sorted list, eliminating any duplicated or ghost entries
@@ -404,7 +409,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       fundoAbertura,
       dinheiroGavetaEsperado,
     };
-  }, [formasPagamento, caixa.movimentacoes, pedidosConfirmados, caixa.valor_abertura]);
+  }, [formasPagamento, caixa?.movimentacoes, pedidosConfirmados, caixa?.valor_abertura]);
 
   // Breakdown by channel from orders (Apenas pedidos confirmados no caixa)
   const channelStats = useMemo(() => {
@@ -415,18 +420,18 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     let balcaoTotal = 0;
     let balcaoQtd = 0;
 
-    pedidos.forEach((p) => {
+    safePedidosList.forEach((p) => {
       // Regra Unificada de Faturamento: delivery conferido OU balcão/mesas com pagamentos
       if (!isPedidoFaturado(p)) return;
 
       if (p.tipo === 'salão') {
-        salaoTotal += p.valor_total;
+        salaoTotal += (Number(p.valor_total) || 0);
         salaoQtd += 1;
       } else if (p.tipo === 'delivery') {
-        deliveryTotal += p.valor_total;
+        deliveryTotal += (Number(p.valor_total) || 0);
         deliveryQtd += 1;
       } else if (p.tipo === 'retirada') {
-        balcaoTotal += p.valor_total;
+        balcaoTotal += (Number(p.valor_total) || 0);
         balcaoQtd += 1;
       }
     });
