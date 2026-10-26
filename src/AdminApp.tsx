@@ -1553,6 +1553,7 @@ export default function AdminApp() {
             onToggleModoOperacao={handleToggleModoOperacao}
             onConfirmarPagamento={handleConfirmarPagamentoPedido}
             onToggleKillSwitch={handleToggleKillSwitch}
+            onSaveConfiguracoes={handleSaveConfiguracoes}
           />
         )}
 

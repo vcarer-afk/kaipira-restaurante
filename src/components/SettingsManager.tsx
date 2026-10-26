@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ConfiguracoesSistema, PosicaoMenu, PadraoCor } from '../types';
+import { ConfiguracoesSistema, PosicaoMenu, PadraoCor, DashboardLayoutTipo } from '../types';
 import { THEMES } from '../utils/theme';
 import { UpperInput } from './UpperInput';
 import { consultarViaCep, cleanDigits } from '../utils/formatters';
@@ -31,6 +31,11 @@ import {
   Volume2,
   Type,
   Activity,
+  LayoutDashboard,
+  Terminal,
+  ShoppingCart,
+  Coffee,
+  Grid3X3,
 } from 'lucide-react';
 
 interface SettingsManagerProps {
@@ -831,6 +836,127 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                   }`}
                 />
               </button>
+            </div>
+          </div>
+
+          {/* LAYOUT DA DASHBOARD ADMINISTRATIVA (5 ESTILOS PADRÃO FIFA) */}
+          <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-xs flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2">
+                <LayoutDashboard className="w-4 h-4 text-amber-400" />
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
+                  Layout da Dashboard Administrativa
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800">
+                5 ESTILOS PADRÃO FIFA
+              </span>
+            </div>
+
+            <p className="text-xs text-neutral-400">
+              Escolha a arquitetura visual da Dashboard Principal para os gerentes e administradores. A alteração é <strong>salva instantaneamente na nuvem</strong>:
+            </p>
+
+            <div className="grid grid-cols-1 gap-2.5">
+              {[
+                {
+                  id: 'stripe' as DashboardLayoutTipo,
+                  name: '🥇 Stripe Executive',
+                  sub: 'Padrão Principal: Foco financeiro limpo, KPIs com gradientes e atalhos executivos',
+                  tag: 'PADRÃO RECOMENDADO',
+                  tagColor: 'bg-amber-950/80 text-amber-300 border-amber-700',
+                  icon: LayoutDashboard,
+                  iconColor: 'text-amber-400',
+                },
+                {
+                  id: 'command' as DashboardLayoutTipo,
+                  name: '⚡ Command Center',
+                  sub: 'Centro de controle operacional em alta densidade: monitor das 20 mesas, KDS e motoboys',
+                  tag: 'ALTA DENSIDADE',
+                  tagColor: 'bg-cyan-950/80 text-cyan-300 border-cyan-700',
+                  icon: Terminal,
+                  iconColor: 'text-cyan-400',
+                },
+                {
+                  id: 'shopify' as DashboardLayoutTipo,
+                  name: '📦 Shopify Merchant',
+                  sub: 'Estilo feed cronológico e analítico: eventos ao vivo, pedidos e gráfico 3D em colunas',
+                  tag: 'FEED EM COLUNAS',
+                  tagColor: 'bg-emerald-950/80 text-emerald-300 border-emerald-700',
+                  icon: ShoppingCart,
+                  iconColor: 'text-emerald-400',
+                },
+                {
+                  id: 'minimalist' as DashboardLayoutTipo,
+                  name: '🍃 Hospitality Minimalist',
+                  sub: 'Estilo restaurante boutique: elegante, arejado, foco na hospitalidade e mesas',
+                  tag: 'BOUTIQUE ELEGANTE',
+                  tagColor: 'bg-purple-950/80 text-purple-300 border-purple-700',
+                  icon: Coffee,
+                  iconColor: 'text-purple-400',
+                },
+                {
+                  id: 'modular' as DashboardLayoutTipo,
+                  name: '🧩 Modular Grid',
+                  sub: 'Painel de blocos estilo BI: grade analítica modular com widgets interativos',
+                  tag: 'GRID ANALÍTICA BI',
+                  tagColor: 'bg-blue-950/80 text-blue-300 border-blue-700',
+                  icon: Grid3X3,
+                  iconColor: 'text-blue-400',
+                },
+              ].map((item) => {
+                const currentLayout = formData.dashboard_layout || 'stripe';
+                const isSelected = currentLayout === item.id;
+                const IconComp = item.icon;
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      const updated: ConfiguracoesSistema = {
+                        ...formData,
+                        dashboard_layout: item.id,
+                      };
+                      setFormData(updated);
+                      onSaveConfiguracoes(updated);
+                      setSavedSuccess(true);
+                      setTimeout(() => setSavedSuccess(false), 3000);
+                    }}
+                    className={`p-3.5 rounded-xl border text-left transition-all flex items-start justify-between gap-3 cursor-pointer ${
+                      isSelected
+                        ? 'border-amber-500 bg-neutral-900 ring-2 ring-amber-500/80 shadow-md scale-[1.005]'
+                        : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-700 hover:bg-neutral-850'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className={`p-2 rounded-lg bg-neutral-800 border border-neutral-700/80 shrink-0 mt-0.5 ${item.iconColor}`}>
+                        <IconComp className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black text-white uppercase block">
+                            {item.name}
+                          </span>
+                          <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase ${item.tagColor}`}>
+                            {item.tag}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-neutral-400 block mt-1 leading-snug">
+                          {item.sub}
+                        </span>
+                      </div>
+                    </div>
+                    {isSelected ? (
+                      <span className="w-5 h-5 rounded-full bg-amber-500 text-neutral-950 flex items-center justify-center font-black text-[11px] shrink-0 mt-0.5 shadow-sm">
+                        ✓
+                      </span>
+                    ) : (
+                      <span className="w-5 h-5 rounded-full border border-neutral-700 shrink-0 mt-0.5" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

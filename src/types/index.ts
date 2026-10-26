@@ -213,6 +213,8 @@ export type PadraoCor =
   | 'oliva'
   | 'windows';
 
+export type DashboardLayoutTipo = 'stripe' | 'command' | 'shopify' | 'minimalist' | 'modular';
+
 export interface ConfiguracoesSistema {
   // Banco de Dados
   supabaseUrl: string;
@@ -233,6 +235,7 @@ export interface ConfiguracoesSistema {
   // Tela e Layout
   posicaoMenu: PosicaoMenu;
   padraoCor: PadraoCor;
+  dashboard_layout?: DashboardLayoutTipo;
   // Personalização do Painel LED de Senhas
   ledCor?: string;
   ledFonte?: string;
