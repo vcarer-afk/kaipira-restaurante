@@ -125,6 +125,12 @@ export async function fetchConfiguracoesFromSupabase(
           ? dadosObj.delivery_interno_ativo
           : true,
       cardapio_diario_cache: dadosObj.cardapio_diario_cache || (dadosObj as any)?.cardapio_diario_atual,
+      exibir_diagnostico_vitrine:
+        (data as any).exibir_diagnostico_vitrine !== undefined
+          ? !!(data as any).exibir_diagnostico_vitrine
+          : dadosObj.exibir_diagnostico_vitrine !== undefined
+          ? !!dadosObj.exibir_diagnostico_vitrine
+          : false,
     };
   } catch (err) {
     console.warn('Falha na requisição Supabase configuracoes:', err);

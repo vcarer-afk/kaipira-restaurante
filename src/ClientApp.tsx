@@ -65,6 +65,97 @@ interface CartItem {
 // Passos do fluxo de compra
 type CheckoutStep = 'menu' | 'cart' | 'checkout' | 'success';
 
+// Abas da Vitrine na ordem estrita solicitada:
+// TODOS / MARMITEX / MINI / MÉDIA / GRANDE / BEBIDAS / SOBREMESAS
+export type VitrineAba =
+  | 'todos'
+  | 'marmitex'
+  | 'mini'
+  | 'media'
+  | 'grande'
+  | 'bebidas'
+  | 'sobremesas';
+
+export const VITRINE_TABS: { id: VitrineAba; label: string }[] = [
+  { id: 'todos', label: 'TODOS' },
+  { id: 'marmitex', label: 'MARMITEX' },
+  { id: 'mini', label: 'MINI' },
+  { id: 'media', label: 'MÉDIA' },
+  { id: 'grande', label: 'GRANDE' },
+  { id: 'bebidas', label: 'BEBIDAS' },
+  { id: 'sobremesas', label: 'SOBREMESAS' },
+];
+
+function checkProdutoAba(p: Produto, aba: VitrineAba, categorias: Categoria[]): boolean {
+  if (aba === 'todos') return true;
+
+  const nome = (p.nome || '').toUpperCase();
+  const desc = (p.descricao || '').toUpperCase();
+  const catId = Number(p.categoria_id);
+  const cat = categorias.find((c) => Number(c.id) === catId);
+  const catNome = (cat?.nome || '').toUpperCase();
+
+  const isBebida =
+    catId === 4 ||
+    catNome.includes('BEBIDA') ||
+    catNome.includes('REFRIGERANTE') ||
+    catNome.includes('SUCO') ||
+    catNome.includes('CERVEJA') ||
+    catNome.includes('ÁGUA') ||
+    catNome.includes('AGUA') ||
+    nome.includes('SUCO') ||
+    nome.includes('REFRIGERANTE') ||
+    nome.includes('CERVEJA') ||
+    nome.includes('COCA') ||
+    nome.includes('GUARANÁ') ||
+    nome.includes('GUARANA');
+
+  const isSobremesa =
+    catId === 5 ||
+    catNome.includes('SOBREMESA') ||
+    catNome.includes('DOCE') ||
+    nome.includes('PUDIM') ||
+    nome.includes('TORTA') ||
+    nome.includes('MOUSSE') ||
+    nome.includes('BRIGADEIRO');
+
+  if (aba === 'bebidas') return isBebida;
+  if (aba === 'sobremesas') return isSobremesa;
+
+  if (aba === 'mini') {
+    return nome.includes('MINI') || nome.includes('PEQUENA') || nome.includes('PEQUENO');
+  }
+
+  if (aba === 'media') {
+    return nome.includes('MÉDIA') || nome.includes('MEDIA');
+  }
+
+  if (aba === 'grande') {
+    return nome.includes('GRANDE') || nome.includes('FAMÍLIA') || nome.includes('FAMILIA');
+  }
+
+  if (aba === 'marmitex') {
+    return (
+      !isBebida &&
+      !isSobremesa &&
+      (catId === 1 ||
+        catId === 2 ||
+        nome.includes('MARMIT') ||
+        nome.includes('EXECUTIV') ||
+        nome.includes('PRATO') ||
+        nome.includes('MINI') ||
+        nome.includes('MEDIA') ||
+        nome.includes('MÉDIA') ||
+        nome.includes('GRANDE') ||
+        desc.includes('ARROZ') ||
+        desc.includes('FEIJÃO') ||
+        desc.includes('FEIJAO'))
+    );
+  }
+
+  return true;
+}
+
 function isUUID(str?: string): boolean {
   if (!str || typeof str !== 'string') return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
@@ -92,7 +183,7 @@ export default function ClientApp() {
 
   // Navegação e Filtros da Vitrine
   const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('menu');
-  const [categoriaAtiva, setCategoriaAtiva] = useState<number | 'todos'>('todos');
+  const [categoriaAtiva, setCategoriaAtiva] = useState<VitrineAba>('todos');
   const [busca, setBusca] = useState<string>('');
 
   // Estado do Carrinho
@@ -323,11 +414,10 @@ export default function ClientApp() {
     });
   }, [produtos, categorias, cardapioEfetivo]);
 
-  // Produtos filtrados por categoria selecionada e texto de busca
+  // Produtos filtrados por aba selecionada e texto de busca
   const produtosFiltrados = useMemo(() => {
     return produtosDisponiveis.filter((p) => {
-      const matchCat =
-        categoriaAtiva === 'todos' || Number(p.categoria_id) === Number(categoriaAtiva);
+      const matchAba = checkProdutoAba(p, categoriaAtiva, categorias);
 
       const q = busca.toLowerCase().trim();
       const matchBusca =
@@ -335,9 +425,9 @@ export default function ClientApp() {
         (p.nome && p.nome.toLowerCase().includes(q)) ||
         (p.descricao && p.descricao.toLowerCase().includes(q));
 
-      return matchCat && matchBusca;
+      return matchAba && matchBusca;
     });
-  }, [produtosDisponiveis, categoriaAtiva, busca]);
+  }, [produtosDisponiveis, categoriaAtiva, busca, categorias]);
 
   // Cálculos do Carrinho
   const cartSubtotal = useMemo(() => {
@@ -739,40 +829,42 @@ export default function ClientApp() {
 
         {/* Rodapé com Diagnóstico em Tempo Real para Testes e Produção */}
         <footer className="p-4 border-t border-neutral-900 bg-neutral-950 text-[11px] text-neutral-400 flex flex-col items-center gap-2.5">
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <span
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
-                isCaixaAberto
-                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                  : 'bg-red-950/80 text-red-300 border-red-800'
-              }`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${isCaixaAberto ? 'bg-emerald-400' : 'bg-red-400'}`} />
-              Caixa: {isCaixaAberto ? 'ABERTO' : 'FECHADO'}
-            </span>
+          {configuracoes?.exibir_diagnostico_vitrine === true && (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <span
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
+                  isCaixaAberto
+                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                    : 'bg-red-950/80 text-red-300 border-red-800'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isCaixaAberto ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                Caixa: {isCaixaAberto ? 'ABERTO' : 'FECHADO'}
+              </span>
 
-            <span
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
-                isCardapioAtivo
-                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                  : 'bg-amber-950/80 text-amber-300 border-amber-800'
-              }`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${isCardapioAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              Cardápio: {isCardapioAtivo ? 'CONFIRMADO' : 'AGUARDANDO'}
-            </span>
+              <span
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
+                  isCardapioAtivo
+                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                    : 'bg-amber-950/80 text-amber-300 border-amber-800'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isCardapioAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                Cardápio: {isCardapioAtivo ? 'CONFIRMADO' : 'AGUARDANDO'}
+              </span>
 
-            <span
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
-                isDeliverySiteAtivo
-                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                  : 'bg-amber-950/80 text-amber-300 border-amber-800'
-              }`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${isDeliverySiteAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              Entregas Site: {isDeliverySiteAtivo ? 'ATIVO' : 'PAUSADO'}
-            </span>
-          </div>
+              <span
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
+                  isDeliverySiteAtivo
+                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                    : 'bg-amber-950/80 text-amber-300 border-amber-800'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isDeliverySiteAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                Entregas Site: {isDeliverySiteAtivo ? 'ATIVO' : 'PAUSADO'}
+              </span>
+            </div>
+          )}
 
           <div className="text-[10px] text-neutral-600">
             © {new Date().getFullYear()} {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'} · Cardápio Digital
@@ -786,13 +878,6 @@ export default function ClientApp() {
   // TELA DE SUCESSO (PEDIDO REALIZADO)
   // =========================================================================
   if (checkoutStep === 'success' && pedidoConcluido) {
-    const whatsAppNumero = cleanDigits(configuracoes?.telefone || '19999999999');
-    const msgWhats = encodeURIComponent(
-      `Olá, fiz o pedido #${pedidoConcluido.codigo_senha || pedidoConcluido.id} no site do ${
-        configuracoes?.nomeRestaurante || 'Restaurante Kaipira'
-      }! Gostaria de acompanhar a entrega.`
-    );
-
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between selection:bg-amber-500 selection:text-black">
         <header className="bg-neutral-900/90 border-b border-neutral-800 p-4 sticky top-0 z-20 backdrop-blur-md">
@@ -865,7 +950,7 @@ export default function ClientApp() {
             </div>
 
             {/* ============================================================= */}
-            {/* NOVO: Acompanhamento em Tempo Real na Vitrine do Cliente      */}
+            {/* Acompanhamento em Tempo Real na Vitrine do Cliente            */}
             {/* ============================================================= */}
             {(() => {
               const statusPedido = (pedidoConcluido.status || 'pendente').toLowerCase();
@@ -880,22 +965,25 @@ export default function ClientApp() {
                 currentStep = 1;
               }
 
-              const etapasTracking = [
-                { id: 1, label: 'Pedido Confirmado', desc: 'Pedido recebido com sucesso na cozinha' },
-                { id: 2, label: 'Preparando', desc: 'No fogão a lenha sendo preparado com carinho' },
-                { id: 3, label: 'A Caminho', desc: 'Saiu para entrega com o nosso motoboy' },
-                { id: 4, label: 'Entregue', desc: 'Pedido entregue com sucesso no seu endereço' },
+              const trackingSteps = [
+                { id: 1, text: 'Aguardando confirmação do Restaurante' },
+                { id: 2, text: 'Preparando seu Pedido' },
+                { id: 3, text: 'Entrega a Caminho' },
+                { id: 4, text: 'Pedido Entregue' },
               ];
+
+              const currentStatusObj = trackingSteps.find((s) => s.id === currentStep) || trackingSteps[0];
 
               return (
                 <div className="bg-neutral-950 border border-amber-500/50 rounded-2xl p-4 mb-5 text-left shadow-xl relative overflow-hidden">
+                  {/* Cabeçalho do Card */}
                   <div className="flex items-center justify-between mb-3 border-b border-neutral-800 pb-2.5">
                     <div className="flex items-center gap-2">
                       <span className="relative flex h-2.5 w-2.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                       </span>
-                      <h3 className="text-xs font-black uppercase text-amber-400 tracking-wider">
+                      <h3 className="text-sm font-black uppercase text-amber-400 tracking-wider">
                         Acompanhe sua entrega
                       </h3>
                     </div>
@@ -905,29 +993,17 @@ export default function ClientApp() {
                     </span>
                   </div>
 
-                  {/* Fluxo Sequencial Exato: Pedido Confirmado ➔ Preparando ➔ A Caminho ➔ Entregue */}
-                  <div className="bg-neutral-900/80 rounded-xl p-2.5 border border-neutral-800 mb-3">
-                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-tight text-neutral-400">
-                      <span className={currentStep >= 1 ? 'text-amber-400 font-bold' : 'text-neutral-500'}>
-                        Pedido Confirmado
-                      </span>
-                      <span className="text-neutral-600 font-bold text-xs">➔</span>
-                      <span className={currentStep >= 2 ? 'text-amber-400 font-bold' : 'text-neutral-500'}>
-                        Preparando
-                      </span>
-                      <span className="text-neutral-600 font-bold text-xs">➔</span>
-                      <span className={currentStep >= 3 ? 'text-amber-400 font-bold' : 'text-neutral-500'}>
-                        A Caminho
-                      </span>
-                      <span className="text-neutral-600 font-bold text-xs">➔</span>
-                      <span className={currentStep >= 4 ? 'text-emerald-400 font-bold' : 'text-neutral-500'}>
-                        Entregue
-                      </span>
-                    </div>
+                  {/* Caixa Dedicada: Exibe apenas o status atual de forma centralizada e destacada */}
+                  <div className="bg-neutral-900 border border-amber-500/40 rounded-xl py-3 px-4 text-center my-3.5 shadow-inner">
+                    <span className="text-sm font-black uppercase text-amber-400 tracking-wider block">
+                      {currentStatusObj.text}
+                    </span>
+                  </div>
 
-                    {/* Barra de Progresso Sequencial */}
-                    <div className="relative flex items-center justify-between mt-3 px-1">
-                      <div className="absolute left-4 right-4 top-1/2 -translate-y-1/2 h-1 bg-neutral-800 z-0">
+                  {/* Linha de Progresso com Bolinhas Numéricas (1, 2, 3, 4) */}
+                  <div className="bg-neutral-900/80 rounded-xl p-3 border border-neutral-800 mb-3">
+                    <div className="relative flex items-center justify-between px-3">
+                      <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-1 bg-neutral-800 z-0">
                         <div
                           className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-500"
                           style={{
@@ -943,21 +1019,21 @@ export default function ClientApp() {
                         />
                       </div>
 
-                      {etapasTracking.map((etp) => {
+                      {trackingSteps.map((etp) => {
                         const isDone = currentStep > etp.id;
                         const isCurrent = currentStep === etp.id;
                         return (
                           <div key={etp.id} className="relative z-10 flex flex-col items-center">
                             <div
-                              className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black transition-all ${
+                              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-all ${
                                 isDone
                                   ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/20'
                                   : isCurrent
-                                  ? 'bg-amber-500 text-black ring-4 ring-amber-500/30 animate-pulse font-extrabold'
+                                  ? 'bg-amber-500 text-black ring-4 ring-amber-500/30 animate-pulse font-extrabold shadow-md shadow-amber-500/20'
                                   : 'bg-neutral-800 text-neutral-500 border border-neutral-700'
                               }`}
                             >
-                              {isDone ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : etp.id}
+                              {isDone ? <Check className="w-4 h-4 stroke-[3]" /> : etp.id}
                             </div>
                           </div>
                         );
@@ -965,25 +1041,7 @@ export default function ClientApp() {
                     </div>
                   </div>
 
-                  {/* Card do Status Atual */}
-                  <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 text-xs mb-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-extrabold uppercase text-white flex items-center gap-1.5">
-                        {currentStep === 1 && <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />}
-                        {currentStep === 2 && <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />}
-                        {currentStep === 3 && <Bike className="w-3.5 h-3.5 text-cyan-400 animate-bounce" />}
-                        {currentStep === 4 && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
-                        <span>Status: {etapasTracking[currentStep - 1].label}</span>
-                      </span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 font-bold">
-                        {pedidoConcluido.status?.toUpperCase()}
-                      </span>
-                    </div>
-                    <p className="text-neutral-400 text-[11px] leading-relaxed">
-                      {etapasTracking[currentStep - 1].desc}
-                    </p>
-                  </div>
-
+                  {/* Botão de Atualizar Status */}
                   <button
                     type="button"
                     onClick={handleRefreshPedidoStatus}
@@ -992,32 +1050,27 @@ export default function ClientApp() {
                     <RefreshCw className="w-3 h-3 text-amber-500" />
                     <span>Atualizar Status</span>
                   </button>
+
+                  {/* Quando o status chegar em "Pedido Entregue" (etapa 4), exiba botão destacado "Confirmar Entrega" */}
+                  {currentStep === 4 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPedidoConcluido(null);
+                        setCheckoutStep('menu');
+                      }}
+                      className="w-full mt-3 py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-black uppercase rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/25 cursor-pointer animate-pulse"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Confirmar Entrega</span>
+                    </button>
+                  )}
                 </div>
               );
             })()}
 
             {/* Botões de Ação */}
             <div className="space-y-2.5">
-              <button
-                type="button"
-                onClick={handleRefreshPedidoStatus}
-                className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black uppercase rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20 cursor-pointer"
-              >
-                <Bike className="w-4 h-4" />
-                <span>Acompanhe sua entrega</span>
-              </button>
-              {whatsAppNumero && (
-                <a
-                  href={`https://wa.me/55${whatsAppNumero}?text=${msgWhats}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>Acompanhar pelo WhatsApp</span>
-                </a>
-              )}
-
               <button
                 type="button"
                 onClick={() => {
@@ -1696,37 +1749,25 @@ export default function ClientApp() {
           </div>
         </div>
 
-        {/* Categorias em Horizontal Scroll */}
+        {/* Categorias / Abas de Navegação na Ordem Exata: TODOS / MARMITEX / MINI / MÉDIA / GRANDE / BEBIDAS / SOBREMESAS */}
         <div className="border-t border-neutral-800/80 overflow-x-auto no-scrollbar scroll-smooth">
           <div className="max-w-2xl mx-auto px-4 py-2.5 flex items-center gap-2">
-            <button
-              onClick={() => setCategoriaAtiva('todos')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap transition-all cursor-pointer ${
-                categoriaAtiva === 'todos'
-                  ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                  : 'bg-neutral-850 text-neutral-400 hover:text-white hover:bg-neutral-800 border border-neutral-800'
-              }`}
-            >
-              Todos ({produtosDisponiveis.length})
-            </button>
-
-            {categorias.map((cat) => {
-              const count = produtosDisponiveis.filter(
-                (p) => Number(p.categoria_id) === Number(cat.id)
+            {VITRINE_TABS.map((tab) => {
+              const count = produtosDisponiveis.filter((p) =>
+                checkProdutoAba(p, tab.id, categorias)
               ).length;
-              if (count === 0 && categoriaAtiva !== cat.id) return null;
 
               return (
                 <button
-                  key={cat.id}
-                  onClick={() => setCategoriaAtiva(cat.id)}
+                  key={tab.id}
+                  onClick={() => setCategoriaAtiva(tab.id)}
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap transition-all cursor-pointer ${
-                    categoriaAtiva === cat.id
+                    categoriaAtiva === tab.id
                       ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
                       : 'bg-neutral-850 text-neutral-400 hover:text-white hover:bg-neutral-800 border border-neutral-800'
                   }`}
                 >
-                  {cat.nome} {count > 0 && `(${count})`}
+                  {tab.label} {count > 0 && `(${count})`}
                 </button>
               );
             })}
@@ -1966,40 +2007,42 @@ export default function ClientApp() {
 
       {/* Rodapé com Diagnóstico em Tempo Real para Testes e Produção */}
       <footer className="p-4 mb-24 border-t border-neutral-900 bg-neutral-950 text-[11px] text-neutral-400 flex flex-col items-center gap-2.5">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <span
-            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
-              isCaixaAberto
-                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                : 'bg-red-950/80 text-red-300 border-red-800'
-            }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${isCaixaAberto ? 'bg-emerald-400' : 'bg-red-400'}`} />
-            Caixa: {isCaixaAberto ? 'ABERTO' : 'FECHADO'}
-          </span>
+        {configuracoes?.exibir_diagnostico_vitrine === true && (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
+                isCaixaAberto
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                  : 'bg-red-950/80 text-red-300 border-red-800'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isCaixaAberto ? 'bg-emerald-400' : 'bg-red-400'}`} />
+              Caixa: {isCaixaAberto ? 'ABERTO' : 'FECHADO'}
+            </span>
 
-          <span
-            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
-              isCardapioAtivo
-                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                : 'bg-amber-950/80 text-amber-300 border-amber-800'
-            }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${isCardapioAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-            Cardápio: {isCardapioAtivo ? 'CONFIRMADO' : 'AGUARDANDO'}
-          </span>
+            <span
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
+                isCardapioAtivo
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                  : 'bg-amber-950/80 text-amber-300 border-amber-800'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isCardapioAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              Cardápio: {isCardapioAtivo ? 'CONFIRMADO' : 'AGUARDANDO'}
+            </span>
 
-          <span
-            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
-              isDeliverySiteAtivo
-                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                : 'bg-amber-950/80 text-amber-300 border-amber-800'
-            }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${isDeliverySiteAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-            Entregas Site: {isDeliverySiteAtivo ? 'ATIVO' : 'PAUSADO'}
-          </span>
-        </div>
+            <span
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase border flex items-center gap-1.5 ${
+                isDeliverySiteAtivo
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                  : 'bg-amber-950/80 text-amber-300 border-amber-800'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isDeliverySiteAtivo ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              Entregas Site: {isDeliverySiteAtivo ? 'ATIVO' : 'PAUSADO'}
+            </span>
+          </div>
+        )}
 
         <div className="text-[10px] text-neutral-600">
           © {new Date().getFullYear()} {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'} · Cardápio Digital

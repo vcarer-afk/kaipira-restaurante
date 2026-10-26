@@ -242,4 +242,6 @@ export interface ConfiguracoesSistema {
   delivery_site_ativo?: boolean;
   delivery_interno_ativo?: boolean;
   cardapio_diario_cache?: CardapioDiarioConfig;
+  // Diagnóstico na Vitrine
+  exibir_diagnostico_vitrine?: boolean;
 }

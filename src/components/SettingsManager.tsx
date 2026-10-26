@@ -30,6 +30,7 @@ import {
   Bell,
   Volume2,
   Type,
+  Activity,
 } from 'lucide-react';
 
 interface SettingsManagerProps {
@@ -778,6 +779,61 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
 
         {/* RIGHT COLUMN: LAYOUT, POSIÇÃO DO MENU E PADRÕES DE CORES (5 cols) */}
         <div className="lg:col-span-5 flex flex-col gap-6">
+          {/* DIAGNÓSTICO NA VITRINE (MODO TESTES) */}
+          <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-xs flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-amber-400" />
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
+                  Vitrine Online & Diagnóstico
+                </h3>
+              </div>
+              <span
+                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border uppercase ${
+                  formData.exibir_diagnostico_vitrine
+                    ? 'bg-amber-950/80 text-amber-300 border-amber-800'
+                    : 'bg-neutral-900 text-neutral-500 border-neutral-800'
+                }`}
+              >
+                {formData.exibir_diagnostico_vitrine ? 'ATIVO' : 'DESLIGADO'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 p-3.5 bg-neutral-900 rounded-xl border border-neutral-800">
+              <div className="flex-1 pr-2">
+                <span className="text-xs font-bold text-white block uppercase">
+                  Exibir Rodapé de Diagnóstico na Vitrine (Modo Testes)
+                </span>
+                <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed">
+                  Exibe o rodapé com status [Caixa: ABERTO | Cardápio: CONFIRMADO | Entregas Site: ATIVO] na vitrine do cliente. Mantenha desligado para o cliente final.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!!formData.exibir_diagnostico_vitrine}
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    exibir_diagnostico_vitrine: !prev.exibir_diagnostico_vitrine,
+                  }))
+                }
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500/50 ${
+                  formData.exibir_diagnostico_vitrine ? 'bg-amber-500' : 'bg-neutral-700'
+                }`}
+              >
+                <span className="sr-only">Exibir Rodapé de Diagnóstico na Vitrine (Modo Testes)</span>
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    formData.exibir_diagnostico_vitrine ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
           {/* POSIÇÃO DA BARRA DE MENUS */}
           <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-xs flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
