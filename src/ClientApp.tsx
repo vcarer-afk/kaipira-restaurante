@@ -263,6 +263,35 @@ export default function ClientApp() {
     }
   }, []);
 
+  // Recuperação do último pedido salvo no localStorage ao abrir o aplicativo
+  useEffect(() => {
+    const restaurarPedidoSalvo = async () => {
+      try {
+        const salvoId = localStorage.getItem('kaipira_ultimo_pedido_id');
+        if (!salvoId) return;
+
+        const { data, error } = await supabase
+          .from('pedidos')
+          .select('*')
+          .eq('id', salvoId)
+          .single();
+
+        if (!error && data) {
+          const st = (data.status || '').toLowerCase();
+          if (st !== 'entregue' && st !== 'cancelado') {
+            setPedidoConcluido(data as Pedido);
+          } else {
+            localStorage.removeItem('kaipira_ultimo_pedido_id');
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao restaurar último pedido salvo:', err);
+      }
+    };
+
+    restaurarPedidoSalvo();
+  }, []);
+
   // Acompanhamento em tempo real do pedido concluído via Supabase Realtime
   useEffect(() => {
     if (!pedidoConcluido?.id) return;
@@ -704,6 +733,14 @@ export default function ClientApp() {
 
       const pedidoCriado = await criarPedidoSupabase(pedidoPayload);
 
+      if (pedidoCriado && pedidoCriado.id) {
+        try {
+          localStorage.setItem('kaipira_ultimo_pedido_id', String(pedidoCriado.id));
+        } catch (e) {
+          console.warn('Falha ao salvar no localStorage:', e);
+        }
+      }
+
       setPedidoConcluido(pedidoCriado);
       setCart([]);
       setCheckoutStep('success');
@@ -938,7 +975,9 @@ export default function ClientApp() {
               <div className="flex justify-between text-neutral-400 pb-2 border-b border-neutral-800">
                 <span>Entrega em:</span>
                 <strong className="text-white truncate max-w-[200px]">
-                  {clienteRua}, {clienteNumero} - {clienteBairro}
+                  {clienteRua || (pedidoConcluido.cliente as any)?.endereco || 'Endereço'},{' '}
+                  {clienteNumero || (pedidoConcluido.cliente as any)?.numero || 'S/N'} -{' '}
+                  {clienteBairro || (pedidoConcluido.cliente as any)?.bairro || 'Piracicaba'}
                 </strong>
               </div>
               <div className="flex justify-between text-neutral-300 font-bold pt-1">
@@ -954,15 +993,23 @@ export default function ClientApp() {
             {/* ============================================================= */}
             {(() => {
               const statusPedido = (pedidoConcluido.status || 'pendente').toLowerCase();
-              let currentStep = 1;
+              let currentStep = 2;
               if (statusPedido === 'entregue') {
                 currentStep = 4;
-              } else if (statusPedido === 'a_caminho' || statusPedido === 'pronto') {
+              } else if (statusPedido === 'a_caminho') {
+                // SÓ DEVE SER ACIONADO e iluminado quando o pedido for despachado na expedição ('a_caminho')
                 currentStep = 3;
-              } else if (statusPedido === 'em_preparacao') {
+              } else if (
+                statusPedido === 'em_preparacao' ||
+                statusPedido === 'pendente' ||
+                statusPedido === 'pronto'
+              ) {
+                // Enquanto estiver na cozinha ('pendente' ou 'em_preparacao'), status exibido é estritamente Preparando seu Pedido
                 currentStep = 2;
-              } else {
+              } else if (statusPedido === 'aguardando' || statusPedido === 'recebido') {
                 currentStep = 1;
+              } else {
+                currentStep = 2;
               }
 
               const trackingSteps = [
@@ -972,7 +1019,7 @@ export default function ClientApp() {
                 { id: 4, text: 'Pedido Entregue' },
               ];
 
-              const currentStatusObj = trackingSteps.find((s) => s.id === currentStep) || trackingSteps[0];
+              const currentStatusObj = trackingSteps.find((s) => s.id === currentStep) || trackingSteps[1];
 
               return (
                 <div className="bg-neutral-950 border border-amber-500/50 rounded-2xl p-4 mb-5 text-left shadow-xl relative overflow-hidden">
@@ -1056,6 +1103,9 @@ export default function ClientApp() {
                     <button
                       type="button"
                       onClick={() => {
+                        try {
+                          localStorage.removeItem('kaipira_ultimo_pedido_id');
+                        } catch {}
                         setPedidoConcluido(null);
                         setCheckoutStep('menu');
                       }}
@@ -1073,11 +1123,23 @@ export default function ClientApp() {
             <div className="space-y-2.5">
               <button
                 type="button"
+                onClick={() => setCheckoutStep('menu')}
+                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold uppercase rounded-xl text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Voltar para o Cardápio</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
+                  try {
+                    localStorage.removeItem('kaipira_ultimo_pedido_id');
+                  } catch {}
                   setPedidoConcluido(null);
                   setCheckoutStep('menu');
                 }}
-                className="w-full py-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold uppercase rounded-xl text-xs transition-colors cursor-pointer"
+                className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white font-bold uppercase rounded-xl text-xs transition-colors cursor-pointer"
               >
                 Fazer Novo Pedido
               </button>
@@ -1692,6 +1754,27 @@ export default function ClientApp() {
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-amber-500 selection:text-black pb-28">
       {/* Top Header Mobile-First com Logo Centralizada */}
       <header className="bg-neutral-900/95 border-b border-neutral-800 sticky top-0 z-30 backdrop-blur-md">
+        {/* Banner de Pedido em Andamento */}
+        {checkoutStep === 'menu' &&
+          pedidoConcluido &&
+          pedidoConcluido.status !== 'entregue' &&
+          pedidoConcluido.status !== 'cancelado' && (
+            <button
+              type="button"
+              onClick={() => setCheckoutStep('success')}
+              className="w-full bg-gradient-to-r from-amber-500/20 via-amber-500/30 to-amber-500/20 hover:from-amber-500/30 hover:to-amber-500/40 border-b border-amber-500/40 text-amber-200 py-2.5 px-4 text-center text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md group"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              </span>
+              <span>
+                📦 Você tem um pedido em andamento (#{pedidoConcluido.codigo_senha || pedidoConcluido.id}). Clique aqui para acompanhar
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+        )}
+
         {/* Banner de Aviso de Horário de Entregas */}
         <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 py-2 px-4 text-center text-xs font-semibold flex items-center justify-center gap-2 shadow-inner">
           <Clock className="w-4 h-4 text-amber-400 shrink-0" />
