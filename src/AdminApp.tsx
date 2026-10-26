@@ -85,6 +85,7 @@ import {
   registrarMultiplasMovimentacoesCaixaSupabase,
   registrarPagamentosMesaSupabase,
   conferirEntregaPedidoSupabase,
+  conferirEntregasConsolidadasSupabase,
   subscribeActiveConnections,
   zerarFinanceiroDiaSupabase,
   logoutSupabase,
@@ -858,6 +859,60 @@ export default function AdminApp() {
 
     // Persistir conferência no banco Supabase com a forma de pagamento final confirmada
     await conferirEntregaPedidoSupabase(pedidoId, conferidoPor, formaEscolhida);
+
+    playAlertChime();
+  };
+
+  // Consolidação e Pagamento Múltiplo de Entregas pelo Gerente ou Supervisor no Caixa
+  const handleConferirEntregasConsolidadas = async (
+    pedidoIds: number[],
+    pagamentosFracionados: { forma: FormaPagamento; valor: number }[],
+    conferidoPor: string
+  ) => {
+    const agora = new Date().toISOString();
+    const responsavel = conferidoPor || currentPerfil?.nome || 'GERENTE GERAL';
+    const formaPrincipal = pagamentosFracionados[0]?.forma || 'dinheiro';
+
+    // 1. Atualizar todos os pedidos selecionados no estado local
+    setPedidos((prev) =>
+      prev.map((p) => {
+        if (pedidoIds.includes(p.id)) {
+          return {
+            ...p,
+            conferencia_entrega: 'conferido',
+            conferido_por: responsavel,
+            conferido_em: agora,
+            pagamento_confirmado: true,
+            forma_pagamento: formaPrincipal,
+          };
+        }
+        return p;
+      })
+    );
+
+    // 2. Registrar entradas no caixa diário para cada fração de pagamento
+    if (caixa && caixa.status === 'aberto') {
+      const pedsDesc = pedidoIds
+        .map((id) => {
+          const ped = pedidos.find((p) => p.id === id);
+          return `#${ped?.codigo_senha || id}`;
+        })
+        .join(', ');
+
+      for (const pg of pagamentosFracionados) {
+        if (pg.valor > 0) {
+          await handleMovimentacaoCaixa(
+            'entrada_pedido',
+            pg.forma,
+            pg.valor,
+            `PAGAMENTO CONSOLIDADO: ${pedsDesc}`
+          );
+        }
+      }
+    }
+
+    // 3. Sincronizar em lote no Supabase
+    await conferirEntregasConsolidadasSupabase(pedidoIds, pagamentosFracionados, responsavel);
 
     playAlertChime();
   };
@@ -1706,6 +1761,7 @@ export default function AdminApp() {
             onFecharCaixa={handleFecharCaixa}
             onMovimentacao={handleMovimentacaoCaixa}
             onConferirEntrega={handleConferirEntrega}
+            onConferirEntregasConsolidadas={handleConferirEntregasConsolidadas}
             onConfirmarPagamento={handleConfirmarPagamentoPedido}
           />
         )}

@@ -25,6 +25,7 @@ import {
   RefreshCw,
   X,
   Send,
+  Layers,
 } from 'lucide-react';
 import {
   Produto,
@@ -213,9 +214,46 @@ export default function ClientApp() {
   const [precisaTroco, setPrecisaTroco] = useState<boolean>(false);
   const [trocoPara, setTrocoPara] = useState<string>('');
 
-  // Status de Submissão e Pedido Concluído
+  // Status de Submissão e Pedidos Ativos
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [pedidoConcluido, setPedidoConcluido] = useState<Pedido | null>(null);
+  const [meusPedidosAtivos, setMeusPedidosAtivos] = useState<Pedido[]>([]);
+
+  // Helpers para persistência de múltiplos pedidos no localStorage
+  const getMeusPedidosIdsStorage = useCallback((): string[] => {
+    try {
+      const arrayRaw = localStorage.getItem('kaipira_meus_pedidos_ids');
+      let ids: string[] = [];
+      if (arrayRaw) {
+        const parsed = JSON.parse(arrayRaw);
+        if (Array.isArray(parsed)) {
+          ids = parsed.map(String);
+        }
+      }
+      // Migração compatível caso exista kaipira_ultimo_pedido_id
+      const legadoId = localStorage.getItem('kaipira_ultimo_pedido_id');
+      if (legadoId && !ids.includes(String(legadoId))) {
+        ids.push(String(legadoId));
+      }
+      return ids;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const salvarMeusPedidosIdsStorage = useCallback((ids: (string | number)[]) => {
+    try {
+      const cleanIds = Array.from(new Set(ids.map(String)));
+      localStorage.setItem('kaipira_meus_pedidos_ids', JSON.stringify(cleanIds));
+      if (cleanIds.length > 0) {
+        localStorage.setItem('kaipira_ultimo_pedido_id', cleanIds[cleanIds.length - 1]);
+      } else {
+        localStorage.removeItem('kaipira_ultimo_pedido_id');
+      }
+    } catch (e) {
+      console.warn('Falha ao salvar IDs no localStorage:', e);
+    }
+  }, []);
 
   // Carregamento de dados com suporte a recarga silenciosa
   const loadData = useCallback(async (isSilent = false) => {
@@ -263,52 +301,68 @@ export default function ClientApp() {
     }
   }, []);
 
-  // Recuperação do último pedido salvo no localStorage ao abrir o aplicativo
+  // Recuperação dos múltiplos pedidos salvos no localStorage ao abrir o aplicativo
   useEffect(() => {
-    const restaurarPedidoSalvo = async () => {
+    const restaurarPedidosSalvos = async () => {
       try {
-        const salvoId = localStorage.getItem('kaipira_ultimo_pedido_id');
-        if (!salvoId) return;
+        const ids = getMeusPedidosIdsStorage();
+        if (ids.length === 0) return;
 
         const { data, error } = await supabase
           .from('pedidos')
           .select('*')
-          .eq('id', salvoId)
-          .single();
+          .in('id', ids.map(Number));
 
-        if (!error && data) {
-          const st = (data.status || '').toLowerCase();
-          if (st !== 'entregue' && st !== 'cancelado') {
-            setPedidoConcluido(data as Pedido);
+        if (!error && data && data.length > 0) {
+          const ativos = (data as Pedido[]).filter((p) => {
+            const st = (p.status || '').toLowerCase();
+            return st !== 'cancelado';
+          });
+
+          // Filtra pedidos não entregues
+          const emAndamento = ativos.filter((p) => (p.status || '').toLowerCase() !== 'entregue');
+          const pedidosAtivosFinais = emAndamento.length > 0 ? emAndamento : ativos;
+
+          if (pedidosAtivosFinais.length > 0) {
+            setMeusPedidosAtivos(pedidosAtivosFinais);
+            setPedidoConcluido(pedidosAtivosFinais[pedidosAtivosFinais.length - 1]);
+            salvarMeusPedidosIdsStorage(pedidosAtivosFinais.map((p) => p.id));
           } else {
+            localStorage.removeItem('kaipira_meus_pedidos_ids');
             localStorage.removeItem('kaipira_ultimo_pedido_id');
           }
         }
       } catch (err) {
-        console.warn('Erro ao restaurar último pedido salvo:', err);
+        console.warn('Erro ao restaurar pedidos salvos:', err);
       }
     };
 
-    restaurarPedidoSalvo();
-  }, []);
+    restaurarPedidosSalvos();
+  }, [getMeusPedidosIdsStorage, salvarMeusPedidosIdsStorage]);
 
-  // Acompanhamento em tempo real do pedido concluído via Supabase Realtime
+  // Acompanhamento em tempo real dos pedidos ativos via Supabase Realtime
   useEffect(() => {
-    if (!pedidoConcluido?.id) return;
+    if (meusPedidosAtivos.length === 0) return;
 
+    const idsAtivos = meusPedidosAtivos.map((p) => p.id);
     const trackingChannel = supabase
-      .channel(`pedido_tracking_${pedidoConcluido.id}`)
+      .channel('cliente_pedidos_tracking_channel')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'pedidos',
-          filter: `id=eq.${pedidoConcluido.id}`,
         },
         (payload: any) => {
-          if (payload.new) {
-            setPedidoConcluido((prev) => (prev ? { ...prev, ...payload.new } : payload.new));
+          if (payload.new && idsAtivos.includes(payload.new.id)) {
+            const atualizado = payload.new as Pedido;
+            setMeusPedidosAtivos((prev) =>
+              prev.map((p) => (p.id === atualizado.id ? { ...p, ...atualizado } : p))
+            );
+            setPedidoConcluido((prev) =>
+              prev && prev.id === atualizado.id ? { ...prev, ...atualizado } : prev
+            );
           }
         }
       )
@@ -317,7 +371,7 @@ export default function ClientApp() {
     return () => {
       trackingChannel.unsubscribe();
     };
-  }, [pedidoConcluido?.id]);
+  }, [meusPedidosAtivos.map((p) => p.id).join(',')]);
 
   const handleRefreshPedidoStatus = async () => {
     if (!pedidoConcluido?.id) return;
@@ -328,7 +382,11 @@ export default function ClientApp() {
         .eq('id', pedidoConcluido.id)
         .single();
       if (!error && data) {
-        setPedidoConcluido((prev) => (prev ? { ...prev, ...data } : data));
+        const atualizado = data as Pedido;
+        setPedidoConcluido((prev) => (prev ? { ...prev, ...atualizado } : atualizado));
+        setMeusPedidosAtivos((prev) =>
+          prev.map((p) => (p.id === atualizado.id ? { ...p, ...atualizado } : p))
+        );
       }
     } catch (err) {
       console.warn('Erro ao atualizar status do pedido:', err);
@@ -734,11 +792,13 @@ export default function ClientApp() {
       const pedidoCriado = await criarPedidoSupabase(pedidoPayload);
 
       if (pedidoCriado && pedidoCriado.id) {
-        try {
-          localStorage.setItem('kaipira_ultimo_pedido_id', String(pedidoCriado.id));
-        } catch (e) {
-          console.warn('Falha ao salvar no localStorage:', e);
-        }
+        const idsAtuais = getMeusPedidosIdsStorage();
+        const novosIds = [...idsAtuais.filter((id) => id !== String(pedidoCriado.id)), String(pedidoCriado.id)];
+        salvarMeusPedidosIdsStorage(novosIds);
+        setMeusPedidosAtivos((prev) => {
+          const semDup = prev.filter((p) => p.id !== pedidoCriado.id);
+          return [...semDup, pedidoCriado];
+        });
       }
 
       setPedidoConcluido(pedidoCriado);
@@ -934,6 +994,41 @@ export default function ClientApp() {
         </header>
 
         <main className="flex-1 max-w-md mx-auto p-5 w-full flex flex-col justify-center">
+          {/* Seletor de Múltiplos Pedidos em Andamento */}
+          {meusPedidosAtivos.length > 1 && (
+            <div className="mb-3 bg-neutral-900 border border-neutral-800 p-2.5 rounded-2xl flex flex-col gap-1.5 shadow-md">
+              <span className="text-[10px] font-black uppercase text-neutral-400 px-1 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-amber-500" />
+                <span>Seus Pedidos em Andamento ({meusPedidosAtivos.length}):</span>
+              </span>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                {meusPedidosAtivos.map((p) => {
+                  const isSel = pedidoConcluido.id === p.id;
+                  const isEntregue = (p.status || '').toLowerCase() === 'entregue';
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setPedidoConcluido(p)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase font-mono transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                        isSel
+                          ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
+                          : 'bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700'
+                      }`}
+                    >
+                      <span>#{p.codigo_senha || p.id}</span>
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          isEntregue ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+                        }`}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 text-center shadow-2xl relative overflow-hidden">
             <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/30">
               <CheckCircle2 className="w-10 h-10 stroke-[2.5]" />
@@ -1103,11 +1198,17 @@ export default function ClientApp() {
                     <button
                       type="button"
                       onClick={() => {
-                        try {
-                          localStorage.removeItem('kaipira_ultimo_pedido_id');
-                        } catch {}
-                        setPedidoConcluido(null);
-                        setCheckoutStep('menu');
+                        const targetId = pedidoConcluido.id;
+                        const restantes = meusPedidosAtivos.filter((p) => p.id !== targetId);
+                        setMeusPedidosAtivos(restantes);
+                        salvarMeusPedidosIdsStorage(restantes.map((p) => p.id));
+
+                        if (restantes.length > 0) {
+                          setPedidoConcluido(restantes[restantes.length - 1]);
+                        } else {
+                          setPedidoConcluido(null);
+                          setCheckoutStep('menu');
+                        }
                       }}
                       className="w-full mt-3 py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-black uppercase rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/25 cursor-pointer animate-pulse"
                     >
@@ -1132,13 +1233,7 @@ export default function ClientApp() {
 
               <button
                 type="button"
-                onClick={() => {
-                  try {
-                    localStorage.removeItem('kaipira_ultimo_pedido_id');
-                  } catch {}
-                  setPedidoConcluido(null);
-                  setCheckoutStep('menu');
-                }}
+                onClick={() => setCheckoutStep('menu')}
                 className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white font-bold uppercase rounded-xl text-xs transition-colors cursor-pointer"
               >
                 Fazer Novo Pedido
@@ -1754,26 +1849,37 @@ export default function ClientApp() {
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-amber-500 selection:text-black pb-28">
       {/* Top Header Mobile-First com Logo Centralizada */}
       <header className="bg-neutral-900/95 border-b border-neutral-800 sticky top-0 z-30 backdrop-blur-md">
-        {/* Banner de Pedido em Andamento */}
-        {checkoutStep === 'menu' &&
-          pedidoConcluido &&
-          pedidoConcluido.status !== 'entregue' &&
-          pedidoConcluido.status !== 'cancelado' && (
+        {/* Banner de Pedido(s) em Andamento */}
+        {checkoutStep === 'menu' && (() => {
+          const ativos = meusPedidosAtivos.filter(
+            (p) => p && p.status !== 'entregue' && p.status !== 'cancelado'
+          );
+          if (ativos.length === 0) return null;
+          const texto =
+            ativos.length === 1
+              ? `📦 Você tem um pedido em andamento (#${ativos[0].codigo_senha || ativos[0].id}). Clique aqui para acompanhar`
+              : `📦 Você tem ${ativos.length} pedidos em andamento. Clique para acompanhar`;
+
+          return (
             <button
               type="button"
-              onClick={() => setCheckoutStep('success')}
+              onClick={() => {
+                if (!pedidoConcluido || !ativos.some((p) => p.id === pedidoConcluido.id)) {
+                  setPedidoConcluido(ativos[ativos.length - 1]);
+                }
+                setCheckoutStep('success');
+              }}
               className="w-full bg-gradient-to-r from-amber-500/20 via-amber-500/30 to-amber-500/20 hover:from-amber-500/30 hover:to-amber-500/40 border-b border-amber-500/40 text-amber-200 py-2.5 px-4 text-center text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md group"
             >
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
               </span>
-              <span>
-                📦 Você tem um pedido em andamento (#{pedidoConcluido.codigo_senha || pedidoConcluido.id}). Clique aqui para acompanhar
-              </span>
+              <span>{texto}</span>
               <ChevronRight className="w-3.5 h-3.5 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
             </button>
-        )}
+          );
+        })()}
 
         {/* Banner de Aviso de Horário de Entregas */}
         <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 py-2 px-4 text-center text-xs font-semibold flex items-center justify-center gap-2 shadow-inner">

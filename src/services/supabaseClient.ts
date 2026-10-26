@@ -779,6 +779,48 @@ export async function conferirEntregaPedidoSupabase(
 }
 
 /**
+ * Consolidação e baixa múltipla de entregas no Supabase
+ * Marca pedidos como conferidos e com pagamento confirmado
+ */
+export async function conferirEntregasConsolidadasSupabase(
+  pedidoIds: number[],
+  pagamentosFracionados: { forma: string; valor: number }[],
+  conferidoPor: string
+): Promise<void> {
+  try {
+    const nowIso = new Date().toISOString();
+    await checkPedidosSchema();
+
+    for (const id of pedidoIds) {
+      registrarConferenciaLocal(id, conferidoPor);
+      await salvarConferenciaNuvem(id, conferidoPor);
+
+      const payload: any = {
+        conferencia_entrega: 'conferido',
+        conferido_por: conferidoPor,
+        conferido_em: nowIso,
+        pagamento_confirmado: true,
+      };
+
+      if (pagamentosFracionados.length > 0) {
+        payload.forma_pagamento = String(pagamentosFracionados[0].forma).toLowerCase().trim();
+      }
+
+      let { error } = await supabase.from('pedidos').update(payload).eq('id', id);
+      if (error) {
+        if (error.message?.includes('forma_pagamento')) delete payload.forma_pagamento;
+        if (error.message?.includes('conferido_por')) delete payload.conferido_por;
+        if (error.message?.includes('conferido_em')) delete payload.conferido_em;
+        if (error.message?.includes('conferencia_entrega')) delete payload.conferencia_entrega;
+        await supabase.from('pedidos').update(payload).eq('id', id);
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao conferir entregas consolidadas no Supabase:', err);
+  }
+}
+
+/**
  * Conexões ativas no sistema em tempo real (Supabase Presence)
  * Notifica a quantidade de dispositivos (tablets, celulares, PCs) conectados pela internet
  */

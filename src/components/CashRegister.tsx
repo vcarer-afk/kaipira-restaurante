@@ -50,6 +50,8 @@ import {
   FileDown,
   LayoutGrid,
   List,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 interface CashRegisterProps {
@@ -72,6 +74,11 @@ interface CashRegisterProps {
     descricao: string
   ) => void;
   onConferirEntrega?: (pedidoId: number, conferidoPor: string, formaFinal?: string) => void;
+  onConferirEntregasConsolidadas?: (
+    pedidoIds: number[],
+    pagamentosFracionados: { forma: FormaPagamento; valor: number }[],
+    conferidoPor: string
+  ) => Promise<void> | void;
   onConfirmarPagamento?: (pedidoId: number, forma?: FormaPagamento, conferidoPor?: string) => void;
 }
 
@@ -115,6 +122,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   onFecharCaixa,
   onMovimentacao,
   onConferirEntrega,
+  onConferirEntregasConsolidadas,
   onConfirmarPagamento,
 }) => {
   // Helper para resolver dados do cliente retroativamente via clientes ou dados do pedido
@@ -181,6 +189,13 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   const [conferindoPedido, setConferindoPedido] = useState<Pedido | null>(null);
   const [formaConferencia, setFormaConferencia] = useState<string>('dinheiro');
 
+  // Multi-seleção e Consolidação de Pedidos por Cliente
+  const [pedidosSelecionadosIds, setPedidosSelecionadosIds] = useState<number[]>([]);
+  const [showModalConsolidado, setShowModalConsolidado] = useState(false);
+  const [linhasPagamentoConsolidado, setLinhasPagamentoConsolidado] = useState<
+    { forma: FormaPagamento; valor: number }[]
+  >([]);
+
   // Usuários para conferência e baixa de entregas (liberado para operadores ativos em qualquer dispositivo)
   const supervisoresCadastrados = useMemo(() => {
     const list = (usuarios || []).filter((u) => u.status === 'ativo');
@@ -205,6 +220,92 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   };
 
   const safePedidosList = Array.isArray(pedidos) ? pedidos : [];
+
+  // Helper para identificar agrupamento de múltiplos pedidos pelo mesmo cliente
+  const getClienteChave = (p: Pedido | null | undefined): string => {
+    if (!p) return '';
+    const cli = resolveCliente(p);
+    if (cli?.id) return `id:${cli.id}`;
+    if (cli?.telefone) {
+      const digits = cli.telefone.replace(/\D/g, '');
+      if (digits) return `tel:${digits}`;
+    }
+    if (cli?.nome) return `nome:${cli.nome.trim().toUpperCase()}`;
+    return `pedido:${p.id}`;
+  };
+
+  const pedidosSelecionados = useMemo(() => {
+    return safePedidosList.filter((p) => p && pedidosSelecionadosIds.includes(p.id));
+  }, [safePedidosList, pedidosSelecionadosIds]);
+
+  const totalConsolidado = useMemo(() => {
+    return pedidosSelecionados.reduce((acc, p) => acc + (Number(p.valor_total) || 0), 0);
+  }, [pedidosSelecionados]);
+
+  const clienteConsolidado = useMemo(() => {
+    if (pedidosSelecionados.length === 0) return undefined;
+    return resolveCliente(pedidosSelecionados[0]);
+  }, [pedidosSelecionados]);
+
+  const toggleSelecionarPedido = (p: Pedido) => {
+    if (p.conferencia_entrega === 'conferido') return;
+    setPedidosSelecionadosIds((prev) => {
+      if (prev.includes(p.id)) {
+        return prev.filter((id) => id !== p.id);
+      }
+      if (prev.length > 0) {
+        const primeiro = safePedidosList.find((item) => item.id === prev[0]);
+        if (primeiro) {
+          const chavePrimeiro = getClienteChave(primeiro);
+          const chaveAtual = getClienteChave(p);
+          if (chavePrimeiro !== chaveAtual) {
+            alert('Atenção: A consolidação de entregas é permitida apenas para pedidos do mesmo cliente.');
+            return prev;
+          }
+        }
+      }
+      return [...prev, p.id];
+    });
+  };
+
+  const handleAbrirModalConsolidado = () => {
+    if (pedidosSelecionados.length === 0) return;
+    const formaPadrao = (pedidosSelecionados[0]?.forma_pagamento as FormaPagamento) || 'pix';
+    setLinhasPagamentoConsolidado([
+      { forma: formaPadrao, valor: totalConsolidado }
+    ]);
+    setShowModalConsolidado(true);
+  };
+
+  const handleConfirmarConsolidado = async () => {
+    if (pedidosSelecionadosIds.length === 0) return;
+    const totalPago = linhasPagamentoConsolidado.reduce((sum, l) => sum + (Number(l.valor) || 0), 0);
+    if (totalPago < totalConsolidado - 0.05) {
+      alert(
+        `O valor total informado (${formatBRL(totalPago)}) é inferior ao total consolidado (${formatBRL(totalConsolidado)}). Ajuste as frações para cobrir o valor total.`
+      );
+      return;
+    }
+
+    const linhasValidas = linhasPagamentoConsolidado.filter((l) => (Number(l.valor) || 0) > 0);
+    if (linhasValidas.length === 0) {
+      alert('Informe ao menos uma forma de pagamento com valor maior que zero.');
+      return;
+    }
+
+    const conferente = responsavelConferencia.trim() || currentPerfil?.nome || 'GERENTE GERAL';
+
+    if (onConferirEntregasConsolidadas) {
+      await onConferirEntregasConsolidadas(pedidosSelecionadosIds, linhasValidas, conferente);
+    } else if (onConferirEntrega) {
+      pedidosSelecionadosIds.forEach((id) => {
+        onConferirEntrega(id, conferente, linhasValidas[0]?.forma || 'dinheiro');
+      });
+    }
+
+    setShowModalConsolidado(false);
+    setPedidosSelecionadosIds([]);
+  };
 
   // Pedidos sob a categoria "A Faturar / A Receber" (não confirmados pelo caixa)
   const pedidosAFaturar = useMemo(() => {
@@ -1369,6 +1470,60 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
             </div>
           </div>
 
+          {/* BARRA DE DESTAQUE: CONSOLIDAÇÃO E PAGAMENTO MÚLTIPLO POR CLIENTE */}
+          {pedidosSelecionadosIds.length > 0 && (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/70 via-neutral-900 to-amber-950/70 border-2 border-amber-500 shadow-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 animate-in slide-in-from-top-2">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-black flex items-center justify-center font-black shadow-md shrink-0">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase text-amber-400">
+                      Consolidação de Entregas
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      {pedidosSelecionadosIds.length} {pedidosSelecionadosIds.length === 1 ? 'pedido selecionado' : 'pedidos selecionados'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-neutral-200 mt-0.5 font-medium">
+                    Cliente:{' '}
+                    <strong className="text-white uppercase font-black">
+                      {clienteConsolidado?.nome || 'CLIENTE SELECIONADO'}
+                    </strong>
+                    {clienteConsolidado?.telefone && (
+                      <span className="text-neutral-400 ml-1 font-mono">({clienteConsolidado.telefone})</span>
+                    )}
+                    {' · '}
+                    Total Consolidado:{' '}
+                    <strong className="text-amber-400 font-mono text-sm font-black">
+                      {formatBRL(totalConsolidado)}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setPedidosSelecionadosIds([])}
+                  className="px-3.5 py-2 text-xs font-bold text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-xl uppercase transition-colors cursor-pointer"
+                >
+                  Limpar Seleção
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleAbrirModalConsolidado}
+                  className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 cursor-pointer active:scale-95 transition-all"
+                >
+                  <Wallet className="w-4 h-4" />
+                  <span>Consolidar e Baixar Pedidos Selecionados</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Lista de Entregas */}
           {(() => {
             const list =
@@ -1404,6 +1559,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {list.map((p) => {
                     const isConferido = p.conferencia_entrega === 'conferido';
+                    const isSelecionado = pedidosSelecionadosIds.includes(p.id);
                     const subtotalProdutos = p.itens.reduce(
                       (sum, it) => sum + it.preco_unitario * it.quantidade,
                       0
@@ -1415,38 +1571,56 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                         className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
                           isConferido
                             ? 'bg-neutral-850/80 border-neutral-800'
+                            : isSelecionado
+                            ? 'bg-amber-950/30 border-amber-500 shadow-lg ring-2 ring-amber-500/50'
                             : 'bg-neutral-850 border-amber-800/80 shadow-md ring-1 ring-amber-500/30'
                         }`}
                       >
                         <div className="space-y-3">
                           {/* Top bar da entrega */}
                           <div className="flex items-start justify-between border-b border-neutral-800 pb-2.5">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono font-black text-base text-white">
-                                  #{p.codigo_senha}
-                                </span>
-                                <span className="text-[10px] text-neutral-400 font-mono">
-                                  Pedido #{p.id}
-                                </span>
-                                <span
-                                  className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded ${
-                                    isConferido
-                                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                                      : 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                            <div className="flex items-start gap-2.5">
+                              {!isConferido && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSelecionarPedido(p)}
+                                  className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center transition-colors cursor-pointer border ${
+                                    isSelecionado
+                                      ? 'bg-amber-500 border-amber-400 text-black'
+                                      : 'bg-neutral-900 border-neutral-700 hover:border-amber-500/80 text-transparent'
                                   }`}
+                                  title={isSelecionado ? 'Desmarcar pedido' : 'Selecionar para consolidação'}
                                 >
-                                  {isConferido ? 'CONFERIDO NO CAIXA' : 'PENDENTE CONFERÊNCIA'}
-                                </span>
+                                  <CheckSquare className="w-3.5 h-3.5 stroke-[3]" />
+                                </button>
+                              )}
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-black text-base text-white">
+                                    #{p.codigo_senha}
+                                  </span>
+                                  <span className="text-[10px] text-neutral-400 font-mono">
+                                    Pedido #{p.id}
+                                  </span>
+                                  <span
+                                    className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded ${
+                                      isConferido
+                                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                        : 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                                    }`}
+                                  >
+                                    {isConferido ? 'CONFERIDO NO CAIXA' : 'PENDENTE CONFERÊNCIA'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-neutral-400 mt-0.5 flex items-center gap-2">
+                                  <span className="flex items-center gap-1 text-cyan-400 font-bold">
+                                    <Bike className="w-3.5 h-3.5" />
+                                    {p.entregador_nome || 'MOTOBOY KAIPIRA'}
+                                  </span>
+                                  <span>•</span>
+                                  <span>Atualizado às {formatDateTime(p.atualizado_em)}</span>
+                                </p>
                               </div>
-                              <p className="text-xs text-neutral-400 mt-0.5 flex items-center gap-2">
-                                <span className="flex items-center gap-1 text-cyan-400 font-bold">
-                                  <Bike className="w-3.5 h-3.5" />
-                                  {p.entregador_nome || 'MOTOBOY KAIPIRA'}
-                                </span>
-                                <span>•</span>
-                                <span>Atualizado às {formatDateTime(p.atualizado_em)}</span>
-                              </p>
                             </div>
 
                             <div className="text-right">
@@ -1572,6 +1746,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="bg-neutral-900 border-b border-neutral-800 text-neutral-400 text-[10.5px] uppercase font-black tracking-wider">
+                        <th className="py-3 px-3 w-10 text-center">Sel.</th>
                         <th className="py-3 px-4">Senha / Pedido</th>
                         <th className="py-3 px-3">Status</th>
                         <th className="py-3 px-3">Motoboy / Saída</th>
@@ -1585,6 +1760,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                     <tbody className="divide-y divide-neutral-800/80">
                       {list.map((p) => {
                         const isConferido = p.conferencia_entrega === 'conferido';
+                        const isSelecionado = pedidosSelecionadosIds.includes(p.id);
                         const subtotalProdutos = p.itens.reduce(
                           (sum, it) => sum + it.preco_unitario * it.quantidade,
                           0
@@ -1596,9 +1772,29 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                             className={`transition-colors ${
                               isConferido
                                 ? 'hover:bg-neutral-800/40'
+                                : isSelecionado
+                                ? 'bg-amber-950/30 hover:bg-amber-950/40 ring-1 ring-inset ring-amber-500/40'
                                 : 'bg-amber-950/10 hover:bg-amber-950/25'
                             }`}
                           >
+                            {/* Checkbox de Seleção */}
+                            <td className="py-3.5 px-3 align-middle text-center">
+                              {!isConferido && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSelecionarPedido(p)}
+                                  className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors cursor-pointer border mx-auto ${
+                                    isSelecionado
+                                      ? 'bg-amber-500 border-amber-400 text-black'
+                                      : 'bg-neutral-900 border-neutral-700 hover:border-amber-500 text-transparent'
+                                  }`}
+                                  title="Selecionar para consolidação"
+                                >
+                                  <CheckSquare className="w-3.5 h-3.5 stroke-[3]" />
+                                </button>
+                              )}
+                            </td>
+
                             {/* Senha / Pedido */}
                             <td className="py-3.5 px-4 align-top whitespace-nowrap">
                               <span className="font-mono font-black text-base text-amber-400 block">
@@ -1743,16 +1939,30 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 <div className="md:hidden divide-y divide-neutral-800">
                   {list.map((p) => {
                     const isConferido = p.conferencia_entrega === 'conferido';
+                    const isSelecionado = pedidosSelecionadosIds.includes(p.id);
 
                     return (
                       <div
                         key={p.id}
                         className={`p-3.5 space-y-2.5 transition-colors ${
-                          isConferido ? 'bg-neutral-850' : 'bg-amber-950/15'
+                          isConferido ? 'bg-neutral-850' : isSelecionado ? 'bg-amber-950/30 ring-1 ring-amber-500' : 'bg-amber-950/15'
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
+                            {!isConferido && (
+                              <button
+                                type="button"
+                                onClick={() => toggleSelecionarPedido(p)}
+                                className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors cursor-pointer border ${
+                                  isSelecionado
+                                    ? 'bg-amber-500 border-amber-400 text-black'
+                                    : 'bg-neutral-900 border-neutral-700 hover:border-amber-500 text-transparent'
+                                }`}
+                              >
+                                <CheckSquare className="w-3.5 h-3.5 stroke-[3]" />
+                              </button>
+                            )}
                             <span className="font-mono font-black text-base text-amber-400">
                               #{p.codigo_senha}
                             </span>
@@ -2727,6 +2937,253 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
               >
                 <ShieldCheck className="w-4 h-4" />
                 <span>Confirmar & Faturar {formatBRL(conferindoPedido.valor_total)}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL CONSOLIDADO: PAGAMENTO MÚLTIPLO POR CLIENTE
+          ========================================================================= */}
+      {showModalConsolidado && pedidosSelecionados.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-3 sm:p-4 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl flex flex-col gap-4 animate-in zoom-in-95 my-auto max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-neutral-800 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                    <Layers className="w-5 h-5" />
+                  </span>
+                  <h3 className="text-base font-black text-white uppercase tracking-tight">
+                    Consolidação & Baixa de Pedidos
+                  </h3>
+                </div>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Cliente: <strong className="text-white uppercase">{clienteConsolidado?.nome || 'CLIENTE DELIVERY'}</strong>
+                  {clienteConsolidado?.telefone && (
+                    <span className="text-neutral-400 font-mono ml-1">({clienteConsolidado.telefone})</span>
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModalConsolidado(false)}
+                className="w-8 h-8 rounded-xl bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Lista dos Pedidos Selecionados */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
+                Pedidos Agrupados para Pagamento ({pedidosSelecionados.length}):
+              </span>
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {pedidosSelecionados.map((p) => (
+                  <div
+                    key={p.id}
+                    className="p-2.5 rounded-xl bg-neutral-850 border border-neutral-800 flex items-center justify-between text-xs"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-black text-amber-400">#{p.codigo_senha}</span>
+                        <span className="text-[10px] text-neutral-400 font-mono">Pedido #{p.id}</span>
+                        <span className="text-[10px] text-neutral-400">
+                          {p.itens.reduce((sum, it) => sum + it.quantidade, 0)} prato(s)
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-neutral-400 truncate max-w-[260px] mt-0.5">
+                        {p.itens.map((it) => `${it.quantidade}x ${it.produto_nome || 'PRATO'}`).join(', ')}
+                      </div>
+                    </div>
+                    <span className="font-mono font-black text-white text-sm">
+                      {formatBRL(p.valor_total)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Total Consolidado */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-amber-900/20 to-amber-950/40 border border-amber-500/40 flex items-center justify-between">
+              <span className="text-xs font-black uppercase text-amber-300">
+                Total Consolidado a Receber:
+              </span>
+              <span className="text-2xl font-black text-amber-400 font-mono tabular-nums">
+                {formatBRL(totalConsolidado)}
+              </span>
+            </div>
+
+            {/* Múltiplas Formas de Pagamento (PDV Fracionado) */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black uppercase text-neutral-300">
+                  Formas de Pagamento Recebidas:
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const totalJaAlocado = linhasPagamentoConsolidado.reduce(
+                      (sum, l) => sum + (Number(l.valor) || 0),
+                      0
+                    );
+                    const resto = Math.max(0, totalConsolidado - totalJaAlocado);
+                    setLinhasPagamentoConsolidado((prev) => [
+                      ...prev,
+                      { forma: 'dinheiro', valor: Number(resto.toFixed(2)) },
+                    ]);
+                  }}
+                  className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Adicionar Forma</span>
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {linhasPagamentoConsolidado.map((linha, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 rounded-xl bg-neutral-850 border border-neutral-750 flex items-center gap-2"
+                  >
+                    {/* Seletor da Forma */}
+                    <select
+                      value={linha.forma}
+                      onChange={(e) => {
+                        const novaForma = e.target.value as FormaPagamento;
+                        setLinhasPagamentoConsolidado((prev) =>
+                          prev.map((l, i) => (i === idx ? { ...l, forma: novaForma } : l))
+                        );
+                      }}
+                      className="flex-1 px-2.5 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-lg text-xs font-bold uppercase focus:outline-none"
+                    >
+                      <option value="pix">PIX</option>
+                      <option value="dinheiro">DINHEIRO (ESPÉCIE)</option>
+                      <option value="cartao_debito">CARTÃO DÉBITO</option>
+                      <option value="cartao_credito">CARTÃO CRÉDITO</option>
+                      <option value="vale_refeicao">VALE REFEIÇÃO / VR</option>
+                      <option value="mensalista">MENSALISTA</option>
+                      <option value="outro">OUTROS</option>
+                    </select>
+
+                    {/* Input do Valor */}
+                    <div className="w-36 relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 text-xs font-mono">
+                        R$
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={linha.valor || ''}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setLinhasPagamentoConsolidado((prev) =>
+                            prev.map((l, i) => (i === idx ? { ...l, valor: val } : l))
+                          );
+                        }}
+                        placeholder="0.00"
+                        className="w-full pl-8 pr-2.5 py-2 bg-neutral-900 border border-neutral-700 text-white font-mono font-black text-xs rounded-lg text-right focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    {/* Remover Linha */}
+                    {linhasPagamentoConsolidado.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLinhasPagamentoConsolidado((prev) => prev.filter((_, i) => i !== idx));
+                        }}
+                        className="p-2 text-neutral-500 hover:text-red-400 transition-colors cursor-pointer"
+                        title="Remover forma de pagamento"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Status de Balanço do Pagamento */}
+              {(() => {
+                const totalPago = linhasPagamentoConsolidado.reduce(
+                  (sum, l) => sum + (Number(l.valor) || 0),
+                  0
+                );
+                const diff = totalPago - totalConsolidado;
+                const coberto = Math.abs(diff) < 0.05 || diff > 0;
+
+                return (
+                  <div className="p-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-xs space-y-1">
+                    <div className="flex justify-between font-mono">
+                      <span className="text-neutral-400">Total Informado nas Frações:</span>
+                      <span className={`font-black ${coberto ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {formatBRL(totalPago)}
+                      </span>
+                    </div>
+
+                    {diff < -0.05 ? (
+                      <div className="text-[11px] font-bold text-red-400 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Faltam {formatBRL(Math.abs(diff))} para cobrir o total consolidado.</span>
+                      </div>
+                    ) : diff > 0.05 ? (
+                      <div className="text-[11px] font-bold text-cyan-400 flex items-center gap-1">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>Troco ao cliente: {formatBRL(diff)}</span>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>Valor exato coberto perfeitamente!</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Operador / Supervisor */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-neutral-300 block">
+                Operador / Supervisor Responsável:
+              </label>
+              <select
+                value={responsavelConferencia}
+                onChange={(e) => setResponsavelConferencia(e.target.value)}
+                className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white rounded-xl text-xs font-bold uppercase focus:outline-none"
+              >
+                {supervisoresCadastrados.map((u) => (
+                  <option key={u.id} value={u.nome} className="bg-neutral-900 text-white font-bold py-1">
+                    {u.nome} ({u.cargo.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Ações */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setShowModalConsolidado(false)}
+                className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={
+                  linhasPagamentoConsolidado.reduce((s, l) => s + (Number(l.valor) || 0), 0) <
+                  totalConsolidado - 0.05
+                }
+                onClick={handleConfirmarConsolidado}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg active:scale-95 transition-all cursor-pointer"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Confirmar Baixa Consolidada ({formatBRL(totalConsolidado)})</span>
               </button>
             </div>
           </div>
