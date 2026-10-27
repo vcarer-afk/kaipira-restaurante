@@ -39,6 +39,10 @@ import {
   QrCode,
   AlertTriangle,
   Lock,
+  Flame,
+  ShoppingBag,
+  Coffee,
+  Cake,
 } from 'lucide-react';
 
 interface CartItem {
@@ -264,6 +268,93 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
     } finally {
       setIsCepLoading(false);
     }
+  };
+
+  // Ícone temático de fallback por categoria de produto no PDV
+  const getProductCategoryFallbackIcon = (prod: Produto, sizeClass = 'w-6 h-6') => {
+    const catNome = (categorias.find((c) => c.id === prod.categoria_id)?.nome || '').toUpperCase();
+    const prodNome = (prod.nome || '').toUpperCase();
+
+    if (
+      prod.categoria_id === 4 ||
+      catNome.includes('BEBIDA') ||
+      catNome.includes('REFRIGERANTE') ||
+      catNome.includes('SUCO') ||
+      catNome.includes('CERVEJA') ||
+      catNome.includes('ÁGUA') ||
+      catNome.includes('AGUA') ||
+      prodNome.includes('COCA') ||
+      prodNome.includes('SUCO') ||
+      prodNome.includes('REFRIGERANTE') ||
+      prodNome.includes('GUARANA') ||
+      prodNome.includes('GUARANÁ')
+    ) {
+      return <Coffee className={`${sizeClass} text-cyan-400`} />;
+    }
+    if (
+      prod.categoria_id === 5 ||
+      catNome.includes('SOBREMESA') ||
+      catNome.includes('DOCE') ||
+      prodNome.includes('PUDIM') ||
+      prodNome.includes('BOLO') ||
+      prodNome.includes('TORTA')
+    ) {
+      return <Cake className={`${sizeClass} text-pink-400`} />;
+    }
+    if (
+      prod.categoria_id === 2 ||
+      catNome.includes('MARMIT') ||
+      prodNome.includes('MARMIT') ||
+      prodNome.includes('MINI') ||
+      prodNome.includes('MÉDIA') ||
+      prodNome.includes('MEDIA') ||
+      prodNome.includes('GRANDE')
+    ) {
+      return <ShoppingBag className={`${sizeClass} text-amber-400`} />;
+    }
+    return <Utensils className={`${sizeClass} text-amber-400`} />;
+  };
+
+  // Miniatura real da imagem do produto no PDV com padrão idêntico à vitrine
+  const renderProductThumbnailPDV = (
+    prod: Produto,
+    dimensionsClass = 'w-14 h-14 sm:w-16 sm:h-16 rounded-xl'
+  ) => {
+    const hasImage = Boolean(prod.url_imagem && prod.url_imagem.trim().length > 0);
+    return (
+      <div
+        className={`${dimensionsClass} overflow-hidden shrink-0 border border-neutral-700/80 bg-neutral-950 flex items-center justify-center relative shadow-xs`}
+      >
+        {hasImage ? (
+          <img
+            src={prod.url_imagem}
+            alt={prod.nome}
+            referrerPolicy="no-referrer"
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.currentTarget as HTMLElement).style.display = 'none';
+              const parent = e.currentTarget.parentElement;
+              if (parent) {
+                const fb = parent.querySelector('.pdv-fallback-icon');
+                if (fb) (fb as HTMLElement).classList.remove('hidden');
+              }
+            }}
+          />
+        ) : null}
+        <div
+          className={`pdv-fallback-icon flex items-center justify-center w-full h-full ${
+            hasImage ? 'hidden' : ''
+          }`}
+        >
+          {getProductCategoryFallbackIcon(prod, dimensionsClass.includes('w-12') ? 'w-5 h-5' : 'w-6 h-6')}
+        </div>
+        {prod.pausado && (
+          <div className="absolute inset-0 bg-black/80 flex items-center justify-center text-red-400 font-black text-[9px] uppercase text-center p-0.5 leading-tight">
+            Esgotado
+          </div>
+        )}
+      </div>
+    );
   };
 
   // Open modal to configure dish
@@ -885,73 +976,38 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                       : 'border-neutral-800 hover:border-amber-600/50 hover:bg-neutral-800/80'
                   }`}
                 >
-                  <div>
-                    <div className="w-full h-16 rounded-lg overflow-hidden mb-2 bg-neutral-900 border border-neutral-800 flex items-center justify-center relative">
-                      {prod.url_imagem && prod.url_imagem.trim().length > 0 ? (
-                        <img
-                          src={prod.url_imagem}
-                          alt={prod.nome}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center">
-                          {prod.categoria_id === 2 ? (
-                            <div className="p-2 rounded-lg bg-cyan-950/80 text-cyan-400 border border-cyan-800">
-                              <Bike className="w-5 h-5" />
-                            </div>
-                          ) : prod.categoria_id === 4 ? (
-                            <div className="p-2 rounded-lg bg-blue-950/80 text-blue-400 border border-blue-800">
-                              <Utensils className="w-5 h-5" />
-                            </div>
-                          ) : prod.categoria_id === 5 ? (
-                            <div className="p-2 rounded-lg bg-pink-950/80 text-pink-400 border border-pink-800">
-                              <Sparkles className="w-5 h-5" />
-                            </div>
-                          ) : (
-                            <div className="p-2 rounded-lg bg-amber-950/80 text-amber-400 border border-amber-800">
-                              <Utensils className="w-5 h-5" />
-                            </div>
-                          )}
-                        </div>
+                  <div className="flex items-start gap-3">
+                    {renderProductThumbnailPDV(prod, 'w-14 h-14 sm:w-16 sm:h-16 rounded-xl')}
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-1.5">
+                        <h4 className="text-xs font-bold text-white uppercase leading-snug line-clamp-2">
+                          {prod.nome}
+                        </h4>
+                        <span className="text-xs font-black text-amber-400 tabular-nums whitespace-nowrap shrink-0">
+                          {formatBRL(preco)}
+                        </span>
+                      </div>
+
+                      {prod.descricao && (
+                        <p className="text-[11px] text-neutral-400 line-clamp-2 mt-1 uppercase">
+                          {prod.descricao}
+                        </p>
                       )}
 
-                      {prod.pausado && (
-                        <div className="absolute inset-0 bg-black/75 flex items-center justify-center text-red-400 font-extrabold text-xs tracking-wider uppercase">
-                          <Ban className="w-4 h-4 mr-1" />
-                          Esgotado no Dia
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-start justify-between gap-2">
-                      <h4 className="text-xs font-bold text-white uppercase leading-snug">
-                        {prod.nome}
-                      </h4>
-                      <span className="text-xs font-black text-amber-400 tabular-nums whitespace-nowrap">
-                        {formatBRL(preco)}
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-neutral-400 line-clamp-2 mt-1 uppercase">
-                      {prod.descricao}
-                    </p>
-
-                    <div className="flex items-center gap-2 mt-2 text-[10px] text-neutral-500">
-                      <span>
-                        {tipoPedido === 'delivery' ? 'Preço Delivery' : 'Preço Salão'}
-                      </span>
-                      {prod.opcionais && prod.opcionais.length > 0 && (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span className="text-neutral-400 font-medium">
-                            +{prod.opcionais.length} opcionais
-                          </span>
-                        </>
-                      )}
+                      <div className="flex items-center gap-1.5 mt-2 text-[10px] text-neutral-500">
+                        <span className="truncate">
+                          {tipoPedido === 'delivery' ? 'Preço Delivery' : 'Preço Salão'}
+                        </span>
+                        {prod.opcionais && prod.opcionais.length > 0 && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-neutral-400 font-medium whitespace-nowrap">
+                              +{prod.opcionais.length} opc
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1010,26 +1066,10 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                       }`}
                     >
                       <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800 shrink-0 flex items-center justify-center">
-                            {prod.url_imagem && prod.url_imagem.trim().length > 0 ? (
-                              <img
-                                src={prod.url_imagem}
-                                alt={prod.nome}
-                                referrerPolicy="no-referrer"
-                                className="w-8 h-8 rounded-lg object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLElement).style.display = 'none';
-                                }}
-                              />
-                            ) : (
-                              <div className="text-amber-500">
-                                <Utensils className="w-4 h-4" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-bold text-white uppercase text-xs">
+                        <div className="flex items-center gap-3">
+                          {renderProductThumbnailPDV(prod, 'w-14 h-14 sm:w-16 sm:h-16 rounded-xl')}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-white uppercase text-xs truncate">
                               {prod.nome}
                             </div>
                             {prod.descricao && (

@@ -26,6 +26,8 @@ import {
   X,
   Send,
   Layers,
+  Coffee,
+  Cake,
 } from 'lucide-react';
 import {
   Produto,
@@ -170,11 +172,92 @@ function normalizeStr(str: string): string {
     .trim();
 }
 
+function getCategoryFallbackIconClient(prod: Produto, categorias?: Categoria[], sizeClass = 'w-6 h-6') {
+  const catId = Number(prod.categoria_id);
+  const cat = categorias?.find((c) => Number(c.id) === catId);
+  const catNome = (cat?.nome || '').toUpperCase();
+  const nome = (prod.nome || '').toUpperCase();
+
+  if (
+    catId === 4 ||
+    catNome.includes('BEBIDA') ||
+    catNome.includes('REFRIGERANTE') ||
+    catNome.includes('SUCO') ||
+    catNome.includes('CERVEJA') ||
+    catNome.includes('ÁGUA') ||
+    catNome.includes('AGUA') ||
+    nome.includes('SUCO') ||
+    nome.includes('REFRIGERANTE') ||
+    nome.includes('CERVEJA') ||
+    nome.includes('COCA') ||
+    nome.includes('GUARANÁ') ||
+    nome.includes('GUARANA')
+  ) {
+    return <Coffee className={`${sizeClass} text-amber-500`} />;
+  }
+
+  if (
+    catId === 5 ||
+    catNome.includes('SOBREMESA') ||
+    catNome.includes('DOCE') ||
+    nome.includes('PUDIM') ||
+    nome.includes('TORTA') ||
+    nome.includes('MOUSSE') ||
+    nome.includes('BRIGADEIRO')
+  ) {
+    return <Cake className={`${sizeClass} text-pink-400`} />;
+  }
+
+  if (
+    catNome.includes('MARMIT') ||
+    nome.includes('MARMIT') ||
+    nome.includes('MINI') ||
+    nome.includes('MÉDIA') ||
+    nome.includes('MEDIA') ||
+    nome.includes('GRANDE')
+  ) {
+    return <ShoppingBag className={`${sizeClass} text-amber-500`} />;
+  }
+
+  return <UtensilsCrossed className={`${sizeClass} text-amber-500/80`} />;
+}
+
 export default function ClientApp() {
   // Dados do Servidor / Nuvem
   const [configuracoes, setConfiguracoes] = useState<ConfiguracoesSistema | null>(null);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
+
+  // Miniatura da foto do produto na Sacola com fallback temático
+  const renderCartItemThumbnail = (prod: Produto) => {
+    const hasImage = Boolean(prod.url_imagem && prod.url_imagem.trim().length > 0);
+    return (
+      <div className="w-12 h-12 rounded-xl object-cover border border-neutral-700 bg-neutral-900 shrink-0 overflow-hidden relative flex items-center justify-center shadow-xs">
+        {hasImage ? (
+          <img
+            src={prod.url_imagem}
+            alt={prod.nome}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.currentTarget as HTMLElement).style.display = 'none';
+              const parent = e.currentTarget.parentElement;
+              if (parent) {
+                const fb = parent.querySelector('.cart-fallback-icon');
+                if (fb) (fb as HTMLElement).classList.remove('hidden');
+              }
+            }}
+          />
+        ) : null}
+        <div
+          className={`cart-fallback-icon flex items-center justify-center w-full h-full ${
+            hasImage ? 'hidden' : ''
+          }`}
+        >
+          {getCategoryFallbackIconClient(prod, categorias, 'w-6 h-6')}
+        </div>
+      </div>
+    );
+  };
   const [cardapioDiario, setCardapioDiario] = useState<CardapioDiarioConfig | null>(null);
   const [caixa, setCaixa] = useState<CaixaDiario | null>(null);
   const [bairros, setBairros] = useState<BairroTaxa[]>([]);
@@ -841,7 +924,7 @@ export default function ClientApp() {
                   {configuracoes?.nomeRestaurante || 'Restaurante Kaipira'}
                 </h1>
                 <p className="text-[11px] text-amber-400 font-semibold uppercase tracking-wider">
-                  Tradição e Sabor da Roça
+                  Desde 2013
                 </p>
               </div>
             </div>
@@ -882,12 +965,10 @@ export default function ClientApp() {
           </h2>
 
           <p className="text-neutral-400 text-sm leading-relaxed mb-6">
-            {!isCaixaAberto
-              ? 'O caixa diário ainda não foi aberto no painel administrativo.'
-              : !isCardapioAtivo
-              ? 'O cardápio do dia ainda não foi confirmado pelo gerente.'
-              : !isDeliverySiteAtivo
+            {!isDeliverySiteAtivo
               ? 'No momento as entregas pelo site estão pausadas.'
+              : !isCardapioAtivo
+              ? 'O cardápio do dia ainda não foi liberado para pedidos.'
               : 'Aguarde a liberação do atendimento para efetuar seu pedido.'}
           </p>
 
@@ -1088,33 +1169,25 @@ export default function ClientApp() {
             {/* ============================================================= */}
             {(() => {
               const statusPedido = (pedidoConcluido.status || 'pendente').toLowerCase();
-              let currentStep = 2;
-              if (statusPedido === 'entregue') {
+              let currentStep = 1;
+              if (statusPedido === 'a_caminho' || statusPedido === 'entregue') {
                 currentStep = 4;
-              } else if (statusPedido === 'a_caminho') {
-                // SÓ DEVE SER ACIONADO e iluminado quando o pedido for despachado na expedição ('a_caminho')
+              } else if (statusPedido === 'pronto') {
                 currentStep = 3;
-              } else if (
-                statusPedido === 'em_preparacao' ||
-                statusPedido === 'pendente' ||
-                statusPedido === 'pronto'
-              ) {
-                // Enquanto estiver na cozinha ('pendente' ou 'em_preparacao'), status exibido é estritamente Preparando seu Pedido
+              } else if (statusPedido === 'em_preparacao') {
                 currentStep = 2;
-              } else if (statusPedido === 'aguardando' || statusPedido === 'recebido') {
-                currentStep = 1;
               } else {
-                currentStep = 2;
+                currentStep = 1;
               }
 
               const trackingSteps = [
-                { id: 1, text: 'Aguardando confirmação do Restaurante' },
+                { id: 1, text: 'Aguardando Confirmação do Restaurante' },
                 { id: 2, text: 'Preparando seu Pedido' },
-                { id: 3, text: 'Entrega a Caminho' },
-                { id: 4, text: 'Pedido Entregue' },
+                { id: 3, text: 'Aguardando Entregador' },
+                { id: 4, text: 'Entrega a caminho' },
               ];
 
-              const currentStatusObj = trackingSteps.find((s) => s.id === currentStep) || trackingSteps[1];
+              const currentStatusObj = trackingSteps.find((s) => s.id === currentStep) || trackingSteps[0];
 
               return (
                 <div className="bg-neutral-950 border border-amber-500/50 rounded-2xl p-4 mb-5 text-left shadow-xl relative overflow-hidden">
@@ -1193,8 +1266,8 @@ export default function ClientApp() {
                     <span>Atualizar Status</span>
                   </button>
 
-                  {/* Quando o status chegar em "Pedido Entregue" (etapa 4), exiba botão destacado "Confirmar Entrega" */}
-                  {currentStep === 4 && (
+                  {/* Quando o status atingir "Entrega a caminho" (etapa 4) ou 'entregue', exiba botão destacado "Confirmar Entrega" */}
+                  {(currentStep === 4 || statusPedido === 'entregue') && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1207,8 +1280,9 @@ export default function ClientApp() {
                           setPedidoConcluido(restantes[restantes.length - 1]);
                         } else {
                           setPedidoConcluido(null);
-                          setCheckoutStep('menu');
                         }
+                        // Retorna imediatamente à vitrine do cardápio
+                        setCheckoutStep('menu');
                       }}
                       className="w-full mt-3 py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-black uppercase rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/25 cursor-pointer animate-pulse"
                     >
@@ -1290,34 +1364,37 @@ export default function ClientApp() {
                     className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex flex-col justify-between shadow-xs"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-black text-white uppercase leading-snug">
-                          {item.produto.nome}
-                        </h4>
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        {renderCartItemThumbnail(item.produto)}
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-black text-white uppercase leading-snug">
+                            {item.produto.nome}
+                          </h4>
 
-                        {item.opcionaisSelecionados.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {item.opcionaisSelecionados.map((op) => (
-                              <span
-                                key={op.id}
-                                className="px-2 py-0.5 rounded-md bg-neutral-800 text-amber-400 text-[10px] font-bold uppercase"
-                              >
-                                + {op.nome} ({formatBRL(op.preco_adicional)})
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                          {item.opcionaisSelecionados.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {item.opcionaisSelecionados.map((op) => (
+                                <span
+                                  key={op.id}
+                                  className="px-2 py-0.5 rounded-md bg-neutral-800 text-amber-400 text-[10px] font-bold uppercase"
+                                >
+                                  + {op.nome} ({formatBRL(op.preco_adicional)})
+                                </span>
+                              ))}
+                            </div>
+                          )}
 
-                        {item.observacao && (
-                          <p className="text-[11px] text-neutral-400 italic mt-1 bg-neutral-950/60 px-2 py-1 rounded-md border border-neutral-800/60">
-                            Obs: {item.observacao}
-                          </p>
-                        )}
+                          {item.observacao && (
+                            <p className="text-[11px] text-neutral-400 italic mt-1 bg-neutral-950/60 px-2 py-1 rounded-md border border-neutral-800/60">
+                              Obs: {item.observacao}
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                       <button
                         onClick={() => handleRemoverItem(item.cartItemId)}
-                        className="text-neutral-500 hover:text-red-400 p-1 rounded-lg transition-colors cursor-pointer"
+                        className="text-neutral-500 hover:text-red-400 p-1 rounded-lg transition-colors cursor-pointer shrink-0"
                         title="Remover produto"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1919,6 +1996,9 @@ export default function ClientApp() {
               Aberto
             </span>
           </div>
+          <p className="text-[11px] text-amber-400 font-semibold uppercase tracking-wider mt-0.5">
+            Desde 2013
+          </p>
           <p className="text-[11px] text-neutral-400 font-medium mt-0.5">
             {configuracoes?.horarioFuncionamento || 'Almoço das 11h às 14h'}
           </p>
@@ -2006,12 +2086,22 @@ export default function ClientApp() {
                           alt={prod.nome}
                           className="w-full h-full object-cover"
                           onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                            const parent = e.currentTarget.parentElement;
+                            if (parent) {
+                              const fb = parent.querySelector('.vitrine-fallback-icon');
+                              if (fb) (fb as HTMLElement).classList.remove('hidden');
+                            }
                           }}
                         />
-                      ) : (
-                        <UtensilsCrossed className="w-7 h-7 text-neutral-600" />
-                      )}
+                      ) : null}
+                      <div
+                        className={`vitrine-fallback-icon flex items-center justify-center w-full h-full ${
+                          prod.url_imagem ? 'hidden' : ''
+                        }`}
+                      >
+                        {getCategoryFallbackIconClient(prod, categorias, 'w-7 h-7')}
+                      </div>
                     </div>
 
                     {/* Dados do Produto */}
