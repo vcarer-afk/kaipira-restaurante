@@ -161,3 +161,14 @@ export function playAlertChime(type: 'order' | 'ready' | 'call' = 'order') {
     // Ignore audio restriction if user hasn't interacted yet
   }
 }
+
+/**
+ * Normalização universal de canal de salão (salão vs salao vs mesa_id)
+ * Considera como salão qualquer pedido com mesa_id ou cujo tipo contenha 'sal' (após normalização NFD)
+ */
+export function isSalaoPedido(p: { tipo?: string; mesa_id?: number | string | null } | null | undefined): boolean {
+  if (!p) return false;
+  if (p.mesa_id !== undefined && p.mesa_id !== null && p.mesa_id !== '') return true;
+  const t = (p.tipo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return t.includes('sal');
+}

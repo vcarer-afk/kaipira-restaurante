@@ -10,7 +10,7 @@ import {
   CardapioDiarioConfig,
   DashboardLayoutTipo,
 } from '../types';
-import { formatBRL, formatTime } from '../utils/formatters';
+import { formatBRL, formatTime, isSalaoPedido } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
 import { ActiveTab } from './Header';
 import {
@@ -192,7 +192,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   };
 
-  const activeAndCompletedOrders = safePedidos.filter((p) => p && p.status !== 'cancelado');
+  // REGRA DE CONSISTÊNCIA: Alinhamento de data e faturamento entre Dashboard e Caixa
+  const dataHojeIso = new Date().toLocaleDateString('en-CA');
+  const dataFiltroCaixa = caixa?.data_caixa || dataHojeIso;
+
+  const activeAndCompletedOrders = safePedidos.filter(
+    (p) =>
+      p &&
+      p.status !== 'cancelado' &&
+      (!p.criado_em || p.criado_em.startsWith(dataFiltroCaixa) || p.criado_em.startsWith(dataHojeIso))
+  );
   const pedidosConfirmados = activeAndCompletedOrders.filter(isPedidoFaturado);
   const pedidosAFaturar = activeAndCompletedOrders.filter((p) => !isPedidoFaturado(p));
 
@@ -203,10 +212,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ? totalFaturamento / pedidosConfirmados.length
     : 0;
 
-  // Breakdown by channel - somente faturados/confirmados
+  // Breakdown by channel - somente faturados/confirmados com normalização universal de salão
   const deliveryOrders = pedidosConfirmados.filter((p) => p && p.tipo === 'delivery');
-  const salaoOrders = pedidosConfirmados.filter((p) => p && p.tipo === 'salão');
-  const retiradaOrders = pedidosConfirmados.filter((p) => p && p.tipo === 'retirada');
+  const salaoOrders = pedidosConfirmados.filter((p) => p && isSalaoPedido(p));
+  const retiradaOrders = pedidosConfirmados.filter((p) => p && (p.tipo === 'retirada' || (p.tipo as string) === 'balcão' || (p.tipo as string) === 'balcao'));
 
   const faturamentoDelivery = deliveryOrders.reduce((acc, p) => acc + (Number(p.valor_total) || 0), 0);
   const faturamentoSalao = salaoOrders.reduce((acc, p) => acc + (Number(p.valor_total) || 0), 0);
@@ -215,8 +224,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Pedidos a faturar por canal
   const deliveryAFaturar = pedidosAFaturar.filter((p) => p && p.tipo === 'delivery');
-  const salaoAFaturar = pedidosAFaturar.filter((p) => p && p.tipo === 'salão');
-  const retiradaAFaturar = pedidosAFaturar.filter((p) => p && p.tipo === 'retirada');
+  const salaoAFaturar = pedidosAFaturar.filter((p) => p && isSalaoPedido(p));
+  const retiradaAFaturar = pedidosAFaturar.filter((p) => p && (p.tipo === 'retirada' || (p.tipo as string) === 'balcão' || (p.tipo as string) === 'balcao'));
 
   // Payment totals for 3D Pie Chart com blindagem contra valores indefinidos ou nulos
   const paymentSlices = useMemo(() => {
@@ -265,6 +274,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       });
 
+      // Se houver movimentações de recebimento de mensalista no caixa hoje, inclui nas fatias de pagamento
+      if (caixa && Array.isArray(caixa.movimentacoes)) {
+        caixa.movimentacoes.forEach((m: any) => {
+          if (m && m.tipo === 'suprimento' && m.descricao && m.descricao.toUpperCase().includes('MENSALISTA') && Number(m.valor) > 0) {
+            const raw = (m.forma || 'pix').toLowerCase();
+            let key = 'pix';
+            if (raw.includes('dinheiro')) key = 'dinheiro';
+            else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
+            else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
+            else if (raw.includes('vale') || raw.includes('refeicao')) key = 'vale_refeicao';
+            totals[key] = (totals[key] || 0) + Number(m.valor);
+          }
+        });
+      }
+
       const totalGeral = Object.values(totals).reduce((sum, v) => sum + v, 0);
       return Object.entries(totals)
         .filter(([_, val]) => val > 0)
@@ -284,7 +308,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       console.warn("Erro recuperado em paymentSlices:", err);
       return [];
     }
-  }, [pedidosConfirmados]);
+  }, [pedidosConfirmados, caixa?.movimentacoes]);
 
   // Tables metrics & 20 tables mapping
   const ocupadas = safeMesas.filter((m) => m && m.status === 'ocupada').length;
@@ -393,8 +417,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   if (caixa && Array.isArray(caixa.movimentacoes)) {
     caixa.movimentacoes.forEach((m: any) => {
       if (m && typeof m.valor === 'number' && !isNaN(m.valor)) {
-        if (m.tipo === 'suprimento') dinheiroGaveta += m.valor;
-        if (m.tipo === 'sangria') dinheiroGaveta -= m.valor;
+        const rawForma = (m.forma || 'dinheiro').toLowerCase();
+        if (rawForma.includes('dinheiro') || !m.forma) {
+          if (m.tipo === 'suprimento') dinheiroGaveta += m.valor;
+          if (m.tipo === 'sangria') dinheiroGaveta -= m.valor;
+        }
       }
     });
   }
@@ -1412,7 +1439,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         #{p.id}
                       </span>
                       <span className="text-white truncate font-sans text-xs">
-                        {p.tipo === 'salão' ? `Mesa ${p.mesa_id || '?'}` : p.cliente?.nome || 'Balcão'}
+                        {isSalaoPedido(p) ? `Mesa ${p.mesa_id || '?'}` : p.cliente?.nome || 'Balcão'}
                       </span>
                     </div>
                     <span className="text-amber-400 font-bold shrink-0 text-[11px]">
@@ -1573,7 +1600,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               if (p.tipo === 'delivery') {
                 typeIcon = <Bike className="w-3.5 h-3.5 text-amber-400" />;
                 typeLabel = 'DELIVERY';
-              } else if (p.tipo === 'salão') {
+              } else if (isSalaoPedido(p)) {
                 typeIcon = <Utensils className="w-3.5 h-3.5 text-cyan-400" />;
                 typeLabel = `MESA ${p.mesa_id || '?'}`;
               }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pedido, StatusPedido, Produto } from '../types';
-import { formatTime, playAlertChime } from '../utils/formatters';
+import { formatTime, playAlertChime, isSalaoPedido } from '../utils/formatters';
 import { Clock, ChefHat, Check, Printer, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 interface KitchenKDSProps {
@@ -99,7 +99,7 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
               #{p.codigo_senha}
             </span>
             <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-black/40">
-              {p.tipo === 'salão' ? `MESA ${p.mesa_id || '?'}` : p.tipo.toUpperCase()}
+              {isSalaoPedido(p) ? `MESA ${p.mesa_id || '?'}` : (p.tipo || '').toUpperCase()}
             </span>
           </div>
 

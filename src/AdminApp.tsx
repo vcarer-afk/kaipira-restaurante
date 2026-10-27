@@ -37,7 +37,7 @@ import { StockManager } from './components/StockManager';
 import { CashRegister } from './components/CashRegister';
 import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
-import { playAlertChime } from './utils/formatters';
+import { playAlertChime, isSalaoPedido } from './utils/formatters';
 import { THEMES } from './utils/theme';
 
 // Configurações e dados estáticos essenciais
@@ -873,20 +873,34 @@ export default function AdminApp() {
     const responsavel = conferidoPor || currentPerfil?.nome || 'GERENTE GERAL';
     const formaPrincipal = pagamentosFracionados[0]?.forma || 'dinheiro';
 
+    const pedidosAlvo = pedidos.filter((p) => pedidoIds.includes(p.id));
+    const totalConsolidado = pedidosAlvo.reduce((sum, p) => sum + (Number(p.valor_total) || 0), 0);
+
     // 1. Atualizar todos os pedidos selecionados no estado local
+    // Substitui estritamente o array pagamentos anterior pelos pagamentos auditados (proporcionalmente)
     setPedidos((prev) =>
       prev.map((p) => {
-        if (pedidoIds.includes(p.id)) {
-          return {
-            ...p,
-            conferencia_entrega: 'conferido',
-            conferido_por: responsavel,
-            conferido_em: agora,
-            pagamento_confirmado: true,
-            forma_pagamento: formaPrincipal,
-          };
-        }
-        return p;
+        if (!pedidoIds.includes(p.id)) return p;
+        const valorPed = Number(p.valor_total) || 0;
+        const peso = totalConsolidado > 0 ? valorPed / totalConsolidado : 1 / pedidosAlvo.length;
+
+        const novosPagamentos: Pagamento[] = pagamentosFracionados.map((pg, idx) => ({
+          id: Date.now() + p.id * 100 + idx,
+          pedido_id: p.id,
+          forma: pg.forma,
+          valor: Math.round(Number(pg.valor) * peso * 100) / 100,
+          criado_em: agora,
+        }));
+
+        return {
+          ...p,
+          conferencia_entrega: 'conferido',
+          conferido_por: responsavel,
+          conferido_em: agora,
+          pagamento_confirmado: true,
+          forma_pagamento: formaPrincipal,
+          pagamentos: novosPagamentos,
+        };
       })
     );
 
@@ -958,7 +972,7 @@ export default function AdminApp() {
     pessoas?: number
   ) => {
     setMesas((prev) =>
-      prev.map((m) => (m.numero === numero ? { ...m, status, cliente_nome, pessoas } : m))
+      prev.map((m) => (m.numero === numero || m.id === numero ? { ...m, status, cliente_nome, pessoas } : m))
     );
     await atualizarMesaSupabase(numero, status, cliente_nome, pessoas);
   };
@@ -1030,7 +1044,7 @@ export default function AdminApp() {
     await fecharMesaSupabase(numero);
     setMesas((prev) =>
       prev.map((m) =>
-        m.numero === numero
+        m.numero === numero || m.id === numero
           ? { ...m, status: 'livre', cliente_nome: undefined, pessoas: undefined }
           : m
       )
@@ -1105,10 +1119,10 @@ export default function AdminApp() {
     await abaterSaldoMensalistaSupabase(clienteId, valor, cli);
     if (caixa && caixa.status === 'aberto' && valor > 0) {
       await handleMovimentacaoCaixa(
-        'entrada_pedido',
+        'suprimento',
         _forma,
         valor,
-        `ABATIMENTO MENSALISTA: ${cli?.nome || 'CLIENTE'}`
+        `RECEBIMENTO MENSALISTA: ${cli?.nome || 'CLIENTE'}`
       );
     }
   };
@@ -1120,7 +1134,7 @@ export default function AdminApp() {
   const handleSaveCliente = async (clienteData: Partial<Cliente>) => {
     const res = await salvarClienteSupabase(clienteData);
     const saved = res.data || {
-      id: clienteData.id || 'c-' + Date.now(),
+      id: clienteData.id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'c-' + Date.now()),
       nome: (clienteData.nome || '').toUpperCase().trim(),
       telefone: clienteData.telefone || '',
       cep: clienteData.cep || '13400-010',
@@ -1656,11 +1670,11 @@ export default function AdminApp() {
               setPedidos((prev) => [finalNovo, ...prev.filter((p) => p.id !== novo.id)]);
 
               // Toda vez que lançado um pedido na mesa, marca a mesa como ocupada no estado e no Supabase
-              if (novo.tipo === 'salão' && novo.mesa_id) {
+              if (isSalaoPedido(novo) && novo.mesa_id) {
                 const mesaNum = Number(novo.mesa_id);
-                const mesaAtual = mesas.find((m) => m.numero === mesaNum);
+                const mesaAtual = mesas.find((m) => m.numero === mesaNum || m.id === mesaNum);
                 const cliNome = novo.cliente?.nome || mesaAtual?.cliente_nome || 'MESA OCUPADA';
-                await handleUpdateMesaStatus(mesaNum, 'ocupada', cliNome, mesaAtual?.pessoas || 2);
+                await handleUpdateMesaStatus(mesaAtual?.numero || mesaNum, 'ocupada', cliNome, mesaAtual?.pessoas || 2);
               }
             }}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}

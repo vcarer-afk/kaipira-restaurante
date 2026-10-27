@@ -301,7 +301,7 @@ async function startServer() {
       // Handle cliente if provided
       let cliente_id = cliente?.id;
       if (cliente && !cliente_id) {
-        cliente_id = 'c-' + Date.now();
+        cliente_id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'c-' + Date.now();
         const novoCliente: Cliente = {
           id: cliente_id,
           nome: (cliente.nome || '').toUpperCase(),
@@ -354,8 +354,14 @@ async function startServer() {
       }
 
       // If Mesa, mark as ocupada
-      if (tipo === 'salão' && mesa_id) {
-        const mesa = state.mesas.find((m) => m.id === Number(mesa_id));
+      const isSalao =
+        (tipo || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .includes('sal') || Boolean(mesa_id);
+      if (isSalao && mesa_id) {
+        const mesa = state.mesas.find((m) => m.numero === Number(mesa_id) || m.id === Number(mesa_id));
         if (mesa) {
           mesa.status = 'ocupada';
           mesa.cliente_nome = cliente?.nome || `COMANDA #${codigo_senha}`;
@@ -413,7 +419,7 @@ async function startServer() {
         (p) => p.mesa_id === pedido.mesa_id && p.id !== pedidoId && !['entregue', 'cancelado'].includes(p.status)
       );
       if (!outrosAtivos && status === 'cancelado') {
-        const mesa = state.mesas.find((m) => m.id === pedido.mesa_id);
+        const mesa = state.mesas.find((m) => m.numero === pedido.mesa_id || m.id === pedido.mesa_id);
         if (mesa) mesa.status = 'livre';
       }
     }
@@ -461,7 +467,7 @@ async function startServer() {
     const num = Number(req.params.numero);
     const { status, cliente_nome, pessoas } = req.body;
 
-    const mesa = state.mesas.find((m) => m.numero === num);
+    const mesa = state.mesas.find((m) => m.numero === num || m.id === num);
     if (!mesa) {
       return res.status(404).json({ erro: true, mensagem: 'Mesa não encontrada' });
     }
@@ -477,7 +483,7 @@ async function startServer() {
   // POST liberar mesa e fechar pedidos
   app.post('/api/mesas/:numero/fechar', (req, res) => {
     const num = Number(req.params.numero);
-    const mesa = state.mesas.find((m) => m.numero === num);
+    const mesa = state.mesas.find((m) => m.numero === num || m.id === num);
     if (!mesa) {
       return res.status(404).json({ erro: true, mensagem: 'Mesa não encontrada' });
     }
@@ -488,7 +494,14 @@ async function startServer() {
 
     // Atualiza status dos pedidos da mesa para 'entregue'
     state.pedidos
-      .filter((p) => p.mesa_id === num && !['entregue', 'cancelado'].includes(p.status))
+      .filter(
+        (p) =>
+          (p.mesa_id === num ||
+            Number(p.mesa_id) === num ||
+            (mesa.numero && (p.mesa_id === mesa.numero || Number(p.mesa_id) === mesa.numero)) ||
+            (mesa.id && (p.mesa_id === mesa.id || Number(p.mesa_id) === mesa.id))) &&
+          !['entregue', 'cancelado'].includes(p.status)
+      )
       .forEach((p) => {
         p.status = 'entregue';
         p.atualizado_em = new Date().toISOString();
@@ -592,10 +605,10 @@ async function startServer() {
     if (state.caixa && state.caixa.status === 'aberto') {
       state.caixa.movimentacoes.push({
         id: Date.now(),
-        tipo: 'entrada_pedido',
+        tipo: 'suprimento',
         forma,
         valor: abatimento,
-        descricao: `PAGTO MENSALISTA: ${cliente.nome}`,
+        descricao: `RECEBIMENTO MENSALISTA: ${cliente.nome}`.toUpperCase(),
         hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       });
     }

@@ -13,7 +13,7 @@ import {
   Cliente,
 } from '../types';
 import { INITIAL_FORMAS_PAGAMENTO } from '../data/seedData';
-import { formatBRL, formatDateTime, playAlertChime } from '../utils/formatters';
+import { formatBRL, formatDateTime, playAlertChime, isSalaoPedido } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
 import {
   Banknote,
@@ -280,9 +280,9 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   const handleConfirmarConsolidado = async () => {
     if (pedidosSelecionadosIds.length === 0) return;
     const totalPago = linhasPagamentoConsolidado.reduce((sum, l) => sum + (Number(l.valor) || 0), 0);
-    if (totalPago < totalConsolidado - 0.05) {
+    if (Math.abs(totalPago - totalConsolidado) > 0.05) {
       alert(
-        `O valor total informado (${formatBRL(totalPago)}) é inferior ao total consolidado (${formatBRL(totalConsolidado)}). Ajuste as frações para cobrir o valor total.`
+        `O valor total informado (${formatBRL(totalPago)}) difere do total consolidado (${formatBRL(totalConsolidado)}). Ajuste as frações para que a soma seja estritamente igual.`
       );
       return;
     }
@@ -435,16 +435,36 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     (caixa?.movimentacoes || []).forEach((m) => {
       const formaKey = getFormaCanonica(m.forma || 'dinheiro');
       if (m.tipo === 'suprimento') {
-        dinheiroGaveta += m.valor;
         totalSuprimentos += m.valor;
         if (formaKey === 'dinheiro' || !m.forma) {
+          dinheiroGaveta += m.valor;
           suprimentosDinheiro += m.valor;
+        }
+
+        // Se for recebimento de mensalista, agregar também nos totais por forma de pagamento e faturamento geral
+        if ((m.descricao || '').toUpperCase().includes('MENSALISTA')) {
+          totalEntradasGerais += m.valor;
+          if (formaKey === 'dinheiro' || !m.forma) {
+            totalDinheiroEntradas += m.valor;
+          }
+          if (!statsMap[formaKey]) {
+            statsMap[formaKey] = {
+              id: formaKey,
+              nome: CANONICAL_NAMES[formaKey] || formaKey.toUpperCase(),
+              tipo: 'outro',
+              total: 0,
+              qtd: 0,
+              taxa_operadora: 0,
+            };
+          }
+          statsMap[formaKey].total += m.valor;
+          statsMap[formaKey].qtd += 1;
         }
       }
       if (m.tipo === 'sangria') {
-        dinheiroGaveta -= m.valor;
         totalSangrias += m.valor;
         if (formaKey === 'dinheiro' || !m.forma) {
+          dinheiroGaveta -= m.valor;
           sangriasDinheiro += m.valor;
         }
       }
@@ -521,11 +541,8 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     let balcaoTotal = 0;
     let balcaoQtd = 0;
 
-    safePedidosList.forEach((p) => {
-      // Regra Unificada de Faturamento: delivery conferido OU balcão/mesas com pagamentos
-      if (!isPedidoFaturado(p)) return;
-
-      if (p.tipo === 'salão') {
+    pedidosConfirmados.forEach((p) => {
+      if (isSalaoPedido(p)) {
         salaoTotal += (Number(p.valor_total) || 0);
         salaoQtd += 1;
       } else if (p.tipo === 'delivery') {
@@ -551,7 +568,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       totalPedidos,
       ticketMedio,
     };
-  }, [pedidos, paymentStats.totalEntradasGerais]);
+  }, [pedidosConfirmados, paymentStats.totalEntradasGerais]);
 
   // Physical money in drawer
   const dinheiroNaGaveta = paymentStats.dinheiroGavetaEsperado;
