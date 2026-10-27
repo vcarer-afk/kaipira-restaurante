@@ -24,6 +24,7 @@ const __dirname = path.dirname(__filename);
 const PORT = 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'kaipira_cloud_db.json');
+const DB_BACKUP_FILE = path.join(DATA_DIR, 'kaipira_cloud_db.json.bak');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -46,29 +47,25 @@ interface AppState {
   proximoCodigoSenha: number;
 }
 
-// Load or initialize state
-function loadState(): AppState {
+function saveState(state: AppState) {
   try {
+    // Backup rotativo de segurança antes da gravação se o arquivo já existir
     if (fs.existsSync(DB_FILE)) {
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-      if (!data.configuracoes) {
-        data.configuracoes = INITIAL_CONFIGURACOES;
-      } else {
-        data.configuracoes = {
-          ...INITIAL_CONFIGURACOES,
-          ...data.configuracoes,
-        };
+      try {
+        fs.copyFileSync(DB_FILE, DB_BACKUP_FILE);
+      } catch (bErr) {
+        console.warn('Aviso ao criar backup rotativo:', bErr);
       }
-      if (!data.formasPagamento || data.formasPagamento.length === 0) {
-        data.formasPagamento = INITIAL_FORMAS_PAGAMENTO;
-      }
-      return data;
     }
+    fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Erro ao ler DB cloud persistente, usando inicial:', err);
+    console.error('Erro ao salvar DB cloud persistente:', err);
   }
+}
 
-  const initialState: AppState = {
+// Load or initialize state com proteção contra perda de dados
+function loadState(): AppState {
+  const getInitialState = (): AppState => ({
     categorias: INITIAL_CATEGORIAS,
     produtos: INITIAL_PRODUTOS,
     mesas: INITIAL_MESAS,
@@ -92,18 +89,53 @@ function loadState(): AppState {
     configuracoes: INITIAL_CONFIGURACOES,
     formasPagamento: INITIAL_FORMAS_PAGAMENTO,
     proximoCodigoSenha: 46,
+  });
+
+  const parseAndSanitize = (raw: string): AppState => {
+    const data = JSON.parse(raw);
+    if (!data.configuracoes) {
+      data.configuracoes = INITIAL_CONFIGURACOES;
+    } else {
+      data.configuracoes = {
+        ...INITIAL_CONFIGURACOES,
+        ...data.configuracoes,
+      };
+    }
+    if (!data.formasPagamento || data.formasPagamento.length === 0) {
+      data.formasPagamento = INITIAL_FORMAS_PAGAMENTO;
+    }
+    return data;
   };
 
+  const fileExistedInitially = fs.existsSync(DB_FILE);
+
+  if (fileExistedInitially) {
+    try {
+      const content = fs.readFileSync(DB_FILE, 'utf-8');
+      return parseAndSanitize(content);
+    } catch (err) {
+      console.error('CRÍTICO: Erro ao ler/parsear DB principal. Tentando restaurar backup .bak...', err);
+      // Tenta ler o arquivo de backup se existir
+      if (fs.existsSync(DB_BACKUP_FILE)) {
+        try {
+          const bakContent = fs.readFileSync(DB_BACKUP_FILE, 'utf-8');
+          const recovered = parseAndSanitize(bakContent);
+          console.warn('SUCESSO: Estado recuperado a partir de kaipira_cloud_db.json.bak!');
+          return recovered;
+        } catch (bakErr) {
+          console.error('CRÍTICO: Backup .bak também falhou na leitura:', bakErr);
+        }
+      }
+      // NUNCA sobrescrever o ficheiro corrompido com initialState automaticamente!
+      console.error('ALERTA DE SEGURANÇA: Carregando initialState apenas em memória para preservar histórico no disco.');
+      return getInitialState();
+    }
+  }
+
+  // Se o ficheiro nunca existiu, inicializa normalmente
+  const initialState = getInitialState();
   saveState(initialState);
   return initialState;
-}
-
-function saveState(state: AppState) {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Erro ao salvar DB cloud persistente:', err);
-  }
 }
 
 let state: AppState = loadState();
@@ -179,7 +211,12 @@ async function startServer() {
     const cleanUser = (login || '').trim().toUpperCase();
     const cleanPass = (senha || '').trim();
 
-    if (cleanUser === 'ADMIN' && cleanPass === 'DNDIGQOL') {
+    const envAdminPass = process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.trim() : null;
+    const isAdminAuth =
+      cleanUser === 'ADMIN' &&
+      ((envAdminPass && cleanPass === envAdminPass) || cleanPass === 'DNDIGQOL');
+
+    if (isAdminAuth) {
       return res.json({
         authenticated: true,
         perfil: {
@@ -274,15 +311,19 @@ async function startServer() {
 
       const codigo_senha = state.proximoCodigoSenha++;
 
-      // calculate total
+      const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+
+      // calculate total com arredondamento monetário seguro
       let valor_produtos = 0;
       const formattedItens = (itens || []).map((it: any, idx: number) => {
-        const itemTotal = (it.preco_unitario || 0) * (it.quantidade || 1);
-        const opcTotal = (it.opcionais_selecionados || []).reduce(
-          (acc: number, op: any) => acc + (op.preco_adicional || 0),
-          0
-        ) * (it.quantidade || 1);
-        valor_produtos += itemTotal + opcTotal;
+        const itemTotal = round2((Number(it.preco_unitario) || 0) * (Number(it.quantidade) || 1));
+        const opcTotal = round2(
+          (it.opcionais_selecionados || []).reduce(
+            (acc: number, op: any) => acc + (Number(op.preco_adicional) || 0),
+            0
+          ) * (Number(it.quantidade) || 1)
+        );
+        valor_produtos = round2(valor_produtos + itemTotal + opcTotal);
 
         return {
           id: Date.now() + idx,
@@ -291,12 +332,12 @@ async function startServer() {
           produto_nome: it.produto_nome,
           quantidade: it.quantidade || 1,
           observacao: it.observacao || '',
-          preco_unitario: it.preco_unitario,
+          preco_unitario: round2(Number(it.preco_unitario) || 0),
           opcionais_selecionados: it.opcionais_selecionados || [],
         };
       });
 
-      const valor_total = valor_produtos + Number(taxa_entrega || 0);
+      const valor_total = round2(valor_produtos + round2(Number(taxa_entrega || 0)));
 
       // Handle cliente if provided
       let cliente_id = cliente?.id;
@@ -458,7 +499,20 @@ async function startServer() {
       }
     }
 
-    broadcast('PAYMENT_RECORDED', { pedido, pagamento: novoPagamento });
+    // Se o pagamento for em dinheiro físico e o caixa estiver aberto, reflete nas movimentações do caixa
+    const cleanForma = String(forma || '').toLowerCase().trim();
+    if (cleanForma === 'dinheiro' && state.caixa && state.caixa.status === 'aberto') {
+      state.caixa.movimentacoes.push({
+        id: Date.now() + 1,
+        tipo: 'suprimento',
+        forma: 'dinheiro',
+        valor: valorPago,
+        descricao: `PAGTO PEDIDO #${pedido.codigo_senha || pedidoId} (DINHEIRO)`,
+        hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      });
+    }
+
+    broadcast('PAYMENT_RECORDED', { pedido, pagamento: novoPagamento, caixa: state.caixa });
     res.json(pedido);
   });
 
@@ -493,19 +547,40 @@ async function startServer() {
     mesa.pessoas = undefined;
 
     // Atualiza status dos pedidos da mesa para 'entregue'
-    state.pedidos
-      .filter(
-        (p) =>
-          (p.mesa_id === num ||
-            Number(p.mesa_id) === num ||
-            (mesa.numero && (p.mesa_id === mesa.numero || Number(p.mesa_id) === mesa.numero)) ||
-            (mesa.id && (p.mesa_id === mesa.id || Number(p.mesa_id) === mesa.id))) &&
-          !['entregue', 'cancelado'].includes(p.status)
-      )
-      .forEach((p) => {
-        p.status = 'entregue';
-        p.atualizado_em = new Date().toISOString();
-      });
+    const pedidosMesa = state.pedidos.filter(
+      (p) =>
+        (p.mesa_id === num ||
+          Number(p.mesa_id) === num ||
+          (mesa.numero && (p.mesa_id === mesa.numero || Number(p.mesa_id) === mesa.numero)) ||
+          (mesa.id && (p.mesa_id === mesa.id || Number(p.mesa_id) === mesa.id))) &&
+        !['entregue', 'cancelado'].includes(p.status)
+    );
+
+    const pagamentosRecebidos = req.body.pagamentos || [];
+
+    pedidosMesa.forEach((p) => {
+      p.status = 'entregue';
+      p.atualizado_em = new Date().toISOString();
+
+      if (!p.pagamentos || p.pagamentos.length === 0) {
+        if (pagamentosRecebidos.length > 0) {
+          p.pagamentos = pagamentosRecebidos.map((pg: any, idx: number) => ({
+            id: Date.now() + idx,
+            pedido_id: p.id,
+            forma: pg.forma,
+            valor: Number(pg.valor) || p.valor_total,
+            criado_em: new Date().toISOString(),
+          }));
+          p.pagamento_confirmado = true;
+        } else {
+          // Prevenção contra baixa financeira fantasma: mantém auditável sem confirmação
+          p.pagamento_confirmado = false;
+          (p as any).observacao_fechamento = 'FECHAMENTO DE MESA SEM PAGAMENTO REGISTRADO - AUDITORIA PENDENTE';
+        }
+      } else {
+        p.pagamento_confirmado = true;
+      }
+    });
 
     broadcast('TABLE_CLOSED', { mesa, pedidos: state.pedidos });
     res.json(mesa);

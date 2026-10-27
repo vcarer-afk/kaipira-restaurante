@@ -363,7 +363,9 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
     if (bairrosSortMode === 'nome') {
       return (a.bairro || '').localeCompare(b.bairro || '', 'pt-BR');
     }
-    return 0;
+    const idxA = bairros.findIndex((x) => x.bairro === a.bairro);
+    const idxB = bairros.findIndex((x) => x.bairro === b.bairro);
+    return idxA - idxB;
   });
 
   const openNewUserModal = () => {
@@ -998,53 +1000,63 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
 
   // Helper visual category icon for products
   const renderProductCategoryVisual = (catId: number, urlImagem?: string, prodNome?: string) => {
+    const renderCategoryIcon = () => {
+      switch (catId) {
+        case 2:
+          return (
+            <div className="w-10 h-10 rounded-xl bg-cyan-950/80 border border-cyan-800 text-cyan-400 flex items-center justify-center shrink-0">
+              <Package className="w-5 h-5" />
+            </div>
+          );
+        case 3:
+          return (
+            <div className="w-10 h-10 rounded-xl bg-orange-950/80 border border-orange-800 text-orange-400 flex items-center justify-center shrink-0">
+              <Flame className="w-5 h-5" />
+            </div>
+          );
+        case 4:
+          return (
+            <div className="w-10 h-10 rounded-xl bg-blue-950/80 border border-blue-800 text-blue-400 flex items-center justify-center shrink-0">
+              <Coffee className="w-5 h-5" />
+            </div>
+          );
+        case 5:
+          return (
+            <div className="w-10 h-10 rounded-xl bg-pink-950/80 border border-pink-800 text-pink-400 flex items-center justify-center shrink-0">
+              <Cake className="w-5 h-5" />
+            </div>
+          );
+        default:
+          return (
+            <div className="w-10 h-10 rounded-xl bg-amber-950/80 border border-amber-800 text-amber-400 flex items-center justify-center shrink-0">
+              <UtensilsCrossed className="w-5 h-5" />
+            </div>
+          );
+      }
+    };
+
     if (urlImagem && urlImagem.trim().length > 0) {
       return (
-        <div className="w-10 h-10 rounded-xl overflow-hidden border border-neutral-700 bg-neutral-900 shrink-0 shadow-xs">
+        <div className="w-10 h-10 rounded-xl overflow-hidden border border-neutral-700 bg-neutral-900 shrink-0 shadow-xs relative flex items-center justify-center">
           <img
             src={urlImagem}
             alt={prodNome || 'Produto'}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover relative z-10"
             onError={(e) => {
-              (e.currentTarget as HTMLElement).style.display = 'none';
+              const target = e.currentTarget as HTMLElement;
+              target.style.display = 'none';
+              const fallback = target.nextElementSibling as HTMLElement;
+              if (fallback) fallback.style.display = 'flex';
             }}
           />
+          <div style={{ display: 'none' }} className="w-full h-full items-center justify-center absolute inset-0 z-0">
+            {renderCategoryIcon()}
+          </div>
         </div>
       );
     }
 
-    switch (catId) {
-      case 2:
-        return (
-          <div className="w-10 h-10 rounded-xl bg-cyan-950/80 border border-cyan-800 text-cyan-400 flex items-center justify-center shrink-0">
-            <Package className="w-5 h-5" />
-          </div>
-        );
-      case 3:
-        return (
-          <div className="w-10 h-10 rounded-xl bg-orange-950/80 border border-orange-800 text-orange-400 flex items-center justify-center shrink-0">
-            <Flame className="w-5 h-5" />
-          </div>
-        );
-      case 4:
-        return (
-          <div className="w-10 h-10 rounded-xl bg-blue-950/80 border border-blue-800 text-blue-400 flex items-center justify-center shrink-0">
-            <Coffee className="w-5 h-5" />
-          </div>
-        );
-      case 5:
-        return (
-          <div className="w-10 h-10 rounded-xl bg-pink-950/80 border border-pink-800 text-pink-400 flex items-center justify-center shrink-0">
-            <Cake className="w-5 h-5" />
-          </div>
-        );
-      default:
-        return (
-          <div className="w-10 h-10 rounded-xl bg-amber-950/80 border border-amber-800 text-amber-400 flex items-center justify-center shrink-0">
-            <UtensilsCrossed className="w-5 h-5" />
-          </div>
-        );
-    }
+    return renderCategoryIcon();
   };
 
   // Badge cargo renderer
@@ -2109,22 +2121,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                         <tr key={p.id} className="hover:bg-neutral-850/50">
                           <td className="px-4 py-3 font-bold text-neutral-100 uppercase">
                             <div className="flex items-center gap-2.5">
-                              {p.url_imagem && p.url_imagem.trim().length > 0 ? (
-                                <div className="w-8 h-8 rounded-lg overflow-hidden border border-neutral-700 bg-neutral-900 shrink-0 shadow-2xs">
-                                  <img
-                                    src={p.url_imagem}
-                                    alt={p.nome}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      (e.currentTarget as HTMLElement).style.display = 'none';
-                                    }}
-                                  />
-                                </div>
-                              ) : (
-                                <div className="w-8 h-8 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-400 flex items-center justify-center shrink-0">
-                                  <UtensilsCrossed className="w-4 h-4 text-amber-500/80" />
-                                </div>
-                              )}
+                              {renderProductCategoryVisual(p.categoria_id, p.url_imagem, p.nome)}
                               <span>{p.nome}</span>
                             </div>
                           </td>
