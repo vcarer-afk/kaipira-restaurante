@@ -28,6 +28,8 @@ import {
   Layers,
   Coffee,
   Cake,
+  Download,
+  Smartphone,
 } from 'lucide-react';
 import {
   Produto,
@@ -301,6 +303,66 @@ export default function ClientApp() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [pedidoConcluido, setPedidoConcluido] = useState<Pedido | null>(null);
   const [meusPedidosAtivos, setMeusPedidosAtivos] = useState<Pedido[]>([]);
+
+  // Estado e Deteção de Plataforma PWA (Android, iOS e Desktop)
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true
+    );
+  });
+  const [isIOS] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  });
+  const [showIOSModal, setShowIOSModal] = useState<boolean>(false);
+  const [appInstalled, setAppInstalled] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setAppInstalled(true);
+      setDeferredPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstalarApp = async () => {
+    if (isIOS) {
+      setShowIOSModal(true);
+      return;
+    }
+
+    if (deferredPrompt) {
+      try {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          setAppInstalled(true);
+          setDeferredPrompt(null);
+        }
+      } catch (err) {
+        console.error('Erro ao acionar instalação PWA:', err);
+      }
+      return;
+    }
+
+    // Fallback explicativo se o navegador não fornecer prompt programático
+    setShowIOSModal(true);
+  };
 
   // Helpers para persistência de múltiplos pedidos no localStorage
   const getMeusPedidosIdsStorage = useCallback((): string[] => {
@@ -1926,6 +1988,36 @@ export default function ClientApp() {
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-amber-500 selection:text-black pb-28">
       {/* Top Header Mobile-First com Logo Centralizada */}
       <header className="bg-neutral-900/95 border-b border-neutral-800 sticky top-0 z-30 backdrop-blur-md">
+        {/* Banner de Instalação PWA (Oculto se já for standalone ou instalado) */}
+        {!isStandalone && !appInstalled && (
+          <div className="bg-gradient-to-r from-neutral-900 via-amber-950/40 to-neutral-900 border-b border-amber-500/30 px-3 sm:px-4 py-2">
+            <div className="max-w-2xl mx-auto flex items-center justify-between gap-2 sm:gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <Smartphone className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-black uppercase text-white truncate block">
+                    Instalar Aplicativo Kaipira
+                  </span>
+                  <span className="text-[10px] text-neutral-400 truncate block">
+                    {isIOS ? 'Adicione à tela de início do seu iPhone' : 'Acesso rápido direto da tela inicial'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleInstalarApp}
+                className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black uppercase text-xs rounded-xl shadow-md shadow-amber-500/10 flex items-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95"
+              >
+                <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Instalar</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Banner de Pedido(s) em Andamento */}
         {checkoutStep === 'menu' && (() => {
           const ativos = meusPedidosAtivos.filter(
@@ -2367,6 +2459,72 @@ export default function ClientApp() {
           </button>
         </div>
       </aside>
+
+      {/* Modal Visual de Instruções de Instalação (iOS / Safari e Navegadores) */}
+      {showIOSModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-neutral-900 border border-amber-500/40 rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl relative text-left">
+            <button
+              type="button"
+              onClick={() => setShowIOSModal(false)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              title="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 border-b border-neutral-800 pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 block truncate">
+                  {isIOS ? 'iPhone / iPad (Safari)' : 'Instalação do Aplicativo'}
+                </span>
+                <h3 className="text-sm font-black text-white uppercase truncate">
+                  Instalar App Kaipira
+                </h3>
+              </div>
+            </div>
+
+            <div className="space-y-3 py-1">
+              {/* Passo 1 */}
+              <div className="flex items-start gap-3 bg-neutral-950/60 p-3 rounded-2xl border border-neutral-800">
+                <div className="w-7 h-7 rounded-xl bg-amber-500 text-black font-black text-xs flex items-center justify-center shrink-0">
+                  1
+                </div>
+                <div className="text-xs text-neutral-300 leading-relaxed">
+                  <strong className="text-white block uppercase mb-0.5">Passo 1</strong>
+                  <span>
+                    Toque no botão de <strong>Compartilhar</strong> do Safari (ícone de quadrado com a seta para cima na barra inferior).
+                  </span>
+                </div>
+              </div>
+
+              {/* Passo 2 */}
+              <div className="flex items-start gap-3 bg-neutral-950/60 p-3 rounded-2xl border border-neutral-800">
+                <div className="w-7 h-7 rounded-xl bg-amber-500 text-black font-black text-xs flex items-center justify-center shrink-0">
+                  2
+                </div>
+                <div className="text-xs text-neutral-300 leading-relaxed">
+                  <strong className="text-white block uppercase mb-0.5">Passo 2</strong>
+                  <span>
+                    Role para baixo e selecione <strong>"Adicionar à Tela de Início"</strong> (ou <strong>"Adicionar ao Ecrã Principal"</strong> com o símbolo +).
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowIOSModal(false)}
+              className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black uppercase text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all cursor-pointer active:scale-95"
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
