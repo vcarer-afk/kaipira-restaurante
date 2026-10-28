@@ -2317,23 +2317,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
 
-              {/* Botão "Zerar Financeiro do Dia" */}
-              <button
-                type="button"
-                onClick={() => {
-                  const confirmou = window.confirm(
-                    '⚠️ ATENÇÃO - CONFIRMAÇÃO DE SEGURANÇA (ADMIN/MASTER):\n\nDeseja realmente ZERAR todo o financeiro e movimentações do caixa do dia atual?\n\nEsta ação resetará o saldo de abertura, lançamentos e fechamento do caixa diário tanto localmente quanto na nuvem Supabase.\n\nEsta operação é irreversível. Deseja prosseguir?'
-                  );
-                  if (confirmou && onZerarFinanceiro) {
-                    onZerarFinanceiro();
-                  }
-                }}
-                className="px-3.5 py-2 bg-red-950/80 hover:bg-red-900 border border-red-700/80 text-red-200 hover:text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-95"
-                title="Resetar financeiro, abertura e movimentações do caixa do dia (Apenas Admin/Master)"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-red-400" />
-                <span>Zerar Financeiro do Dia</span>
-              </button>
+              {/* Botão "Zerar Financeiro do Dia" - Trava de segurança: somente em Modo Testes */}
+              {configuracoes?.modoOperacao === 'testes' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const confirmou = window.confirm(
+                      '⚠️ ATENÇÃO - MODO DE TESTES ATIVO:\n\nDeseja zerar os registos e movimentações simuladas do caixa de teste?\n\nEsta operação é irreversível.'
+                    );
+                    if (confirmou && onZerarFinanceiro) {
+                      onZerarFinanceiro();
+                    }
+                  }}
+                  className="px-3.5 py-2 bg-red-950/80 hover:bg-red-900 border border-red-700/80 text-red-200 hover:text-white rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-95 animate-pulse"
+                  title="Resetar financeiro e movimentações do caixa de testes"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-red-400" />
+                  <span>Zerar Financeiro (Testes)</span>
+                </button>
+              )}
             </>
           )}
 

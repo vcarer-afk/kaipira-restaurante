@@ -610,19 +610,30 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
         }
       }
 
+      const cleanEndereco = (clienteEndereco || '').toUpperCase().trim();
+      const cleanNumero = (clienteNumero || '').toUpperCase().trim();
+      const cleanBairro = (clienteBairro || '').toUpperCase().trim();
+      const cleanComplemento = (clienteComplemento || '').toUpperCase().trim();
+      const cleanTelefone = (clienteTelefone || '').trim();
+
+      const enderecoEntregaFormatado = cleanEndereco
+        ? `${cleanEndereco}, Nº ${cleanNumero || 'S/N'}${cleanComplemento ? ` (${cleanComplemento})` : ''}`
+        : undefined;
+
       const payload = {
         tipo: tipoPedido,
         mesa_id: tipoPedido === 'salão' ? mesaId : undefined,
         cliente: {
           nome: clienteNome.toUpperCase().trim(),
-          telefone: clienteTelefone.trim(),
+          telefone: cleanTelefone,
           cep: clienteCep ? clienteCep.trim() : undefined,
-          endereco: clienteEndereco ? clienteEndereco.toUpperCase().trim() : undefined,
-          numero: clienteNumero ? clienteNumero.toUpperCase().trim() : undefined,
-          bairro: clienteBairro ? clienteBairro.toUpperCase().trim() : undefined,
-          complemento: clienteComplemento ? clienteComplemento.toUpperCase().trim() : '',
+          endereco: cleanEndereco || undefined,
+          numero: cleanNumero || undefined,
+          bairro: cleanBairro || undefined,
+          complemento: cleanComplemento,
           eh_mensalista: isMensalista,
         },
+        endereco_entrega: tipoPedido === 'delivery' ? enderecoEntregaFormatado : undefined,
         itens: cart,
         taxa_entrega: finalTaxa,
         precisa_troco: tipoPedido !== 'salão' ? precisaTroco : false,
@@ -671,6 +682,7 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
       const novoPedido = await criarPedidoSupabase({
         ...payload,
+        endereco_entrega: tipoPedido === 'delivery' ? enderecoEntregaFormatado : undefined,
         status: 'pendente',
         valor_total: total,
         forma_pagamento: formaEscolhidaFinal,

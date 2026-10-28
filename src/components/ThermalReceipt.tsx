@@ -77,6 +77,40 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
     pedAny.cep ||
     '';
 
+  const getEnderecoCompleto = (p: Pedido): string => {
+    // 1. Tentar endereço dentro do objeto cliente
+    const cli = p.cliente || clienteResolved;
+    const partesCli: string[] = [];
+    if (cli?.endereco) partesCli.push(cli.endereco);
+    if (cli?.numero) partesCli.push(`Nº ${cli.numero}`);
+    if (cli?.complemento) partesCli.push(`(${cli.complemento})`);
+    if (partesCli.length > 0) return partesCli.join(', ');
+
+    // 2. Tentar campos diretos na raiz do pedido (lançamentos de PDV/Vitrine)
+    const pAny = p as any;
+    if (pAny.endereco_entrega) return pAny.endereco_entrega;
+    if (pAny.endereco) {
+      const num = pAny.numero ? `, Nº ${pAny.numero}` : '';
+      const comp = pAny.complemento ? ` (${pAny.complemento})` : '';
+      return `${pAny.endereco}${num}${comp}`;
+    }
+
+    return 'ENDEREÇO NÃO INFORMADO';
+  };
+
+  const getBairroCidade = (p: Pedido): string => {
+    const cli = p.cliente || clienteResolved;
+    const pAny = p as any;
+    const bairro = cli?.bairro || pAny.bairro || 'PIRACICABA';
+    const cidade = cli?.cidade || pAny.cidade || configuracoes?.cidade || 'PIRACICABA';
+    const cep = cli?.cep || pAny.cep;
+    return `${bairro} - ${cidade}${cep ? ` (CEP: ${cep})` : ''}`;
+  };
+
+  const getTelefoneContato = (p: Pedido): string => {
+    return p.cliente?.telefone || clienteResolved?.telefone || (p as any).telefone || (p as any).whatsapp || '';
+  };
+
   const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
     if (it.produto_nome && !it.produto_nome.trim().startsWith('#') && !it.produto_nome.toLowerCase().startsWith('prod #')) {
       return it.produto_nome;
@@ -177,16 +211,20 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
             {(pedido.tipo === 'delivery' || !!clienteNome) && (
               <div className="py-2 border-b border-dashed border-black text-[11px] text-black space-y-0.5">
                 <p className="font-bold">CLIENTE: {clienteNome}</p>
-                {clienteTelefone && <p>TEL: {clienteTelefone}</p>}
-                {pedido.tipo === 'delivery' && (
+                {pedido.tipo === 'delivery' ? (
                   <>
                     <p className="font-semibold">
-                      END: {clienteEndereco ? `${clienteEndereco}, Nº ${clienteNumero}` : 'ENDEREÇO NÃO INFORMADO'}
+                      END: {getEnderecoCompleto(pedido)}
                     </p>
-                    {clienteComplemento && <p>COMPL: {clienteComplemento}</p>}
-                    <p>BAIRRO: {clienteBairro} - PIRACICABA</p>
-                    {clienteCep && <p>CEP: {clienteCep}</p>}
+                    <p>BAIRRO: {getBairroCidade(pedido)}</p>
+                    {getTelefoneContato(pedido) && (
+                      <p className="font-bold">TEL: {getTelefoneContato(pedido)}</p>
+                    )}
                   </>
+                ) : (
+                  (clienteTelefone || getTelefoneContato(pedido)) && (
+                    <p>TEL: {clienteTelefone || getTelefoneContato(pedido)}</p>
+                  )
                 )}
               </div>
             )}

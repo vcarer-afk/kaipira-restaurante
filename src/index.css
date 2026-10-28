@@ -209,21 +209,33 @@
 
 .theme-windows11 main .bg-neutral-850,
 .theme-windows11 main .bg-neutral-900 {
-  background-color: #edf2f8 !important;
-  color: #1c3d5a !important;
-  border: 1px solid #8ba6c1 !important;
-  box-shadow: 0 2px 6px rgba(19, 56, 76, 0.08) !important;
+  background-color: #f1f5f9 !important; /* Slate-100 límpido */
+  color: #0f172a !important;            /* Texto quase preto para contraste total */
+  border: 1px solid #94a3b8 !important; /* Borda definida */
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
 }
 
+/* Títulos, legendas e textos dentro dos blocos no Windows 11 */
 .theme-windows11 main .text-white,
 .theme-windows11 main .text-neutral-100,
-.theme-windows11 main .text-neutral-200 {
-  color: #0f2937 !important;
+.theme-windows11 main .text-neutral-200,
+.theme-windows11 main .text-neutral-300 {
+  color: #0f172a !important;
+  font-weight: 700 !important;
 }
 
 .theme-windows11 main .text-neutral-400,
-.theme-windows11 main .text-neutral-300 {
-  color: #3b5a75 !important;
+.theme-windows11 main .text-neutral-500 {
+  color: #334155 !important; /* Cinzento-escuro bem legível */
+  font-weight: 600 !important;
+}
+
+/* Ajuste específico para os cards de seleção no SettingsManager quando em theme-windows11 */
+.theme-windows11 .bg-neutral-800,
+.theme-windows11 .bg-neutral-700 {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
 }
 
 .theme-windows11 main input,

@@ -46,6 +46,7 @@ export interface Cliente {
   numero: string;
   bairro: string;
   complemento?: string;
+  cidade?: string;
   eh_mensalista: boolean;
   saldo_devedor: number;
   criado_em: string;

@@ -879,16 +879,23 @@ export default function ClientApp() {
 
     setIsSubmitting(true);
     try {
+      const cleanRua = clienteRua.toUpperCase().trim();
+      const cleanNumero = clienteNumero.toUpperCase().trim();
+      const cleanBairro = clienteBairro.toUpperCase().trim();
+      const cleanComplemento = clienteComplemento ? clienteComplemento.toUpperCase().trim() : '';
+
+      const enderecoEntregaFormatado = `${cleanRua}, Nº ${cleanNumero}${cleanComplemento ? ` (${cleanComplemento})` : ''}`;
+
       // 1. Criar ou Atualizar Cliente na Nuvem (tabela 'clientes')
       const clientePayload: Partial<Cliente> = {
         id: clienteMatchedId || undefined,
         nome: clienteNome.toUpperCase().trim(),
         telefone: formatPhone(clienteTelefone),
         cep: clienteCep ? formatCep(clienteCep) : '13400-000',
-        endereco: clienteRua.toUpperCase().trim(),
-        numero: clienteNumero.toUpperCase().trim(),
-        bairro: clienteBairro.toUpperCase().trim(),
-        complemento: clienteComplemento ? clienteComplemento.toUpperCase().trim() : undefined,
+        endereco: cleanRua,
+        numero: cleanNumero,
+        bairro: cleanBairro,
+        complemento: cleanComplemento || undefined,
         eh_mensalista: false,
       };
 
@@ -905,7 +912,15 @@ export default function ClientApp() {
         tipo: 'delivery' as const,
         status: 'pendente' as const,
         cliente_id: clienteSalvo?.id && isUUID(clienteSalvo.id) ? clienteSalvo.id : undefined,
-        cliente: clienteSalvo || clientePayload,
+        cliente: {
+          ...(clientePayload as Cliente),
+          ...(clienteSalvo || {}),
+          endereco: cleanRua,
+          numero: cleanNumero,
+          bairro: cleanBairro,
+          complemento: cleanComplemento,
+        },
+        endereco_entrega: enderecoEntregaFormatado,
         taxa_entrega: taxaEntrega,
         valor_total: cartTotalComEntrega,
         precisa_troco: metodoPagamento === 'dinheiro' && precisaTroco,
