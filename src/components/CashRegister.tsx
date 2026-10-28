@@ -333,10 +333,9 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
         p &&
         p.tipo === 'delivery' &&
         p.status !== 'cancelado' &&
-        p.conferencia_entrega !== 'conferido' &&
-        (!p.criado_em || p.criado_em.startsWith(dataFiltroCaixa) || p.criado_em.startsWith(dataHojeIso))
+        p.conferencia_entrega !== 'conferido'
     );
-  }, [safePedidosList, dataFiltroCaixa, dataHojeIso]);
+  }, [safePedidosList]);
 
   const deliveryOrdersConferidos = useMemo(() => {
     return safePedidosList.filter(
