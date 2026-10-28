@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Pedido,
   Mesa,
@@ -53,6 +53,8 @@ import {
   Search,
   Eye,
   Check,
+  Volume2,
+  Tv,
 } from 'lucide-react';
 
 function describeArc(
@@ -144,15 +146,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const isAdminOrMaster = currentRole === 'admin' || currentRole === 'master' || currentRole === 'supervisor';
 
-  // Active dashboard layout (default: 'stripe')
-  const layoutAtual: DashboardLayoutTipo = configuracoes?.dashboard_layout || 'stripe';
+  // Active dashboard layout (default: 'stripe') com sincronização instantânea
+  const [localLayout, setLocalLayout] = useState<DashboardLayoutTipo>(
+    configuracoes?.dashboard_layout || 'stripe'
+  );
+
+  useEffect(() => {
+    if (configuracoes?.dashboard_layout) {
+      setLocalLayout(configuracoes.dashboard_layout);
+    }
+  }, [configuracoes?.dashboard_layout]);
+
+  const layoutAtual: DashboardLayoutTipo = localLayout;
 
   const handleSelectLayout = (novoLayout: DashboardLayoutTipo) => {
-    if (configuracoes && onSaveConfiguracoes) {
+    setLocalLayout(novoLayout);
+    if (onSaveConfiguracoes) {
       onSaveConfiguracoes({
-        ...configuracoes,
+        ...(configuracoes || {}),
         dashboard_layout: novoLayout,
-      });
+      } as any);
     }
   };
 
@@ -847,6 +860,119 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     </div>
   );
 
+  // Senhas chamadas para o Mini Painel de Senhas (TV / Balcão)
+  const senhasChamadas = useMemo(() => {
+    const isBalcaoOuMesaOrder = (tipo: string) => {
+      const t = (tipo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      return t.includes('retirada') || t.includes('balcao') || t.includes('sal');
+    };
+
+    // Prioridade 1: Pedidos com status 'pronto' de Balcão e Salão
+    const prontos = safePedidos
+      .filter((p) => p && p.status === 'pronto' && isBalcaoOuMesaOrder(p.tipo))
+      .sort((a, b) => new Date(b.atualizado_em || b.criado_em).getTime() - new Date(a.atualizado_em || a.criado_em).getTime());
+
+    if (prontos.length > 0) return prontos;
+
+    // Prioridade 2: Pedidos ativos de Balcão ou Salão (não cancelados e não delivery)
+    const ativos = safePedidos
+      .filter((p) => p && p.status !== 'cancelado' && !(p.tipo || '').toLowerCase().includes('delivery'))
+      .sort((a, b) => new Date(b.atualizado_em || b.criado_em).getTime() - new Date(a.atualizado_em || a.criado_em).getTime());
+
+    return ativos;
+  }, [safePedidos]);
+
+  // Mini Widget de Painel de Senhas (Chamadas em Tempo Real)
+  const renderMiniPainelSenhas = () => {
+    const atual = senhasChamadas[0] || null;
+    const anteriores = senhasChamadas.slice(1, 4);
+
+    const getLocalText = (p: Pedido) => {
+      if ((p.tipo || '').toLowerCase().includes('sal') || p.mesa_id) {
+        return `Mesa ${String(p.mesa_id || 1).padStart(2, '0')}`;
+      }
+      return 'Balcão';
+    };
+
+    const getNumeroSenha = (p: Pedido) => p.codigo_senha != null ? `#${p.codigo_senha}` : `#${p.id}`;
+
+    return (
+      <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-sm flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-800/80">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <Volume2 className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black tracking-wider text-neutral-200 uppercase font-mono">
+                  PAINEL DE SENHAS (CHAMADAS)
+                </h4>
+                <p className="text-[10px] text-neutral-400 font-medium">Chamadas de TV e balcão em tempo real</p>
+              </div>
+            </div>
+            <span className="flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/70 border border-emerald-800 text-emerald-300 font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              AO VIVO
+            </span>
+          </div>
+
+          {atual ? (
+            <div className="bg-neutral-900/90 rounded-xl p-3.5 border border-amber-900/40 mb-3 text-center">
+              <span className="text-[10px] font-bold tracking-widest text-neutral-400 uppercase block mb-1">
+                SENHA ATUAL EM DESTAQUE
+              </span>
+              <div className="text-3xl sm:text-4xl font-black text-amber-400 tracking-tight font-mono flex items-center justify-center gap-2">
+                <span>{getNumeroSenha(atual)}</span>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold uppercase tracking-normal">
+                  {getLocalText(atual)}
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1.5 truncate">
+                {atual.cliente?.nome || 'Cliente Balcão'} {atual.status === 'pronto' ? '• Pronto para retirada' : ''}
+              </p>
+            </div>
+          ) : (
+            <div className="bg-neutral-900/60 rounded-xl p-4 border border-neutral-800/80 mb-3 text-center">
+              <span className="text-xs text-neutral-400 font-medium">Nenhuma senha chamada no momento</span>
+            </div>
+          )}
+
+          {anteriores.length > 0 && (
+            <div className="pt-2 border-t border-neutral-800/60 mb-3">
+              <span className="text-[10px] font-bold tracking-wider text-neutral-400 uppercase block mb-1.5 font-mono">
+                ÚLTIMAS 3 CHAMADAS ANTERIORES:
+              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                {anteriores.map((p) => (
+                  <span
+                    key={p.id}
+                    className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-750 text-xs font-mono font-bold text-neutral-300 flex items-center gap-1.5"
+                  >
+                    <span className="text-neutral-500 font-normal">#</span>
+                    {p.codigo_senha || p.id}
+                    <span className="text-[10px] text-neutral-400 font-normal uppercase">
+                      ({getLocalText(p)})
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onNavigate && onNavigate('led' as any)}
+          className="w-full mt-2 py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-amber-500/20 cursor-pointer"
+        >
+          <Tv className="w-4 h-4" />
+          <span>Abrir Painel de TV</span>
+        </button>
+      </div>
+    );
+  };
+
   // =========================================================================
   // 1. LAYOUT: STRIPE EXECUTIVE (Padrão Principal)
   // =========================================================================
@@ -1239,6 +1365,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 ))}
             </div>
           </div>
+
+          {renderMiniPainelSenhas()}
         </div>
       </div>
     </div>
@@ -1516,6 +1644,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
           </div>
+
+          {renderMiniPainelSenhas()}
         </div>
       </div>
     </div>
@@ -1706,6 +1836,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
           </div>
+
+          {renderMiniPainelSenhas()}
         </div>
       </div>
     </div>
@@ -1886,6 +2018,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <span className="font-mono text-white font-bold">{formatBRL(faturamentoRetirada)}</span>
             </div>
           </div>
+
+          {renderMiniPainelSenhas()}
         </div>
       </div>
     </div>
@@ -2139,6 +2273,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <ArrowRight className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {/* Bloco 7: Mini Painel de Senhas (TV e Chamadas) */}
+      {renderMiniPainelSenhas()}
     </div>
   );
 

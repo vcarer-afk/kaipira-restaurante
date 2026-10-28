@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Produto,
   Categoria,
@@ -198,8 +198,39 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const [novaFormaParcial, setNovaFormaParcial] = useState<string>('pix');
   const [novoValorParcial, setNovoValorParcial] = useState('');
 
-  // Cart
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Cart com persistência de rascunho em localStorage
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const draft = localStorage.getItem('kaipira_pdv_carrinho_draft');
+      if (draft) {
+        const parsed = JSON.parse(draft);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao restaurar rascunho de carrinho PDV:', e);
+    }
+    return [];
+  });
+
+  // Sincronização automática do rascunho com o localStorage
+  useEffect(() => {
+    try {
+      if (cart.length > 0) {
+        localStorage.setItem('kaipira_pdv_carrinho_draft', JSON.stringify(cart));
+      } else {
+        localStorage.removeItem('kaipira_pdv_carrinho_draft');
+      }
+    } catch (e) {
+      console.warn('Erro ao salvar rascunho do carrinho PDV:', e);
+    }
+  }, [cart]);
+
+  // Feedback visual de clique duplo para adicionar +1 rápido
+  const [fastAddAnimationId, setFastAddAnimationId] = useState<number | null>(null);
+  const lastTapRef = useRef<{ [productId: number]: number }>({});
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Product Customizer Modal
@@ -207,6 +238,62 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
   const [modalQuantidade, setModalQuantidade] = useState(1);
   const [modalObservacao, setModalObservacao] = useState('');
   const [modalOpcionais, setModalOpcionais] = useState<number[]>([]);
+
+  // Adição rápida via clique duplo (+1 direto)
+  const handleFastAddProduct = useCallback(
+    (prod: Produto, e?: React.SyntheticEvent) => {
+      if (e) {
+        e.stopPropagation();
+      }
+      if (prod.pausado || !isCaixaAberto) return;
+
+      const precoUnitario = tipoPedido === 'delivery' ? prod.preco_delivery : prod.preco_salao;
+
+      setCart((prev) => {
+        const existingIdx = prev.findIndex(
+          (it) => it.produto_id === prod.id && (!it.opcionais_selecionados || it.opcionais_selecionados.length === 0)
+        );
+
+        if (existingIdx >= 0) {
+          const updated = [...prev];
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            quantidade: updated[existingIdx].quantidade + 1,
+          };
+          return updated;
+        } else {
+          const newItem: CartItem = {
+            produto_id: prod.id,
+            produto_nome: prod.nome,
+            quantidade: 1,
+            observacao: '',
+            preco_unitario: precoUnitario,
+            opcionais_selecionados: [],
+          };
+          return [...prev, newItem];
+        }
+      });
+
+      playAlertChime('ready');
+      setFastAddAnimationId(prod.id);
+      setTimeout(() => {
+        setFastAddAnimationId((curr) => (curr === prod.id ? null : curr));
+      }, 700);
+    },
+    [isCaixaAberto, tipoPedido]
+  );
+
+  const handleTouchProduct = (prod: Produto, e: React.TouchEvent) => {
+    const now = Date.now();
+    const lastTap = lastTapRef.current[prod.id] || 0;
+    if (now - lastTap < 300) {
+      e.preventDefault();
+      handleFastAddProduct(prod, e);
+      lastTapRef.current[prod.id] = 0;
+    } else {
+      lastTapRef.current[prod.id] = now;
+    }
+  };
 
   useEffect(() => {
     if (selectedMesaNumber) {
@@ -460,17 +547,16 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
       return;
     }
 
-    if (!clienteTelefone || !clienteTelefone.trim()) {
-      alert('POR FAVOR, INFORME O TELEFONE DO CLIENTE');
-      return;
-    }
-
     if (!clienteNome || !clienteNome.trim()) {
       alert('POR FAVOR, INFORME O NOME DO CLIENTE');
       return;
     }
 
     if (tipoPedido === 'delivery') {
+      if (!clienteTelefone || !clienteTelefone.trim()) {
+        alert('POR FAVOR, INFORME O TELEFONE DO CLIENTE PARA ENTREGA');
+        return;
+      }
       if (!clienteCep || cleanDigits(clienteCep).length !== 8) {
         alert('POR FAVOR, INFORME O CEP VÁLIDO PARA ENTREGA');
         return;
@@ -600,6 +686,9 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
 
       // Reset cart and form
       setCart([]);
+      try {
+        localStorage.removeItem('kaipira_pdv_carrinho_draft');
+      } catch {}
       setPagamentosParciais([]);
       setNovoValorParcial('');
       setClienteMatchedId(undefined);
@@ -960,6 +1049,16 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
           </div>
         )}
 
+        {/* Dica de agilidade no PDV */}
+        <div className="flex items-center justify-between text-[11px] text-neutral-400 px-2 py-1.5 bg-amber-500/5 rounded-lg border border-amber-500/15 mb-2">
+          <span className="flex items-center gap-1.5 text-amber-400 font-semibold">
+            ⚡ Dica: Dê duplo clique em qualquer prato para adicionar +1 direto ao pedido sem abrir modal!
+          </span>
+          <span className="text-[10px] text-neutral-500 font-mono">
+            {filteredProdutos.length} pratos
+          </span>
+        </div>
+
         {/* Product Catalog: Blocos (Cards Grid) vs Lista (Table) */}
         {viewMode === 'bloco' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[560px] overflow-y-auto pr-1">
@@ -970,12 +1069,24 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
               return (
                 <div
                   key={prod.id}
-                  className={`bg-neutral-850 border rounded-xl p-3 flex flex-col justify-between transition-all ${
+                  onDoubleClick={(e) => handleFastAddProduct(prod, e)}
+                  onTouchEnd={(e) => handleTouchProduct(prod, e)}
+                  className={`bg-neutral-850 border rounded-xl p-3 flex flex-col justify-between transition-all relative select-none ${
                     prod.pausado
                       ? 'border-red-900/50 opacity-60'
-                      : 'border-neutral-800 hover:border-amber-600/50 hover:bg-neutral-800/80'
+                      : 'border-neutral-800 hover:border-amber-600/50 hover:bg-neutral-800/80 cursor-pointer'
                   }`}
+                  title="Dica: Clique duplo adiciona +1 direto à venda"
                 >
+                  {/* Feedback visual de +1 Adicionado */}
+                  {fastAddAnimationId === prod.id && (
+                    <div className="absolute inset-0 bg-amber-500/25 rounded-xl border-2 border-amber-400 flex items-center justify-center z-20 pointer-events-none animate-pulse">
+                      <span className="px-3 py-1 bg-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-lg shadow-xl">
+                        +1 ADICIONADO!
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex items-start gap-3">
                     {renderProductThumbnailPDV(prod, 'w-14 h-14 sm:w-16 sm:h-16 rounded-xl')}
 
@@ -1014,7 +1125,10 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                   <div className="flex items-center justify-between gap-2 mt-3 pt-2 border-t border-neutral-800">
                     {/* Quick pause toggle for inventory protection */}
                     <button
-                      onClick={() => onTogglePauseProduto(prod.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTogglePauseProduto(prod.id);
+                      }}
                       title={prod.pausado ? 'Despausar item' : 'Pausar item se esgotou'}
                       className={`text-[10px] px-2 py-1 rounded font-bold uppercase transition-colors ${
                         prod.pausado
@@ -1026,7 +1140,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                     </button>
 
                     <button
-                      onClick={() => handleOpenCustomize(prod)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenCustomize(prod);
+                      }}
+                      onDoubleClick={(e) => handleFastAddProduct(prod, e)}
                       disabled={prod.pausado || !isCaixaAberto}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors ${
                         prod.pausado || !isCaixaAberto
@@ -1061,9 +1179,12 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                   return (
                     <tr
                       key={prod.id}
-                      className={`hover:bg-neutral-850/60 transition-colors ${
+                      onDoubleClick={(e) => handleFastAddProduct(prod, e)}
+                      onTouchEnd={(e) => handleTouchProduct(prod, e)}
+                      className={`hover:bg-neutral-850/60 transition-colors relative cursor-pointer select-none ${
                         prod.pausado ? 'opacity-60 bg-red-950/10' : ''
-                      }`}
+                      } ${fastAddAnimationId === prod.id ? 'bg-amber-500/20' : ''}`}
+                      title="Dica: Clique duplo adiciona +1 direto à venda"
                     >
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-3">
@@ -1091,7 +1212,10 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                       <td className="px-3 py-2.5 text-center">
                         <button
                           type="button"
-                          onClick={() => onTogglePauseProduto(prod.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onTogglePauseProduto(prod.id);
+                          }}
                           className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase transition-colors cursor-pointer ${
                             prod.pausado
                               ? 'bg-red-950 text-red-300 border border-red-800'
@@ -1104,7 +1228,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
                       <td className="px-3 py-2.5 text-right">
                         <button
                           type="button"
-                          onClick={() => handleOpenCustomize(prod)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenCustomize(prod);
+                          }}
+                          onDoubleClick={(e) => handleFastAddProduct(prod, e)}
                           disabled={prod.pausado || !isCaixaAberto}
                           className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1 transition-colors ml-auto ${
                             prod.pausado || !isCaixaAberto
@@ -1169,12 +1297,11 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 pt-2 border-t border-neutral-800">
                 <UpperInput
-                  label="TELEFONE / WHATSAPP: *"
+                  label="TELEFONE / WHATSAPP (OPCIONAL):"
                   maskType="phone"
                   value={clienteTelefone}
                   onChange={handleTelefoneChange}
                   placeholder="(19) 9-9999-9999"
-                  required
                 />
                 <UpperInput
                   label="NOME COMPLETO NA MESA: *"
@@ -1192,12 +1319,16 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
             <div className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <UpperInput
-                  label="TELEFONE / WHATSAPP (BUSCA): *"
+                  label={
+                    tipoPedido === 'delivery'
+                      ? 'TELEFONE / WHATSAPP: *'
+                      : 'TELEFONE / WHATSAPP (OPCIONAL):'
+                  }
                   maskType="phone"
                   value={clienteTelefone}
                   onChange={handleTelefoneChange}
                   placeholder="(19) 9-9999-9999"
-                  required
+                  required={tipoPedido === 'delivery'}
                 />
                 <UpperInput
                   label="NOME COMPLETO: *"
@@ -1338,11 +1469,20 @@ export const POSNewOrder: React.FC<POSNewOrderProps> = ({
               </h3>
               {cart.length > 0 && (
                 <button
-                  onClick={() => setCart([])}
-                  className="text-[11px] text-neutral-400 hover:text-red-400 flex items-center gap-1"
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Deseja realmente limpar todos os itens da venda atual?')) {
+                      setCart([]);
+                      try {
+                        localStorage.removeItem('kaipira_pdv_carrinho_draft');
+                      } catch {}
+                    }
+                  }}
+                  className="text-[11px] font-bold text-neutral-400 hover:text-red-400 flex items-center gap-1 cursor-pointer transition-colors uppercase"
+                  title="Cancelar / Limpar Venda"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  Limpar
+                  <span>Limpar Venda</span>
                 </button>
               )}
             </div>

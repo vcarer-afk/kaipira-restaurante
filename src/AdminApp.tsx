@@ -132,8 +132,47 @@ export default function AdminApp() {
   // Conexões ativas no sistema em tempo real
   const [activeConnectionsCount, setActiveConnectionsCount] = useState<number>(1);
 
-  // Navigation & Menu Settings
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  // Navigation & Menu Settings com persistência em localStorage e blindagem contra reset em foco/mudança de aba
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(() => {
+    try {
+      const saved = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab | null;
+      if (saved) return saved;
+    } catch {}
+    return 'dashboard';
+  });
+
+  const setActiveTab = useCallback((tab: ActiveTab) => {
+    setActiveTabState(tab);
+    try {
+      localStorage.setItem('kaipira_admin_active_tab', tab);
+    } catch {}
+  }, []);
+
+  // Blindagem de rota: manter a aba atual ativa ao alternar entre janelas ou retornar o foco
+  useEffect(() => {
+    const handleRestoreTab = () => {
+      try {
+        const saved = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab | null;
+        if (saved) {
+          setActiveTabState((current) => (current !== saved ? saved : current));
+        }
+      } catch {}
+    };
+
+    window.addEventListener('focus', handleRestoreTab);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleRestoreTab();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleRestoreTab);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   const [isSlideMenuOpen, setIsSlideMenuOpen] = useState<boolean>(false);
   const [selectedMesaNumber, setSelectedMesaNumber] = useState<number | undefined>(undefined);
 

@@ -125,6 +125,8 @@ export async function fetchConfiguracoesFromSupabase(
           ? dadosObj.delivery_interno_ativo
           : true,
       cardapio_diario_cache: dadosObj.cardapio_diario_cache || (dadosObj as any)?.cardapio_diario_atual,
+      dashboard_layout:
+        (data as any).dashboard_layout || dadosObj.dashboard_layout || 'stripe',
       exibir_diagnostico_vitrine:
         (data as any).exibir_diagnostico_vitrine !== undefined
           ? !!(data as any).exibir_diagnostico_vitrine
