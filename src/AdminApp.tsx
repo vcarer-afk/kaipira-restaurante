@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Produto,
   Categoria,
@@ -176,6 +176,10 @@ export default function AdminApp() {
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const clientesRef = useRef<Cliente[]>(clientes);
+  useEffect(() => {
+    clientesRef.current = clientes;
+  }, [clientes]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [estoque, setEstoque] = useState<ItemEstoque[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>(INITIAL_USUARIOS);
@@ -618,9 +622,23 @@ export default function AdminApp() {
               setPedidos((prev) =>
                 prev.map((p) => {
                   if (p.id !== updated.id) return p;
+
+                  // Preserva rigorosamente o cliente e dados de entrega se o payload da nuvem vier sem o join
+                  const clientePreservado =
+                    (updated.cliente && updated.cliente.endereco)
+                      ? updated.cliente
+                      : (p.cliente || clientesRef.current?.find((c: Cliente) => c.id === (updated.cliente_id || p.cliente_id)) || clientes.find((c: Cliente) => c.id === (updated.cliente_id || p.cliente_id)));
+
+                  const enderecoPreservado =
+                    (updated as any).endereco_entrega ||
+                    (p as any).endereco_entrega ||
+                    (clientePreservado?.endereco ? `${clientePreservado.endereco}${clientePreservado.numero ? `, Nº ${clientePreservado.numero}` : ''}` : undefined);
+
                   return {
                     ...p,
                     ...updated,
+                    cliente: clientePreservado,
+                    endereco_entrega: enderecoPreservado,
                     itens: updated.itens && updated.itens.length > 0 ? updated.itens : p.itens,
                     pagamentos: updated.pagamentos && updated.pagamentos.length > 0 ? updated.pagamentos : p.pagamentos,
                   };
@@ -838,9 +856,13 @@ export default function AdminApp() {
     setPedidos((prev) =>
       prev.map((p) => {
         if (p.id === id) {
-          const updated = { ...p, status };
+          const updated: Pedido = {
+            ...p,
+            status,
+            cliente: p.cliente, // Preserva explicitamente o cliente com morada
+            endereco_entrega: (p as any).endereco_entrega,
+          };
           if (entregador) updated.entregador_nome = entregador;
-          // Quando motoboy confirmar entrega, fica pendente de conferência pelo caixa
           if (p.tipo === 'delivery' && status === 'entregue') {
             updated.conferencia_entrega = 'pendente';
           }

@@ -155,6 +155,7 @@ export interface Pedido {
   status: StatusPedido;
   cliente_id?: string;
   cliente?: Cliente;
+  endereco_entrega?: string;
   mesa_id?: number;
   precisa_troco: boolean;
   troco_para?: number;

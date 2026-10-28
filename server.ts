@@ -448,6 +448,10 @@ async function startServer() {
       pedido.entregador_nome = entregador_nome.toUpperCase();
     }
 
+    if (pedido.cliente) {
+      pedido.cliente = { ...pedido.cliente };
+    }
+
     // Se delivery entregue, sincroniza com conferência de entregas do caixa
     if (pedido.tipo === 'delivery' && status === 'entregue' && pedido.conferencia_entrega !== 'conferido') {
       pedido.conferencia_entrega = 'pendente';
