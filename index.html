@@ -23,6 +23,36 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      @media print {
+        /* Oculta tudo que não for a área de impressão designada */
+        body {
+          background: #ffffff !important;
+          color: #000000 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        /* Regra para cupons térmicos: remove cabeçalhos/rodapés de URL do navegador */
+        @page {
+          margin: 0mm;
+          size: auto;
+        }
+
+        /* Esconde botões, barras de navegação, rodapés e modais de fundo */
+        header, nav, footer, button, .print\:hidden, [role="dialog"] > div:first-child {
+          display: none !important;
+        }
+
+        /* Força quebra de página limpa e evita corte de linhas ao meio */
+        tr, .print-row {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+      }
+    </style>
   </head>
   <body class="bg-neutral-900 text-neutral-100 antialiased font-sans selection:bg-amber-600 selection:text-white">
     <div id="root"></div>

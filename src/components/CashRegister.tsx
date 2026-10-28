@@ -179,7 +179,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
   // End of day report modal
   const [showRelatorioModal, setShowRelatorioModal] = useState(false);
-  const [reportPrintMode, setReportPrintMode] = useState<'cupom' | 'a4'>('cupom');
+  const [reportPrintMode, setReportPrintMode] = useState<'cupom' | 'a4'>('a4');
   const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // Caixa Navigation: Resumo Geral, Conferência de Entregas, ou Extrato
@@ -668,19 +668,40 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
         return;
       }
 
-      // Garante captura do elemento a partir do topo exato sem adicionar scroll
+      // 1. Guardar e resetar temporariamente a rolagem do modal pai
+      const modalContainer = reportElement.closest('.overflow-y-auto') as HTMLElement | null;
+      const prevScrollTop = modalContainer ? modalContainer.scrollTop : 0;
+      if (modalContainer) {
+        modalContainer.scrollTop = 0;
+      }
+
+      // 2. Captura limpa sem herança de scroll ou deslocamento de tela
       const canvas = await html2canvas(reportElement, {
         scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
+        scrollY: 0,
+        scrollX: 0,
         x: 0,
         y: 0,
-        scrollX: 0,
-        scrollY: 0,
         windowWidth: reportElement.scrollWidth,
         windowHeight: reportElement.scrollHeight,
+        onclone: (clonedDoc) => {
+          // Garante que no documento clonado o relatório não tenha margens ou alinhamento vertical flex
+          const clonedElement = clonedDoc.getElementById('relatorio-fechamento-caixa');
+          if (clonedElement) {
+            clonedElement.style.margin = '0';
+            clonedElement.style.paddingTop = '10px';
+            clonedElement.style.transform = 'none';
+          }
+        },
       });
+
+      // Restaurar a rolagem original do modal para o utilizador
+      if (modalContainer) {
+        modalContainer.scrollTop = prevScrollTop;
+      }
 
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({
@@ -691,7 +712,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
 
       const pdfWidth = 210;
       const pdfHeight = 297;
-      const margin = 5;
+      const margin = 8;
       const contentWidth = pdfWidth - margin * 2;
       const pageUsableHeight = pdfHeight - margin * 2;
       const contentHeight = (canvas.height * contentWidth) / canvas.width;
@@ -699,13 +720,15 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
       let heightLeft = contentHeight;
       let position = margin;
 
-      pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+      // Página 1: começa rigorosamente na margem superior (8mm do topo)
+      pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
       heightLeft -= pageUsableHeight;
 
-      while (heightLeft > 0) {
+      // Páginas seguintes (apenas se houver excedente real maior que 5mm)
+      while (heightLeft > 5) {
         position -= pageUsableHeight;
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
         heightLeft -= pageUsableHeight;
       }
 
@@ -2464,10 +2487,52 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
           MODAL 4: RELATÓRIO COMPLETO DE TODO MOVIMENTO FINANCEIRO E CAIXA DO SISTEMA
           ========================================================================= */}
       {showRelatorioModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-3 sm:p-5 backdrop-blur-sm overflow-y-auto print:p-0 print:m-0 print:static print:block print:bg-white">
-          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-3xl w-full p-5 sm:p-7 shadow-2xl flex flex-col gap-5 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 print:p-0 print:m-0 print:border-none print:shadow-none print:max-w-none print:max-h-none print:overflow-visible print:bg-white">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/85 p-3 sm:p-5 backdrop-blur-sm overflow-y-auto pt-4 sm:pt-6 print:p-0 print:m-0 print:static print:block print:bg-white print-container-relatorio">
+          <style>{`
+            @media print {
+              @page {
+                size: ${reportPrintMode === 'cupom' ? 'auto' : 'A4 portrait'};
+                margin: ${reportPrintMode === 'cupom' ? '0mm' : '8mm'};
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              .print-container-relatorio,
+              .print-container-relatorio #relatorio-fechamento-caixa,
+              .print-container-relatorio #relatorio-fechamento-caixa * {
+                visibility: visible !important;
+              }
+              .print-container-relatorio {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+              }
+              .print-container-relatorio #relatorio-fechamento-caixa {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                max-width: ${reportPrintMode === 'cupom' ? '76mm' : '100%'} !important;
+                margin: ${reportPrintMode === 'cupom' ? '0 auto' : '0'} !important;
+                padding: ${reportPrintMode === 'cupom' ? '4mm' : '0'} !important;
+                border: none !important;
+                box-shadow: none !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+              }
+              .print-container-relatorio .print\\:hidden,
+              .print-container-relatorio button {
+                display: none !important;
+              }
+            }
+          `}</style>
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-3xl w-full p-5 sm:p-7 shadow-2xl flex flex-col gap-5 max-h-[92vh] overflow-y-auto animate-in zoom-in-95 print:p-0 print:m-0 print:border-none print:shadow-none print:max-w-none print:max-h-none print:overflow-visible print:bg-white">
             {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-neutral-800 pb-4 print:hidden">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4 print:hidden">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="p-1.5 rounded-lg bg-amber-600/20 text-amber-500 border border-amber-500/30">
@@ -2486,7 +2551,33 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Seletor de Modo: Cupom vs A4 & Ações */}
+              <div className="flex flex-wrap items-center gap-2 print:hidden">
+                <div className="flex items-center bg-neutral-800 p-0.5 rounded-xl border border-neutral-700">
+                  <button
+                    type="button"
+                    onClick={() => setReportPrintMode('a4')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all cursor-pointer ${
+                      reportPrintMode === 'a4'
+                        ? 'bg-amber-500 text-black font-black shadow-xs'
+                        : 'text-neutral-300 hover:text-white'
+                    }`}
+                  >
+                    Folha A4
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReportPrintMode('cupom')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all cursor-pointer ${
+                      reportPrintMode === 'cupom'
+                        ? 'bg-amber-500 text-black font-black shadow-xs'
+                        : 'text-neutral-300 hover:text-white'
+                    }`}
+                  >
+                    Cupom (80mm)
+                  </button>
+                </div>
+
                 <button
                   type="button"
                   disabled={isExportingPDF}
@@ -2499,7 +2590,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                   ) : (
                     <Download className="w-4 h-4" />
                   )}
-                  <span>{isExportingPDF ? 'Gerando PDF...' : 'Baixar PDF (.PDF)'}</span>
+                  <span>{isExportingPDF ? 'Gerando...' : 'Baixar PDF'}</span>
                 </button>
 
                 <button
@@ -2513,7 +2604,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowRelatorioModal(false)}
-                  className="w-8 h-8 rounded-xl bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center transition-colors"
+                  className="w-8 h-8 rounded-xl bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
                   ✕
                 </button>
@@ -2523,7 +2614,9 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
             {/* Printable Report Paper Layout (Folha A4 Branca com Renderização Nítida para PDF e Impressão) */}
             <div
               id="relatorio-fechamento-caixa"
-              className="p-6 sm:p-8 bg-white border border-neutral-300 rounded-xl space-y-6 text-neutral-900 font-sans shadow-2xl max-w-[210mm] mx-auto print:border-none print:shadow-none print:p-0 print:max-w-none"
+              className={`bg-white text-black p-6 rounded-none sm:rounded-2xl shadow-none mx-auto w-full max-w-3xl border border-neutral-200 space-y-6 ${
+                reportPrintMode === 'cupom' ? 'max-w-[76mm] font-mono text-xs leading-snug p-4' : 'font-sans'
+              } print:border-none print:shadow-none print:p-0 print:max-w-none`}
             >
               {/* Header Banner */}
               <div className="text-center border-b border-dashed border-neutral-400 pb-4">
@@ -2780,7 +2873,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
             </div>
 
             {/* Modal Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-neutral-800">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-neutral-800 print:hidden">
               <span className="text-xs text-neutral-500">
                 Arquivo gerado em formato A4 · Auditado no Supabase.
               </span>

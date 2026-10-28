@@ -93,70 +93,94 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
-      <div className="bg-neutral-900 border border-neutral-700 rounded-xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs print:bg-transparent print:p-0 print:static print:inset-auto">
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #thermal-receipt-area, #thermal-receipt-area * {
+            visibility: visible !important;
+          }
+          #thermal-receipt-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: 76mm !important; /* Compatibilidade perfeita para bobinas de 80mm e 58mm */
+            margin: 0 auto !important;
+            padding: 4mm !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+        }
+      `}</style>
+      <div className="bg-neutral-900 border border-neutral-700 rounded-xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh] print:border-none print:shadow-none print:max-w-none print:max-h-none print:bg-transparent">
         {/* Header toolbar */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 bg-neutral-850">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 bg-neutral-850 print:hidden">
           <div className="flex items-center gap-2">
             <Printer className="w-5 h-5 text-amber-500" />
             <span className="text-sm font-semibold text-neutral-200">
-              Comanda Térmica (80mm) - Senha #{pedido.codigo_senha}
+              Comanda Térmica (76/80mm) - Senha #{pedido.codigo_senha}
             </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="p-1 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer print:hidden"
+            title="Fechar comprovante"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Receipt Preview Body */}
-        <div className="overflow-y-auto p-4 bg-neutral-950 flex justify-center">
+        <div className="overflow-y-auto p-4 bg-neutral-950 flex justify-center print:p-0 print:bg-white print:overflow-visible">
           <div
-            id="thermal-print-area"
-            className="w-[78mm] bg-white text-black p-4 font-mono text-[11px] leading-snug shadow-md rounded-xs border border-neutral-300"
+            id="thermal-receipt-area"
+            className="w-[76mm] max-w-[76mm] bg-white text-black p-4 font-mono text-xs leading-snug shadow-md rounded-xs border border-neutral-300 print:shadow-none print:border-none print:p-1"
           >
             <div className="text-center pb-2 border-b border-dashed border-black">
-              <h2 className="text-sm font-bold tracking-tight uppercase">
+              <h2 className="text-sm font-bold tracking-tight uppercase text-black">
                 {configuracoes?.nomeRestaurante || 'RESTAURANTE KAIPIRA'}
               </h2>
-              <p className="text-[10px] uppercase">DESDE 2013 - ESPALHANDO SABOR</p>
-              <p className="text-[10px] uppercase">
+              <p className="text-[10px] uppercase text-black">DESDE 2013 - ESPALHANDO SABOR</p>
+              <p className="text-[10px] uppercase text-black">
                 {configuracoes?.endereco
                   ? `${configuracoes.endereco}${configuracoes.numero ? `, ${configuracoes.numero}` : ''} - ${configuracoes.bairro || ''} (${configuracoes.cidade || 'PIRACICABA'} - ${configuracoes.uf || 'SP'})`
                   : 'PIRACICABA - SP'}
               </p>
               {configuracoes?.telefone && (
-                <p className="text-[10px] uppercase">TEL: {configuracoes.telefone}</p>
+                <p className="text-[10px] uppercase text-black">TEL: {configuracoes.telefone}</p>
               )}
             </div>
 
             <div className="py-2 border-b border-dashed border-black text-center">
-              <span className="text-xs uppercase tracking-wider font-bold">
+              <span className="text-xs uppercase tracking-wider font-bold text-black">
                 {pedido.tipo.toUpperCase()}
               </span>
-              <div className="text-2xl font-black my-1">
+              <div className="text-2xl font-black my-1 text-black">
                 SENHA #{pedido.codigo_senha}
               </div>
               {pedido.mesa_id && (
-                <div className="text-sm font-bold bg-neutral-200 py-0.5 mt-1">
+                <div className="text-sm font-bold bg-neutral-200 text-black py-0.5 mt-1 border border-black">
                   MESA: {pedido.mesa_id}
                 </div>
               )}
-              <div className="text-[10px] text-neutral-600 mt-1">
+              <div className="text-[10px] text-black mt-1">
                 {formatDateTime(pedido.criado_em)}
               </div>
             </div>
 
             {/* Customer Details for Delivery / Balcao */}
             {(pedido.tipo === 'delivery' || !!clienteNome) && (
-              <div className="py-2 border-b border-dashed border-black text-[10px]">
+              <div className="py-2 border-b border-dashed border-black text-[11px] text-black space-y-0.5">
                 <p className="font-bold">CLIENTE: {clienteNome}</p>
                 {clienteTelefone && <p>TEL: {clienteTelefone}</p>}
                 {pedido.tipo === 'delivery' && (
                   <>
-                    <p className="font-semibold mt-1">
+                    <p className="font-semibold">
                       END: {clienteEndereco ? `${clienteEndereco}, Nº ${clienteNumero}` : 'ENDEREÇO NÃO INFORMADO'}
                     </p>
                     {clienteComplemento && <p>COMPL: {clienteComplemento}</p>}
@@ -169,14 +193,14 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
 
             {/* Order Items */}
             <div className="py-2 border-b border-dashed border-black">
-              <div className="flex justify-between font-bold text-[10px] mb-1">
-                <span>QTD · PRODUTO / DESCRIÇÃO</span>
-                <span className="text-right">UNIT · SUBTOTAL</span>
+              <div className="flex justify-between font-bold text-[10px] mb-1.5 text-black border-b border-black pb-0.5">
+                <span>QTD · ITEM / PRODUTO</span>
+                <span className="text-right">TOTAL</span>
               </div>
               <div className="space-y-2">
                 {pedido.itens.map((it, idx) => (
-                  <div key={idx} className="text-[11px]">
-                    <div className="flex justify-between items-start">
+                  <div key={idx} className="text-xs text-black">
+                    <div className="flex justify-between items-start gap-1">
                       <span className="font-bold">
                         {it.quantidade}x {getProductDescription(it)}
                       </span>
@@ -184,14 +208,14 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
                         <span className="tabular-nums font-bold block">
                           {formatBRL(it.preco_unitario * it.quantidade)}
                         </span>
-                        <span className="text-[9.5px] text-neutral-600 block">
+                        <span className="text-[10px] text-black block">
                           ({it.quantidade}x {formatBRL(it.preco_unitario)})
                         </span>
                       </div>
                     </div>
 
                     {it.opcionais_selecionados && it.opcionais_selecionados.length > 0 && (
-                      <div className="pl-2 text-[10px] text-neutral-700">
+                      <div className="pl-2 text-[10px] text-black">
                         {it.opcionais_selecionados.map((op, oIdx) => (
                           <div key={oIdx} className="flex justify-between">
                             <span>+ {op.nome}</span>
@@ -212,7 +236,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
             </div>
 
             {/* Financial Totals */}
-            <div className="py-2 border-b border-dashed border-black space-y-1 text-[11px]">
+            <div className="py-2 border-b border-dashed border-black space-y-1 text-xs text-black">
               <div className="flex justify-between">
                 <span>SUBTOTAL PRODUTOS:</span>
                 <span className="tabular-nums font-bold">
@@ -225,18 +249,18 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
                   <span className="tabular-nums font-bold">{formatBRL(pedido.taxa_entrega)}</span>
                 </div>
               )}
-              <div className="flex justify-between font-black text-xs pt-1 border-t border-black">
+              <div className="flex justify-between font-black text-sm pt-1 border-t border-black">
                 <span>TOTAL GERAL:</span>
                 <span className="tabular-nums">{formatBRL(pedido.valor_total)}</span>
               </div>
 
               {pedido.precisa_troco && pedido.troco_para && (
-                <div className="pt-1 text-[10px] font-bold">
+                <div className="pt-1 text-[11px] font-bold border-t border-dashed border-black">
                   <div className="flex justify-between">
                     <span>TROCO PARA:</span>
                     <span className="tabular-nums">{formatBRL(pedido.troco_para)}</span>
                   </div>
-                  <div className="flex justify-between text-red-700">
+                  <div className="flex justify-between">
                     <span>LEVAR DE TROCO:</span>
                     <span className="tabular-nums">
                       {formatBRL(pedido.troco_para - pedido.valor_total)}
@@ -247,10 +271,10 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
 
               {pedido.pagamentos && pedido.pagamentos.length > 0 && (
                 <div className="pt-1 text-[10px]">
-                  <span className="font-bold">FORMA DE PAGAMENTO: </span>
+                  <span className="font-bold">PAGAMENTO: </span>
                   {pedido.pagamentos.map((p, idx) => (
-                    <span key={idx} className="uppercase font-semibold">
-                      {p.forma.replace('_', ' ')} ({formatBRL(p.valor)})
+                    <span key={idx} className="uppercase font-semibold block">
+                      • {p.forma.replace('_', ' ')}: {formatBRL(p.valor)}
                     </span>
                   ))}
                 </div>
@@ -263,25 +287,25 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
               )}
             </div>
 
-            <div className="text-center pt-2 text-[9px] text-neutral-600">
-              <p>OBRIGADO PELA PREFERÊNCIA!</p>
+            <div className="text-center pt-2 text-[10px] text-black">
+              <p className="font-bold">OBRIGADO PELA PREFERÊNCIA!</p>
               <p>O VERDADEIRO SABOR DO INTERIOR PAULISTA</p>
-              <p className="mt-1 font-mono">SISTEMA RESTAURANTE KAIPIRA</p>
+              <p className="mt-0.5 text-[9px] font-mono">SISTEMA RESTAURANTE KAIPIRA</p>
             </div>
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="p-3 border-t border-neutral-800 bg-neutral-850 flex items-center justify-end gap-3">
+        <div className="p-3 border-t border-neutral-800 bg-neutral-850 flex items-center justify-end gap-3 print:hidden">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-neutral-300 hover:text-white bg-neutral-800 rounded-lg hover:bg-neutral-700 transition-colors"
+            className="px-4 py-2 text-xs font-semibold text-neutral-300 hover:text-white bg-neutral-800 rounded-lg hover:bg-neutral-700 transition-colors cursor-pointer print:hidden"
           >
             Fechar
           </button>
           <button
             onClick={handlePrint}
-            className="px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 rounded-lg flex items-center gap-2 shadow-sm transition-colors"
+            className="px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 rounded-lg flex items-center gap-2 shadow-sm transition-colors cursor-pointer print:hidden"
           >
             <Printer className="w-4 h-4" />
             Imprimir Comanda Térmica
