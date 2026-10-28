@@ -47,19 +47,30 @@ interface AppState {
   proximoCodigoSenha: number;
 }
 
-function saveState(state: AppState) {
+const generateNumericId = () => Number(`${Date.now()}${Math.floor(Math.random() * 899 + 100)}`);
+
+let isSaving = false;
+let savePending = false;
+
+async function saveState(stateToSave: AppState) {
+  if (isSaving) {
+    savePending = true;
+    return;
+  }
+  isSaving = true;
   try {
-    // Backup rotativo de segurança antes da gravação se o arquivo já existir
     if (fs.existsSync(DB_FILE)) {
-      try {
-        fs.copyFileSync(DB_FILE, DB_BACKUP_FILE);
-      } catch (bErr) {
-        console.warn('Aviso ao criar backup rotativo:', bErr);
-      }
+      await fs.promises.copyFile(DB_FILE, DB_BACKUP_FILE).catch(() => {});
     }
-    fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
+    await fs.promises.writeFile(DB_FILE, JSON.stringify(stateToSave, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Erro ao salvar DB cloud persistente:', err);
+    console.error('Erro ao salvar DB persistente de forma assíncrona:', err);
+  } finally {
+    isSaving = false;
+    if (savePending) {
+      savePending = false;
+      saveState(state);
+    }
   }
 }
 
@@ -211,12 +222,10 @@ async function startServer() {
     const cleanUser = (login || '').trim().toUpperCase();
     const cleanPass = (senha || '').trim();
 
-    const envAdminPass = process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.trim() : null;
-    const isAdminAuth =
-      cleanUser === 'ADMIN' &&
-      ((envAdminPass && cleanPass === envAdminPass) || cleanPass === 'DNDIGQOL');
+    const adminPassword = (process.env.ADMIN_PASSWORD || 'DNDIGQOL').trim();
+    const defaultStaffPassword = (process.env.STAFF_PASSWORD || '1234').trim();
 
-    if (isAdminAuth) {
+    if (cleanUser === 'ADMIN' && cleanPass === adminPassword) {
       return res.json({
         authenticated: true,
         perfil: {
@@ -228,49 +237,35 @@ async function startServer() {
       });
     }
 
-    if (cleanUser === 'ATENDENTE' && cleanPass === '1234') {
-      return res.json({
-        authenticated: true,
-        perfil: {
+    if (['ATENDENTE', 'COZINHA', 'GARCOM', 'ENTREGADOR'].includes(cleanUser) && cleanPass === defaultStaffPassword) {
+      const perfisMap: Record<string, { id: string; nome: string; cargo: string }> = {
+        ATENDENTE: {
           id: 'usr-atend-1',
           nome: 'JULIANA ATENDENTE (BALCÃO & WHATSAPP)',
           cargo: 'atendente',
-          criado_em: new Date().toISOString(),
         },
-      });
-    }
-
-    if (cleanUser === 'COZINHA' && cleanPass === '1234') {
-      return res.json({
-        authenticated: true,
-        perfil: {
+        COZINHA: {
           id: 'usr-coz-1',
           nome: 'CHEF TIÃO (COZINHA & FOGÃO A LENHA)',
           cargo: 'cozinha',
-          criado_em: new Date().toISOString(),
         },
-      });
-    }
-
-    if (cleanUser === 'GARCOM' && cleanPass === '1234') {
-      return res.json({
-        authenticated: true,
-        perfil: {
+        GARCOM: {
           id: 'usr-garc-1',
           nome: 'MARCELO GARÇOM (SALÃO 20 MESAS)',
           cargo: 'garcom',
-          criado_em: new Date().toISOString(),
         },
-      });
-    }
-
-    if (cleanUser === 'ENTREGADOR' && cleanPass === '1234') {
-      return res.json({
-        authenticated: true,
-        perfil: {
+        ENTREGADOR: {
           id: 'usr-moto-1',
           nome: 'RODRIGO MOTOBOY (DELIVERY PRÓPRIO)',
           cargo: 'entregador',
+        },
+      };
+
+      const selected = perfisMap[cleanUser];
+      return res.json({
+        authenticated: true,
+        perfil: {
+          ...selected,
           criado_em: new Date().toISOString(),
         },
       });
@@ -326,7 +321,7 @@ async function startServer() {
         valor_produtos = round2(valor_produtos + itemTotal + opcTotal);
 
         return {
-          id: Date.now() + idx,
+          id: generateNumericId(),
           pedido_id: 0,
           produto_id: it.produto_id,
           produto_nome: it.produto_nome,
@@ -373,10 +368,10 @@ async function startServer() {
 
       const pagamentosList: any[] = [];
       if (req.body.pagamentos && req.body.pagamentos.length > 0) {
-        req.body.pagamentos.forEach((pg: any, idx: number) => {
+        req.body.pagamentos.forEach((pg: any) => {
           // 1. Adiciona ao array de pagamentos do pedido
           pagamentosList.push({
-            id: Date.now() + idx,
+            id: generateNumericId(),
             pedido_id: 0, // Será vinculado dinamicamente pelo frontend local
             forma: pg.forma,
             valor: Number(pg.valor),
@@ -410,7 +405,7 @@ async function startServer() {
       }
 
       const novoPedido: Pedido = {
-        id: Date.now(),
+        id: generateNumericId(),
         codigo_senha,
         tipo,
         status: 'pendente',
@@ -453,6 +448,11 @@ async function startServer() {
       pedido.entregador_nome = entregador_nome.toUpperCase();
     }
 
+    // Se delivery entregue, sincroniza com conferência de entregas do caixa
+    if (pedido.tipo === 'delivery' && status === 'entregue' && pedido.conferencia_entrega !== 'conferido') {
+      pedido.conferencia_entrega = 'pendente';
+    }
+
     // Se mesa e pedido foi entregue/fechado
     if (pedido.mesa_id && (status === 'entregue' || status === 'cancelado')) {
       // checar se existem outros pedidos ativos na mesa
@@ -481,7 +481,7 @@ async function startServer() {
 
     const valorPago = Number(valor || pedido.valor_total);
     const novoPagamento = {
-      id: Date.now(),
+      id: generateNumericId(),
       pedido_id: pedidoId,
       forma: forma as FormaPagamento,
       valor: valorPago,
@@ -502,8 +502,11 @@ async function startServer() {
     // Se o pagamento for em dinheiro físico e o caixa estiver aberto, reflete nas movimentações do caixa
     const cleanForma = String(forma || '').toLowerCase().trim();
     if (cleanForma === 'dinheiro' && state.caixa && state.caixa.status === 'aberto') {
+      if (!Array.isArray(state.caixa.movimentacoes)) {
+        state.caixa.movimentacoes = [];
+      }
       state.caixa.movimentacoes.push({
-        id: Date.now() + 1,
+        id: generateNumericId(),
         tipo: 'suprimento',
         forma: 'dinheiro',
         valor: valorPago,
@@ -564,8 +567,8 @@ async function startServer() {
 
       if (!p.pagamentos || p.pagamentos.length === 0) {
         if (pagamentosRecebidos.length > 0) {
-          p.pagamentos = pagamentosRecebidos.map((pg: any, idx: number) => ({
-            id: Date.now() + idx,
+          p.pagamentos = pagamentosRecebidos.map((pg: any) => ({
+            id: generateNumericId(),
             pedido_id: p.id,
             forma: pg.forma,
             valor: Number(pg.valor) || p.valor_total,
@@ -582,7 +585,24 @@ async function startServer() {
       }
     });
 
-    broadcast('TABLE_CLOSED', { mesa, pedidos: state.pedidos });
+    // Registra imediatamente as entradas correspondentes no caixa se aberto
+    if (state.caixa && state.caixa.status === 'aberto' && pagamentosRecebidos.length > 0) {
+      if (!Array.isArray(state.caixa.movimentacoes)) {
+        state.caixa.movimentacoes = [];
+      }
+      pagamentosRecebidos.forEach((pg: any) => {
+        state.caixa.movimentacoes.push({
+          id: generateNumericId(),
+          tipo: 'entrada_pedido',
+          forma: pg.forma,
+          valor: Number(pg.valor),
+          descricao: `FECHAMENTO MESA ${mesa.numero || num} (${(pg.forma || '').toUpperCase()})`,
+          hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        });
+      });
+    }
+
+    broadcast('TABLE_CLOSED', { mesa, pedidos: state.pedidos, caixa: state.caixa });
     res.json(mesa);
   });
 
@@ -638,7 +658,7 @@ async function startServer() {
     }
 
     const novoItem: ItemEstoque = {
-      id: id ? Number(id) : Date.now(),
+      id: id ? Number(id) : generateNumericId(),
       item_nome: (item_nome || '').toUpperCase().trim(),
       quantidade_atual: Number(quantidade_atual),
       unidade_medida: (unidade_medida || 'un').toLowerCase().trim(),
@@ -678,8 +698,11 @@ async function startServer() {
 
     // Registra entrada no caixa
     if (state.caixa && state.caixa.status === 'aberto') {
+      if (!Array.isArray(state.caixa.movimentacoes)) {
+        state.caixa.movimentacoes = [];
+      }
       state.caixa.movimentacoes.push({
-        id: Date.now(),
+        id: generateNumericId(),
         tipo: 'suprimento',
         forma,
         valor: abatimento,
@@ -696,7 +719,7 @@ async function startServer() {
   app.post('/api/caixa/abrir', (req, res) => {
     const { valor_abertura, observacoes } = req.body;
     state.caixa = {
-      id: Date.now(),
+      id: generateNumericId(),
       data_caixa: new Date().toISOString().split('T')[0],
       valor_abertura: Number(valor_abertura || 0),
       status: 'aberto',
@@ -704,7 +727,7 @@ async function startServer() {
       aberto_em: new Date().toISOString(),
       movimentacoes: [
         {
-          id: Date.now(),
+          id: generateNumericId(),
           tipo: 'suprimento',
           forma: 'dinheiro',
           valor: Number(valor_abertura || 0),
@@ -738,7 +761,7 @@ async function startServer() {
     }
 
     const mov = {
-      id: Date.now(),
+      id: generateNumericId(),
       tipo: tipo as 'entrada_pedido' | 'suprimento' | 'sangria',
       forma: forma as FormaPagamento,
       valor: Number(valor),
@@ -746,6 +769,9 @@ async function startServer() {
       hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     };
 
+    if (!Array.isArray(state.caixa.movimentacoes)) {
+      state.caixa.movimentacoes = [];
+    }
     state.caixa.movimentacoes.push(mov);
     saveState(state);
     broadcast('CASH_MOVEMENT', { caixa: state.caixa, mov });
@@ -802,7 +828,7 @@ async function startServer() {
   app.post('/api/reservas', (req, res) => {
     const { cliente_nome, telefone, mesa_id, data_hora, observacoes } = req.body;
     const novaReserva: Reserva = {
-      id: Date.now(),
+      id: generateNumericId(),
       cliente_nome: (cliente_nome || '').toUpperCase(),
       telefone: telefone || '',
       mesa_id: Number(mesa_id),

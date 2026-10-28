@@ -205,16 +205,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   };
 
-  // REGRA DE CONSISTÊNCIA: Alinhamento de data e faturamento entre Dashboard e Caixa
+  // REGRA DE CONSISTÊNCIA: Alinhamento de data e faturamento entre Dashboard e Caixa (inclui turnos noturnos)
   const dataHojeIso = new Date().toLocaleDateString('en-CA');
   const dataFiltroCaixa = caixa?.data_caixa || dataHojeIso;
 
-  const activeAndCompletedOrders = safePedidos.filter(
-    (p) =>
-      p &&
-      p.status !== 'cancelado' &&
-      (!p.criado_em || p.criado_em.startsWith(dataFiltroCaixa) || p.criado_em.startsWith(dataHojeIso))
-  );
+  const activeAndCompletedOrders = safePedidos.filter((p) => {
+    if (!p || p.status === 'cancelado') return false;
+    if (!p.criado_em) return true;
+    // Compatibilidade com turnos que viram a meia-noite
+    return (
+      p.criado_em.startsWith(dataFiltroCaixa) ||
+      p.criado_em.startsWith(dataHojeIso) ||
+      (caixa?.status === 'aberto' && caixa?.aberto_em && new Date(p.criado_em) >= new Date(caixa.aberto_em))
+    );
+  });
   const pedidosConfirmados = activeAndCompletedOrders.filter(isPedidoFaturado);
   const pedidosAFaturar = activeAndCompletedOrders.filter((p) => !isPedidoFaturado(p));
 
