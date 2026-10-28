@@ -134,44 +134,32 @@ export default function AdminApp() {
 
   // Navigation & Menu Settings com persistência em localStorage e blindagem contra reset em foco/mudança de aba
   const [activeTab, setActiveTabState] = useState<ActiveTab>(() => {
-    try {
-      const saved = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab | null;
-      if (saved) return saved;
-    } catch {}
-    return 'dashboard';
+    const saved = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab;
+    return saved || 'dashboard';
   });
 
-  const setActiveTab = useCallback((tab: ActiveTab) => {
-    setActiveTabState(tab);
-    try {
-      localStorage.setItem('kaipira_admin_active_tab', tab);
-    } catch {}
+  const setActiveTab = useCallback((newTab: ActiveTab) => {
+    setActiveTabState(newTab);
+    localStorage.setItem('kaipira_admin_active_tab', newTab);
   }, []);
 
-  // Blindagem de rota: manter a aba atual ativa ao alternar entre janelas ou retornar o foco
+  // Blindagem de rota: recuperar e manter a aba ativa ao alternar janelas ou recuperar foco
   useEffect(() => {
-    const handleRestoreTab = () => {
-      try {
-        const saved = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab | null;
-        if (saved) {
-          setActiveTabState((current) => (current !== saved ? saved : current));
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        const saved = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab;
+        if (saved && saved !== activeTab) {
+          setActiveTab(saved);
         }
-      } catch {}
-    };
-
-    window.addEventListener('focus', handleRestoreTab);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        handleRestoreTab();
       }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
     return () => {
-      window.removeEventListener('focus', handleRestoreTab);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
     };
-  }, []);
+  }, [activeTab]);
 
   const [isSlideMenuOpen, setIsSlideMenuOpen] = useState<boolean>(false);
   const [selectedMesaNumber, setSelectedMesaNumber] = useState<number | undefined>(undefined);
@@ -492,7 +480,10 @@ export default function AdminApp() {
         setCurrentRole(cargoAferido);
         fetchCloudState();
 
-        if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
+        const savedTab = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab | null;
+        if (savedTab) {
+          setActiveTab(savedTab);
+        } else if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
           setActiveTab('dashboard');
         } else if (cargoAferido === 'cozinha') {
           setActiveTab('kds');
@@ -507,7 +498,7 @@ export default function AdminApp() {
     });
 
     // Escuta mudanças de login/logout
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setIsAuthenticated(!!session);
       if (session) {
         const email = session.user.email || '';
@@ -528,16 +519,21 @@ export default function AdminApp() {
         setCurrentRole(cargoAferido);
         fetchCloudState();
 
-        if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
-          setActiveTab('dashboard');
-        } else if (cargoAferido === 'cozinha') {
-          setActiveTab('kds');
-        } else if (cargoAferido === 'garcom') {
-          setActiveTab('mesas');
-        } else if (cargoAferido === 'entregador') {
-          setActiveTab('expedicao');
-        } else {
-          setActiveTab('pdv');
+        const savedTab = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab | null;
+        if (savedTab) {
+          setActiveTab(savedTab);
+        } else if (event === 'SIGNED_IN') {
+          if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
+            setActiveTab('dashboard');
+          } else if (cargoAferido === 'cozinha') {
+            setActiveTab('kds');
+          } else if (cargoAferido === 'garcom') {
+            setActiveTab('mesas');
+          } else if (cargoAferido === 'entregador') {
+            setActiveTab('expedicao');
+          } else {
+            setActiveTab('pdv');
+          }
         }
       } else {
         setPedidos([]); 
@@ -1734,7 +1730,7 @@ export default function AdminApp() {
         )}
 
         {/* LED Panel */}
-        {activeTab === 'led' && (
+        {(activeTab === 'led' || activeTab === 'senhas') && (
           <LedPanel
             pedidos={pedidos}
             configuracoes={configuracoes}

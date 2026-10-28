@@ -901,14 +901,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div>
           <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-800/80">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-                <Volume2 className="w-4 h-4" />
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <Volume2 className="w-4 h-4 animate-pulse" />
               </div>
               <div>
                 <h4 className="text-xs font-black tracking-wider text-neutral-200 uppercase font-mono">
                   PAINEL DE SENHAS (CHAMADAS)
                 </h4>
-                <p className="text-[10px] text-neutral-400 font-medium">Chamadas de TV e balcão em tempo real</p>
+                <p className="text-[10px] text-neutral-400 font-medium">Display digital LED de TV e balcão</p>
               </div>
             </div>
             <span className="flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/70 border border-emerald-800 text-emerald-300 font-bold">
@@ -917,44 +917,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </span>
           </div>
 
+          {/* Visor Digital LED Matriz / Segmentos */}
           {atual ? (
-            <div className="bg-neutral-900/90 rounded-xl p-3.5 border border-amber-900/40 mb-3 text-center">
-              <span className="text-[10px] font-bold tracking-widest text-neutral-400 uppercase block mb-1">
-                SENHA ATUAL EM DESTAQUE
-              </span>
-              <div className="text-3xl sm:text-4xl font-black text-amber-400 tracking-tight font-mono flex items-center justify-center gap-2">
-                <span>{getNumeroSenha(atual)}</span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold uppercase tracking-normal">
+            <div className="bg-black border border-neutral-800 rounded-2xl p-4 mb-3 text-center shadow-2xl relative overflow-hidden">
+              <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-neutral-900">
+                <span className="flex items-center gap-1.5 text-[10px] font-mono font-black text-emerald-400 uppercase tracking-widest animate-pulse">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,1)]" />
+                  CHAMANDO SENHA
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-300 font-mono font-bold uppercase tracking-wide">
                   {getLocalText(atual)}
                 </span>
               </div>
-              <p className="text-[11px] text-neutral-400 mt-1.5 truncate">
+              <div className="font-mono tracking-widest font-black text-3xl sm:text-4xl text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.8)] py-1.5">
+                {getNumeroSenha(atual)}
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1 truncate font-mono">
                 {atual.cliente?.nome || 'Cliente Balcão'} {atual.status === 'pronto' ? '• Pronto para retirada' : ''}
               </p>
             </div>
           ) : (
-            <div className="bg-neutral-900/60 rounded-xl p-4 border border-neutral-800/80 mb-3 text-center">
-              <span className="text-xs text-neutral-400 font-medium">Nenhuma senha chamada no momento</span>
+            <div className="bg-black border border-neutral-800 rounded-2xl p-4 mb-3 text-center shadow-2xl">
+              <div className="flex items-center justify-center gap-1.5 text-[10px] font-mono font-black text-emerald-400/70 uppercase tracking-widest mb-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400/50 animate-pulse" />
+                PAINEL LED EM ESPERA
+              </div>
+              <div className="font-mono tracking-widest font-black text-2xl sm:text-3xl text-neutral-600 py-1">
+                -- --
+              </div>
+              <span className="text-[10px] text-neutral-500 font-mono block mt-1">Aguardando chamada de pedidos</span>
             </div>
           )}
 
+          {/* Histórico compacto das últimas 3 senhas chamadas em display digital âmbar */}
           {anteriores.length > 0 && (
             <div className="pt-2 border-t border-neutral-800/60 mb-3">
               <span className="text-[10px] font-bold tracking-wider text-neutral-400 uppercase block mb-1.5 font-mono">
                 ÚLTIMAS 3 CHAMADAS ANTERIORES:
               </span>
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="grid grid-cols-3 gap-2">
                 {anteriores.map((p) => (
-                  <span
+                  <div
                     key={p.id}
-                    className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-750 text-xs font-mono font-bold text-neutral-300 flex items-center gap-1.5"
+                    className="p-2 rounded-xl bg-black border border-neutral-800 text-center shadow-inner"
                   >
-                    <span className="text-neutral-500 font-normal">#</span>
-                    {p.codigo_senha || p.id}
-                    <span className="text-[10px] text-neutral-400 font-normal uppercase">
-                      ({getLocalText(p)})
+                    <span className="block font-mono tracking-widest font-black text-sm sm:text-base text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]">
+                      {getNumeroSenha(p)}
                     </span>
-                  </span>
+                    <span className="text-[9px] text-neutral-400 font-mono font-semibold uppercase truncate block mt-0.5">
+                      {getLocalText(p)}
+                    </span>
+                  </div>
                 ))}
               </div>
             </div>
@@ -963,10 +976,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           type="button"
-          onClick={() => onNavigate && onNavigate('led' as any)}
-          className="w-full mt-2 py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-amber-500/20 cursor-pointer"
+          onClick={() => onNavigate && onNavigate('senhas' as any)}
+          className="w-full mt-2 py-2.5 px-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-neutral-700/80 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer"
         >
-          <Tv className="w-4 h-4" />
+          <Tv className="w-4 h-4 text-amber-400" />
           <span>Abrir Painel de TV</span>
         </button>
       </div>
@@ -1066,42 +1079,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* Alerta de A Faturar / A Receber */}
-      {totalAFaturar > 0 && (
-        <div className="p-4 bg-amber-950/30 border border-amber-800/70 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 shrink-0">
-              <Clock className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black text-amber-300 uppercase tracking-wide">
-                  A Faturar / A Receber: {formatBRL(totalAFaturar)}
-                </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-black">
-                  {pedidosAFaturar.length} pendente{pedidosAFaturar.length > 1 ? 's' : ''}
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-400 mt-0.5">
-                {salaoAFaturar.length > 0 && `${salaoAFaturar.length} comanda(s) aberta(s) no salão`}
-                {salaoAFaturar.length > 0 && (deliveryAFaturar.length > 0 || retiradaAFaturar.length > 0) && ' · '}
-                {deliveryAFaturar.length > 0 && `${deliveryAFaturar.length} entrega(s) aguardando conferência`}
-                {deliveryAFaturar.length > 0 && retiradaAFaturar.length > 0 && ' · '}
-                {retiradaAFaturar.length > 0 && `${retiradaAFaturar.length} pedido(s) balcão`}
-                {' — não somam no faturamento até confirmação no caixa.'}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => onNavigate('caixa')}
-            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-sm"
-          >
-            <span>Conferir no Caixa</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* Main Grid: Channels & Charts & Operations */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -2355,6 +2332,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </>
           )}
+
+          <button
+            onClick={() => onNavigate('caixa')}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-lg transition-transform hover:scale-105 active:scale-95 uppercase cursor-pointer"
+            title="Abrir módulo do caixa diário e conferência"
+          >
+            <Banknote className="w-4 h-4" />
+            <span>Caixa</span>
+          </button>
 
           <button
             onClick={() => onNavigate('cardapio-dia')}
