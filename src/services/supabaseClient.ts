@@ -268,7 +268,61 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     typeof id === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 
-  const clienteIdVal = isValidUUID(pedido.cliente_id) ? pedido.cliente_id : null;
+  let clienteIdVal = isValidUUID(pedido.cliente_id) ? pedido.cliente_id : null;
+
+  // Sincronização e resolução persistente do cliente para pedidos de Delivery
+  if (pedido.tipo === 'delivery' && pedido.cliente) {
+    try {
+      const cleanPhone = String(pedido.cliente.telefone || '').replace(/\D/g, '');
+      const { data: existingClients } = await supabase.from('clientes').select('*');
+      const found = existingClients?.find((c: any) =>
+        (pedido.cliente_id && c.id === pedido.cliente_id) ||
+        (cleanPhone.length >= 8 && String(c.telefone || '').replace(/\D/g, '') === cleanPhone)
+      );
+
+      if (found && isValidUUID(found.id)) {
+        clienteIdVal = found.id;
+        const updateData: any = {};
+        if (pedido.cliente.nome) updateData.nome = pedido.cliente.nome.toUpperCase().trim();
+        if (pedido.cliente.endereco) updateData.endereco = pedido.cliente.endereco.toUpperCase().trim();
+        if (pedido.cliente.numero) updateData.numero = pedido.cliente.numero.toUpperCase().trim();
+        if (pedido.cliente.bairro) updateData.bairro = pedido.cliente.bairro.toUpperCase().trim();
+        if (pedido.cliente.complemento !== undefined) updateData.complemento = String(pedido.cliente.complemento || '').toUpperCase().trim();
+        if (pedido.cliente.cep) updateData.cep = pedido.cliente.cep;
+        if (pedido.cliente.telefone) updateData.telefone = pedido.cliente.telefone;
+        if (Object.keys(updateData).length > 0) {
+          await supabase.from('clientes').update(updateData).eq('id', found.id);
+        }
+      } else {
+        const novoUuid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined;
+        const newClientPayload: any = {
+          nome: (pedido.cliente.nome || 'CLIENTE DELIVERY').toUpperCase().trim(),
+          telefone: pedido.cliente.telefone || '',
+          endereco: (pedido.cliente.endereco || '').toUpperCase().trim(),
+          numero: (pedido.cliente.numero || '').toUpperCase().trim(),
+          bairro: (pedido.cliente.bairro || 'PIRACICABA').toUpperCase().trim(),
+          complemento: (pedido.cliente.complemento || '').toUpperCase().trim(),
+          cep: pedido.cliente.cep || '13400-000',
+          eh_mensalista: !!pedido.cliente.eh_mensalista,
+          saldo_devedor: 0,
+          criado_em: now,
+        };
+        if (novoUuid) newClientPayload.id = novoUuid;
+        const { data: insClient } = await supabase.from('clientes').insert([newClientPayload]).select();
+        if (insClient && insClient[0]?.id && isValidUUID(insClient[0].id)) {
+          clienteIdVal = insClient[0].id;
+        }
+      }
+    } catch (cliErr) {
+      console.warn('Aviso ao sincronizar cliente para delivery:', cliErr);
+    }
+  }
+
+  const enderecoEntregaFormatado =
+    (pedido as any).endereco_entrega ||
+    (pedido.cliente?.endereco
+      ? `${pedido.cliente.endereco}${pedido.cliente.numero ? `, Nº ${pedido.cliente.numero}` : ''}${pedido.cliente.complemento ? ` (${pedido.cliente.complemento})` : ''}`
+      : undefined);
 
   // 1. INSERIR O PEDIDO: dados gerais na tabela 'pedidos' ESTRITAMENTE SEM 'itens'
   const pedidoPayload: Record<string, any> = {
@@ -284,6 +338,10 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     criado_em: pedido.criado_em || now,
     atualizado_em: now,
   };
+
+  if (enderecoEntregaFormatado) {
+    pedidoPayload.endereco_entrega = enderecoEntregaFormatado;
+  }
 
   // Preservação da forma de pagamento: nunca deixa forma_pagamento vazio em delivery
   const formaPagamentoFinal =
@@ -312,14 +370,15 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
 
     if (error) {
       console.warn('Tentativa 1 de insert na tabela pedidos falhou:', error.message);
-      // Tratamento resiliente se coluna forma_pagamento ou codigo_senha não existirem
+      if (error.message?.includes('endereco_entrega')) {
+        delete pedidoPayload.endereco_entrega;
+      }
       if (error.message?.includes('forma_pagamento')) {
         delete pedidoPayload.forma_pagamento;
       }
       if (error.message?.includes('codigo_senha')) {
         delete pedidoPayload.codigo_senha;
       }
-      // Se falhar por foreign key em mesa_id ou cliente_id
       if (error.message?.includes('mesa_id') || error.message?.includes('foreign key')) {
         pedidoPayload.mesa_id = null;
       }
@@ -345,14 +404,36 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
   // 2. INSERIR OS ITENS: Com o id do pedido em mãos, insert na tabela 'itens_pedido'
   const itensFormatados: ItemPedido[] = [];
   if (pedido.itens && pedido.itens.length > 0) {
-    const itensPayload = pedido.itens.map((it: any) => ({
-      pedido_id: pedidoIdGerado,
-      produto_id: it.produto_id ? Number(it.produto_id) : (it.id ? Number(it.id) : null),
-      quantidade: Number(it.quantidade) || 1,
-      preco_unitario: Number(it.preco_unitario || it.preco_salao || it.preco_delivery || 0),
-      observacao: it.observacao ? String(it.observacao).toUpperCase().trim() : null,
-      opcionais_selecionados: it.opcionais_selecionados || null,
-    }));
+    const metaDeliveryObj = (pedido.tipo === 'delivery' && pedido.cliente) ? {
+      id: -999,
+      nome: '__META_DELIVERY__',
+      preco_adicional: 0,
+      dados_cliente: {
+        nome: pedido.cliente.nome,
+        telefone: pedido.cliente.telefone,
+        endereco: pedido.cliente.endereco,
+        numero: pedido.cliente.numero,
+        bairro: pedido.cliente.bairro,
+        complemento: pedido.cliente.complemento,
+        cep: pedido.cliente.cep,
+        endereco_entrega: enderecoEntregaFormatado,
+      },
+    } : null;
+
+    const itensPayload = pedido.itens.map((it: any, idx: number) => {
+      let opcionais = Array.isArray(it.opcionais_selecionados) ? [...it.opcionais_selecionados] : [];
+      if (idx === 0 && metaDeliveryObj) {
+        opcionais = [...opcionais.filter((op: any) => op?.nome !== '__META_DELIVERY__'), metaDeliveryObj];
+      }
+      return {
+        pedido_id: pedidoIdGerado,
+        produto_id: it.produto_id ? Number(it.produto_id) : (it.id ? Number(it.id) : null),
+        quantidade: Number(it.quantidade) || 1,
+        preco_unitario: Number(it.preco_unitario || it.preco_salao || it.preco_delivery || 0),
+        observacao: it.observacao ? String(it.observacao).toUpperCase().trim() : null,
+        opcionais_selecionados: opcionais.length > 0 ? opcionais : null,
+      };
+    });
 
     try {
       const { data: itensInserted, error: itensError } = await supabase
@@ -404,13 +485,28 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     }
   }
 
+  const cleanItensRetorno = (pedido.itens || []).map((origIt: any, idx: number) => {
+    const insIt = itensFormatados[idx];
+    const ops = origIt.opcionais_selecionados || insIt?.opcionais_selecionados || [];
+    const cleanOps = Array.isArray(ops) ? ops.filter((op: any) => op?.nome !== '__META_DELIVERY__') : [];
+    return {
+      ...origIt,
+      ...(insIt || {}),
+      produto_nome: origIt.produto_nome || (insIt as any)?.produto_nome,
+      preco_unitario: Number(origIt.preco_unitario) || Number(insIt?.preco_unitario) || 0,
+      quantidade: Number(origIt.quantidade) || Number(insIt?.quantidade) || 1,
+      opcionais_selecionados: cleanOps,
+    };
+  });
+
   const novoPedidoCompleto: Pedido = {
     id: pedidoIdGerado,
     codigo_senha: codigoSenhaGerado,
     tipo: pedido.tipo,
     status: pedido.status || 'pendente',
-    cliente_id: pedido.cliente_id,
+    cliente_id: clienteIdVal || pedido.cliente_id,
     cliente: pedido.cliente,
+    endereco_entrega: enderecoEntregaFormatado,
     mesa_id: pedido.mesa_id ? Number(pedido.mesa_id) : undefined,
     precisa_troco: !!pedido.precisa_troco,
     troco_para: pedido.troco_para,
@@ -418,16 +514,7 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     entregador_nome: pedido.entregador_nome,
     valor_total: Number(pedido.valor_total) || 0,
     taxa_entrega: Number(pedido.taxa_entrega) || 0,
-    itens: (pedido.itens || []).map((origIt: any, idx: number) => {
-      const insIt = itensFormatados[idx];
-      return {
-        ...origIt,
-        ...(insIt || {}),
-        produto_nome: origIt.produto_nome || (insIt as any)?.produto_nome,
-        preco_unitario: Number(origIt.preco_unitario) || Number(insIt?.preco_unitario) || 0,
-        quantidade: Number(origIt.quantidade) || Number(insIt?.quantidade) || 1,
-      };
-    }),
+    itens: cleanItensRetorno,
     pagamentos: pagamentosFormatados.length > 0 ? pagamentosFormatados : (pedido.pagamentos || []),
     forma_pagamento: formaPagamentoFinal || pedido.forma_pagamento || (pagamentosFormatados.length > 0 ? pagamentosFormatados[0].forma : undefined),
     pagamento_confirmado: !!pedido.pagamento_confirmado,
@@ -521,6 +608,28 @@ async function checkPedidosSchema() {
   return pedidosCols;
 }
 
+function extractAndCleanMetaDelivery(itens: any[]): { dadosCliente?: any; cleanItens: any[] } {
+  let dadosCliente: any = undefined;
+  const cleanItens = (itens || []).map((it: any) => {
+    let ops = it.opcionais_selecionados;
+    if (typeof ops === 'string') {
+      try {
+        ops = JSON.parse(ops);
+      } catch {}
+    }
+    if (Array.isArray(ops)) {
+      const meta = ops.find((op: any) => op && (op.nome === '__META_DELIVERY__' || op.id === -999));
+      if (meta && meta.dados_cliente) {
+        dadosCliente = meta.dados_cliente;
+      }
+      const filtered = ops.filter((op: any) => op && op.nome !== '__META_DELIVERY__' && op.id !== -999);
+      return { ...it, opcionais_selecionados: filtered };
+    }
+    return it;
+  });
+  return { dadosCliente, cleanItens };
+}
+
 export async function fetchPedidosSupabase(): Promise<Pedido[]> {
   try {
     // Carrega do Supabase as conferências salvas em nuvem
@@ -560,7 +669,29 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           ? 'conferido'
           : p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined);
 
-        const cliResolvido = p.cliente || (p.cliente_id ? cliMap.get(String(p.cliente_id)) : undefined);
+        const rawItens = Array.isArray(p.itens) ? p.itens : [];
+        const { dadosCliente, cleanItens } = extractAndCleanMetaDelivery(rawItens);
+
+        let cliResolvido = p.cliente || (p.cliente_id ? cliMap.get(String(p.cliente_id)) : undefined);
+        if (dadosCliente) {
+          const needsRestore = !cliResolvido || !cliResolvido.endereco || cliResolvido.nome === 'CLIENTE DELIVERY';
+          if (needsRestore) {
+            cliResolvido = {
+              id: cliResolvido?.id || p.cliente_id || 'delivery_guest',
+              nome: dadosCliente.nome || cliResolvido?.nome || 'CLIENTE DELIVERY',
+              telefone: dadosCliente.telefone || cliResolvido?.telefone || '',
+              endereco: dadosCliente.endereco || cliResolvido?.endereco || '',
+              numero: dadosCliente.numero || cliResolvido?.numero || '',
+              bairro: dadosCliente.bairro || cliResolvido?.bairro || '',
+              complemento: dadosCliente.complemento || cliResolvido?.complemento || '',
+              cep: dadosCliente.cep || cliResolvido?.cep || '',
+            };
+          }
+        }
+
+        const enderecoFormatado = dadosCliente?.enderecoCompleto ||
+          (cliResolvido?.endereco ? `${cliResolvido.endereco}${cliResolvido.numero ? `, ${cliResolvido.numero}` : ''}${cliResolvido.bairro ? ` - ${cliResolvido.bairro}` : ''}` : undefined) ||
+          p.endereco_entrega;
 
         return {
           id: Number(p.id),
@@ -569,6 +700,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           status: p.status,
           cliente_id: p.cliente_id,
           cliente: cliResolvido,
+          endereco_entrega: enderecoFormatado,
           mesa_id: p.mesa_id ? Number(p.mesa_id) : undefined,
           precisa_troco: !!p.precisa_troco,
           troco_para: p.troco_para ? Number(p.troco_para) : undefined,
@@ -576,7 +708,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           entregador_nome: p.entregador_nome,
           valor_total: Number(p.valor_total) || 0,
           taxa_entrega: Number(p.taxa_entrega) || 0,
-          itens: Array.isArray(p.itens) ? p.itens : [],
+          itens: cleanItens,
           pagamentos: Array.isArray(p.pagamentos) ? p.pagamentos : [],
           forma_pagamento: p.forma_pagamento || (Array.isArray(p.pagamentos) && p.pagamentos.length > 0 ? p.pagamentos[0].forma : undefined),
           pagamento_confirmado: Boolean(p.pagamento_confirmado),
@@ -632,6 +764,9 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
             observacao: it.observacao,
             opcionais_selecionados: it.opcionais_selecionados,
           }));
+        const rawItens = pedItens.length > 0 ? pedItens : (Array.isArray(p.itens) ? p.itens : []);
+        const { dadosCliente, cleanItens } = extractAndCleanMetaDelivery(rawItens);
+
         const pedPags = allPagamentos.filter((pg: any) => Number(pg.pedido_id) === Number(p.id));
         const confLocal = conferidosLocais[Number(p.id)];
         const isConferido = p.conferencia_entrega === 'conferido' || !!confLocal;
@@ -639,7 +774,26 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           ? 'conferido'
           : p.conferencia_entrega || (p.tipo === 'delivery' && p.status === 'entregue' ? 'pendente' : undefined);
 
-        const cliResolvido = p.cliente || (p.cliente_id ? cliMap.get(String(p.cliente_id)) : undefined);
+        let cliResolvido = p.cliente || (p.cliente_id ? cliMap.get(String(p.cliente_id)) : undefined);
+        if (dadosCliente) {
+          const needsRestore = !cliResolvido || !cliResolvido.endereco || cliResolvido.nome === 'CLIENTE DELIVERY';
+          if (needsRestore) {
+            cliResolvido = {
+              id: cliResolvido?.id || p.cliente_id || 'delivery_guest',
+              nome: dadosCliente.nome || cliResolvido?.nome || 'CLIENTE DELIVERY',
+              telefone: dadosCliente.telefone || cliResolvido?.telefone || '',
+              endereco: dadosCliente.endereco || cliResolvido?.endereco || '',
+              numero: dadosCliente.numero || cliResolvido?.numero || '',
+              bairro: dadosCliente.bairro || cliResolvido?.bairro || '',
+              complemento: dadosCliente.complemento || cliResolvido?.complemento || '',
+              cep: dadosCliente.cep || cliResolvido?.cep || '',
+            };
+          }
+        }
+
+        const enderecoFormatado = dadosCliente?.enderecoCompleto ||
+          (cliResolvido?.endereco ? `${cliResolvido.endereco}${cliResolvido.numero ? `, ${cliResolvido.numero}` : ''}${cliResolvido.bairro ? ` - ${cliResolvido.bairro}` : ''}` : undefined) ||
+          p.endereco_entrega;
 
         return {
           id: Number(p.id),
@@ -648,6 +802,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           status: p.status,
           cliente_id: p.cliente_id,
           cliente: cliResolvido,
+          endereco_entrega: enderecoFormatado,
           mesa_id: p.mesa_id ? Number(p.mesa_id) : undefined,
           precisa_troco: !!p.precisa_troco,
           troco_para: p.troco_para ? Number(p.troco_para) : undefined,
@@ -655,7 +810,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           entregador_nome: p.entregador_nome,
           valor_total: Number(p.valor_total) || 0,
           taxa_entrega: Number(p.taxa_entrega) || 0,
-          itens: pedItens.length > 0 ? pedItens : (Array.isArray(p.itens) ? p.itens : []),
+          itens: cleanItens,
           pagamentos: pedPags.length > 0 ? pedPags : (Array.isArray(p.pagamentos) ? p.pagamentos : []),
           forma_pagamento: p.forma_pagamento || (pedPags.length > 0 ? pedPags[0].forma : undefined),
           pagamento_confirmado: Boolean(p.pagamento_confirmado),

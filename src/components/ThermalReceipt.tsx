@@ -15,19 +15,29 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
   if (!pedido) return null;
 
   const pedAny = pedido as any;
+
+  // Extrai eventual backup de metadados salvo em itens
+  const metaItem = (pedido.itens || [])
+    .flatMap((it) => it.opcionais_selecionados || [])
+    .find((op: any) => op && (op.nome === '__META_DELIVERY__' || op.id === -999));
+  const metaCliente = (metaItem as any)?.dados_cliente;
+
   const clienteResolved =
     pedido.cliente ||
-    (clientes && pedido.cliente_id ? clientes.find((c) => String(c.id) === String(pedido.cliente_id)) : undefined);
+    (clientes && pedido.cliente_id ? clientes.find((c) => String(c.id) === String(pedido.cliente_id)) : undefined) ||
+    metaCliente;
 
   const clienteData =
     clienteResolved ||
     pedAny.cliente ||
     pedAny.dados_cliente ||
     pedAny.cliente_dados ||
+    metaCliente ||
     {};
 
   const rawNome = (
     clienteData.nome ||
+    metaCliente?.nome ||
     pedAny.cliente_nome ||
     pedAny.nome ||
     ''
@@ -46,12 +56,14 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
 
   const clienteTelefone =
     clienteData.telefone ||
+    metaCliente?.telefone ||
     pedAny.telefone ||
     pedAny.cliente_telefone ||
     '';
 
   const clienteEndereco =
     clienteData.endereco ||
+    metaCliente?.endereco ||
     pedAny.endereco ||
     pedAny.rua ||
     pedAny.logradouro ||
@@ -59,27 +71,31 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
 
   const clienteNumero =
     clienteData.numero ||
+    metaCliente?.numero ||
     pedAny.numero ||
     'S/N';
 
   const clienteComplemento =
     clienteData.complemento ||
+    metaCliente?.complemento ||
     pedAny.complemento ||
     '';
 
   const clienteBairro =
     clienteData.bairro ||
+    metaCliente?.bairro ||
     pedAny.bairro ||
     'PIRACICABA';
 
   const clienteCep =
     clienteData.cep ||
+    metaCliente?.cep ||
     pedAny.cep ||
     '';
 
   const getEnderecoCompleto = (p: Pedido): string => {
-    // 1. Tentar endereço dentro do objeto cliente
-    const cli = p.cliente || clienteResolved;
+    // 1. Tentar endereço dentro do objeto cliente ou metadados
+    const cli = p.cliente || clienteResolved || metaCliente;
     const partesCli: string[] = [];
     if (cli?.endereco) partesCli.push(cli.endereco);
     if (cli?.numero) partesCli.push(`Nº ${cli.numero}`);
@@ -89,6 +105,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
     // 2. Tentar campos diretos na raiz do pedido (lançamentos de PDV/Vitrine)
     const pAny = p as any;
     if (pAny.endereco_entrega) return pAny.endereco_entrega;
+    if (metaCliente?.enderecoCompleto) return metaCliente.enderecoCompleto;
     if (pAny.endereco) {
       const num = pAny.numero ? `, Nº ${pAny.numero}` : '';
       const comp = pAny.complemento ? ` (${pAny.complemento})` : '';
@@ -99,16 +116,16 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
   };
 
   const getBairroCidade = (p: Pedido): string => {
-    const cli = p.cliente || clienteResolved;
+    const cli = p.cliente || clienteResolved || metaCliente;
     const pAny = p as any;
-    const bairro = cli?.bairro || pAny.bairro || 'PIRACICABA';
-    const cidade = cli?.cidade || pAny.cidade || configuracoes?.cidade || 'PIRACICABA';
-    const cep = cli?.cep || pAny.cep;
+    const bairro = cli?.bairro || metaCliente?.bairro || pAny.bairro || 'PIRACICABA';
+    const cidade = cli?.cidade || metaCliente?.cidade || pAny.cidade || configuracoes?.cidade || 'PIRACICABA';
+    const cep = cli?.cep || metaCliente?.cep || pAny.cep;
     return `${bairro} - ${cidade}${cep ? ` (CEP: ${cep})` : ''}`;
   };
 
   const getTelefoneContato = (p: Pedido): string => {
-    return p.cliente?.telefone || clienteResolved?.telefone || (p as any).telefone || (p as any).whatsapp || '';
+    return p.cliente?.telefone || clienteResolved?.telefone || metaCliente?.telefone || (p as any).telefone || (p as any).whatsapp || '';
   };
 
   const getProductDescription = (it: { produto_id?: number; produto_nome?: string }) => {
@@ -254,7 +271,9 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ pedido, onClose,
 
                     {it.opcionais_selecionados && it.opcionais_selecionados.length > 0 && (
                       <div className="pl-2 text-[10px] text-black">
-                        {it.opcionais_selecionados.map((op, oIdx) => (
+                        {it.opcionais_selecionados
+                          .filter((op) => op && op.nome !== '__META_DELIVERY__' && op.id !== -999)
+                          .map((op, oIdx) => (
                           <div key={oIdx} className="flex justify-between">
                             <span>+ {op.nome}</span>
                             <span>{op.preco_adicional > 0 ? formatBRL(op.preco_adicional) : 'GRÁTIS'}</span>

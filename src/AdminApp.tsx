@@ -123,6 +123,52 @@ export function enrichPedidosWithProductNames(peds: Pedido[], prods: Produto[]):
   }));
 }
 
+export function mergePedidosPreservingClient(
+  oldPedidos: Pedido[],
+  newPedidos: Pedido[],
+  clientesList: Cliente[]
+): Pedido[] {
+  const oldMap = new Map<number, Pedido>();
+  oldPedidos.forEach((p) => {
+    if (p && p.id) oldMap.set(Number(p.id), p);
+  });
+
+  return newPedidos.map((np) => {
+    const old = oldMap.get(Number(np.id));
+    const hasValidNewClient =
+      np.cliente &&
+      np.cliente.nome &&
+      np.cliente.nome !== 'CLIENTE DELIVERY' &&
+      Boolean(np.cliente.endereco);
+
+    const fallbackFromList = (clientesList || []).find(
+      (c) =>
+        (np.cliente_id && c.id === np.cliente_id) ||
+        (old?.cliente_id && c.id === old.cliente_id) ||
+        (old?.cliente?.telefone && c.telefone === old.cliente.telefone)
+    );
+
+    const mergedCliente = hasValidNewClient
+      ? np.cliente
+      : old?.cliente && (old.cliente.endereco || old.cliente.nome !== 'CLIENTE DELIVERY')
+      ? { ...fallbackFromList, ...old.cliente }
+      : np.cliente || fallbackFromList;
+
+    return {
+      ...old,
+      ...np,
+      cliente: mergedCliente,
+      endereco_entrega:
+        (np as any).endereco_entrega ||
+        (old as any)?.endereco_entrega ||
+        (mergedCliente?.endereco
+          ? `${mergedCliente.endereco}${mergedCliente.numero ? `, Nº ${mergedCliente.numero}` : ''}${mergedCliente.complemento ? ` (${mergedCliente.complemento})` : ''}`
+          : undefined),
+    };
+  });
+}
+
+
 export default function AdminApp() {
   // Authentication State (In-Memory / Cloud Session - ZERO localStorage)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -281,7 +327,9 @@ export default function AdminApp() {
 
       const rawCloudPeds = pedidosData.status === 'fulfilled' && pedidosData.value ? pedidosData.value : [];
       const cloudPeds = enrichPedidosWithProductNames(rawCloudPeds, produtos);
-      setPedidos(cloudPeds);
+      setPedidos((prev) =>
+        mergePedidosPreservingClient(prev, cloudPeds, clientesRef.current || clientes)
+      );
 
       if (mesasRes.status === 'fulfilled' && mesasRes.value.data && mesasRes.value.data.length > 0) {
         const rawMesas = mesasRes.value.data as any[];
@@ -675,7 +723,13 @@ export default function AdminApp() {
             try {
               const peds = await fetchPedidosSupabase();
               if (peds) {
-                setPedidos(enrichPedidosWithProductNames(peds, produtos));
+                setPedidos((prev) =>
+                  mergePedidosPreservingClient(
+                    prev,
+                    enrichPedidosWithProductNames(peds, produtos),
+                    clientesRef.current || clientes
+                  )
+                );
               }
             } catch {}
           }
@@ -788,7 +842,13 @@ export default function AdminApp() {
       try {
         const peds = await fetchPedidosSupabase();
         if (peds) {
-          setPedidos((prev) => enrichPedidosWithProductNames(peds, produtos));
+          setPedidos((prev) =>
+            mergePedidosPreservingClient(
+              prev,
+              enrichPedidosWithProductNames(peds, produtos),
+              clientesRef.current || clientes
+            )
+          );
           setSyncStatus('sincronizado');
         }
       } catch (err) {
