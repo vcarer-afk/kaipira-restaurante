@@ -189,3 +189,56 @@
     margin: 8mm;
   }
 }
+
+/* ============================================================
+   TEMA WINDOWS 11 (ERP CORPORATIVO / DESKTOP)
+   ============================================================ */
+.theme-windows11 {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+  background-color: #13384c !important;
+}
+
+.theme-windows11 main {
+  background-color: #dce6f1 !important;
+  color: #1c3d5a !important;
+  border-radius: 12px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  box-shadow: inset 0 1px 0 #ffffff, 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.theme-windows11 main .bg-neutral-850,
+.theme-windows11 main .bg-neutral-900 {
+  background-color: #edf2f8 !important;
+  color: #1c3d5a !important;
+  border: 1px solid #8ba6c1 !important;
+  box-shadow: 0 2px 6px rgba(19, 56, 76, 0.08) !important;
+}
+
+.theme-windows11 main .text-white,
+.theme-windows11 main .text-neutral-100,
+.theme-windows11 main .text-neutral-200 {
+  color: #0f2937 !important;
+}
+
+.theme-windows11 main .text-neutral-400,
+.theme-windows11 main .text-neutral-300 {
+  color: #3b5a75 !important;
+}
+
+.theme-windows11 main input,
+.theme-windows11 main select,
+.theme-windows11 main textarea {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #7f9db9 !important;
+  border-radius: 4px !important;
+  font-weight: 600;
+}
+
+.theme-windows11 main input:focus,
+.theme-windows11 main select:focus {
+  border-color: #0055ea !important;
+  outline: 1px solid #0055ea !important;
+}
+

@@ -211,7 +211,8 @@ export type PadraoCor =
   | 'ceu'
   | 'cobre'
   | 'oliva'
-  | 'windows';
+  | 'windows'
+  | 'windows11';
 
 export type DashboardLayoutTipo = 'stripe' | 'command' | 'shopify' | 'minimalist' | 'modular';
 

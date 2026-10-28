@@ -18,6 +18,13 @@ export interface ThemeColors {
   bgTone: string;
   fontStyle: string;
   fontLabel: string;
+  primary?: string;
+  primaryText?: string;
+  primaryBorder?: string;
+  badgeBg?: string;
+  badgeText?: string;
+  gradient?: string;
+  ring?: string;
 }
 
 export const THEMES: Record<PadraoCor, ThemeColors> = {
@@ -229,5 +236,31 @@ export const THEMES: Record<PadraoCor, ThemeColors> = {
     bgTone: 'bg-slate-950',
     fontStyle: 'font-segoe',
     fontLabel: 'Segoe UI Windows',
+  },
+  windows11: {
+    id: 'windows11',
+    name: 'Windows 11 (ERP Corporativo)',
+    desc: 'Visual Corporativo ERP (Azul Petróleo, Cinza Metálico & Fonte Segoe/Tahoma)',
+    badge: 'bg-[#13384c]',
+    primaryBg: 'bg-[#1b4b66]',
+    primaryHover: 'hover:bg-[#13384c]',
+    textPrimary: 'text-[#0ea5e9]',
+    borderPrimary: 'border-[#3b82f6]',
+    ringPrimary: 'ring-[#2563eb]',
+    softBg: 'bg-[#13384c]/60',
+    softBorder: 'border-[#7f9db9]',
+    softText: 'text-[#7dd3fc]',
+    dotColor: '#13384c',
+    accentColor: '#dce6f1',
+    bgTone: 'bg-[#0f2330]',
+    fontStyle: "font-['Segoe_UI',Tahoma,sans-serif]",
+    fontLabel: 'Segoe UI / Tahoma ERP',
+    primary: 'bg-[#1b4b66]',
+    primaryText: 'text-[#0ea5e9]',
+    primaryBorder: 'border-[#3b82f6]',
+    badgeBg: 'bg-[#13384c]/90',
+    badgeText: 'text-[#7dd3fc]',
+    gradient: 'from-[#13384c] via-[#1b4b66] to-[#0f2937]',
+    ring: 'focus:ring-[#2563eb]',
   },
 };

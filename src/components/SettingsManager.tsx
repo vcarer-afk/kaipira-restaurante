@@ -1027,17 +1027,17 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
             </div>
           </div>
 
-          {/* PADRÕES DE CORES CONFIGURÁVEIS (11 PALETAS) */}
+          {/* PADRÕES DE CORES CONFIGURÁVEIS (12 PALETAS) */}
           <div className="bg-neutral-850 p-5 rounded-2xl border border-neutral-800 shadow-xs flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2">
                 <Palette className="w-4 h-4 text-purple-400" />
                 <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
-                  Padrões de Cores do Restaurante (11 Paletas)
+                  Padrões de Cores do Restaurante (12 Paletas)
                 </h3>
               </div>
               <span className="text-[10px] font-mono text-purple-400 font-bold px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800">
-                11 TEMAS (INCLUI WINDOWS SEGOE UI)
+                12 TEMAS (INCLUI WINDOWS 11 ERP & SEGOE UI)
               </span>
             </div>
 
@@ -1081,6 +1081,13 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                             style={{ backgroundColor: theme.accentColor }}
                             title={`Cor de Destaque: ${theme.accentColor}`}
                           />
+                          {themeKey === 'windows11' && (
+                            <span
+                              className="w-3.5 h-3.5 rounded-full shadow-xs shrink-0 border border-white/20"
+                              style={{ backgroundColor: '#ffffff' }}
+                              title="Fundo de Input: #ffffff"
+                            />
+                          )}
                           <span className="text-[10px] font-mono font-bold uppercase text-neutral-400 ml-1">
                             {theme.id === 'ambar' ? '★ KAIPIRA PADRÃO' : themeKey.toUpperCase()}
                           </span>

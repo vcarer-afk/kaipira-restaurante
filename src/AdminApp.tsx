@@ -1553,7 +1553,7 @@ export default function AdminApp() {
   const currentTheme = THEMES[configuracoes.padraoCor] || THEMES.ambar;
 
   return (
-    <div className={`min-h-screen w-full max-w-full overflow-x-hidden ${currentTheme.bgTone || 'bg-neutral-900'} ${currentTheme.fontStyle || 'font-sans'} text-neutral-100 flex flex-col transition-colors duration-200`}>
+    <div className={`min-h-screen w-full max-w-full overflow-x-hidden ${currentTheme.bgTone || 'bg-neutral-900'} ${currentTheme.fontStyle || 'font-sans'} ${configuracoes.padraoCor === 'windows11' ? 'theme-windows11' : ''} text-neutral-100 flex flex-col transition-colors duration-200`}>
       {/* Top Bar Header with Configurable Menu Position and Theme */}
       <Header
         activeTab={activeTab}
