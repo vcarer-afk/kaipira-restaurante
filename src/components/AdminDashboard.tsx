@@ -871,20 +871,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return t.includes('retirada') || t.includes('balcao') || t.includes('sal');
     };
 
-    // Prioridade 1: Pedidos com status 'pronto' de Balcão e Salão
-    const prontos = safePedidos
+    // Considera apenas pedidos criados a partir da abertura do caixa do turno atual
+    const inicioTurno =
+      caixa?.status === 'aberto' && caixa?.aberto_em
+        ? new Date(caixa.aberto_em).getTime()
+        : configuracoes?.caixa_aberto_em
+        ? new Date(configuracoes.caixa_aberto_em).getTime()
+        : 0;
+
+    const pedidosTurno = safePedidos.filter((p) => {
+      if (!p) return false;
+      if (inicioTurno > 0) {
+        const pedTime = new Date(p.criado_em || p.atualizado_em).getTime();
+        if (pedTime < inicioTurno) return false;
+      }
+      return true;
+    });
+
+    // Prioridade 1: Pedidos com status 'pronto' de Balcão e Salão do turno atual
+    const prontos = pedidosTurno
       .filter((p) => p && p.status === 'pronto' && isBalcaoOuMesaOrder(p.tipo))
       .sort((a, b) => new Date(b.atualizado_em || b.criado_em).getTime() - new Date(a.atualizado_em || a.criado_em).getTime());
 
     if (prontos.length > 0) return prontos;
 
-    // Prioridade 2: Pedidos ativos de Balcão ou Salão (não cancelados e não delivery)
-    const ativos = safePedidos
+    // Prioridade 2: Pedidos ativos de Balcão ou Salão (não cancelados e não delivery) do turno atual
+    const ativos = pedidosTurno
       .filter((p) => p && p.status !== 'cancelado' && !(p.tipo || '').toLowerCase().includes('delivery'))
       .sort((a, b) => new Date(b.atualizado_em || b.criado_em).getTime() - new Date(a.atualizado_em || a.criado_em).getTime());
 
     return ativos;
-  }, [safePedidos]);
+  }, [safePedidos, caixa?.status, caixa?.aberto_em, configuracoes?.caixa_aberto_em]);
 
   // Mini Widget de Painel de Senhas (Chamadas em Tempo Real)
   const renderMiniPainelSenhas = () => {

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Pedido, ConfiguracoesSistema } from '../types';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Pedido, ConfiguracoesSistema, CaixaDiario } from '../types';
 import { Volume2, VolumeX, Maximize, Minimize, Bell, Sliders, ArrowLeft } from 'lucide-react';
 
 interface LedPanelProps {
   pedidos: Pedido[];
   configuracoes?: ConfiguracoesSistema;
+  caixa?: CaixaDiario | null;
   onOpenSettings?: () => void;
   onBack?: () => void;
 }
@@ -19,6 +20,7 @@ const isBalcaoOuMesa = (tipo: string) => {
 export const LedPanel: React.FC<LedPanelProps> = ({
   pedidos,
   configuracoes,
+  caixa,
   onOpenSettings,
   onBack,
 }) => {
@@ -83,10 +85,31 @@ export const LedPanel: React.FC<LedPanelProps> = ({
 
   const activeFontClass = FONT_CLASSES[ledFonte] || FONT_CLASSES.mono;
 
-  // Ready orders sorted by most recently updated - ESTRITAMENTE Balcão ('retirada') e Salão ('salão')
-  const readyOrders = pedidos
-    .filter((p) => p.status === 'pronto' && !isDelivery(p.tipo) && isBalcaoOuMesa(p.tipo))
-    .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
+  // Considera apenas pedidos criados a partir da abertura do caixa do turno atual
+  const inicioTurno =
+    caixa?.status === 'aberto' && caixa?.aberto_em
+      ? new Date(caixa.aberto_em).getTime()
+      : configuracoes?.caixa_aberto_em
+      ? new Date(configuracoes.caixa_aberto_em).getTime()
+      : 0;
+
+  const pedidosTurno = useMemo(() => {
+    return pedidos.filter((p) => {
+      if (!p) return false;
+      if (inicioTurno > 0) {
+        const pedTime = new Date(p.criado_em || p.atualizado_em).getTime();
+        if (pedTime < inicioTurno) return false;
+      }
+      return true;
+    });
+  }, [pedidos, inicioTurno]);
+
+  // Ready orders sorted by most recently updated - ESTRITAMENTE Balcão ('retirada') e Salão ('salão') do turno atual
+  const readyOrders = useMemo(() => {
+    return pedidosTurno
+      .filter((p) => p.status === 'pronto' && !isDelivery(p.tipo) && isBalcaoOuMesa(p.tipo))
+      .sort((a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime());
+  }, [pedidosTurno]);
 
   // Helper to retrieve/resume AudioContext
   const getAudioContext = useCallback(() => {
@@ -332,8 +355,8 @@ export const LedPanel: React.FC<LedPanelProps> = ({
 
   // Monitora a lista de pedidos: Balcão e Mesas com identificação, ordem de prontidão e limpeza automática
   useEffect(() => {
-    // Filtro Canônico Estrito: apenas pedidos prontos que NÃO sejam delivery e SEJAM balcão ou salão
-    const prontosAtivos = pedidos.filter(
+    // Filtro Canônico Estrito: apenas pedidos prontos do turno atual que NÃO sejam delivery e SEJAM balcão ou salão
+    const prontosAtivos = pedidosTurno.filter(
       (p) => p.status === 'pronto' && !isDelivery(p.tipo) && isBalcaoOuMesa(p.tipo)
     );
 
@@ -397,7 +420,7 @@ export const LedPanel: React.FC<LedPanelProps> = ({
     ) {
       chamarSenha(maisRecente);
     }
-  }, [pedidos, activeOrder, chamarSenha]);
+  }, [pedidosTurno, activeOrder, chamarSenha]);
 
   const toggleFullscreen = () => {
     const target = containerRef.current || document.documentElement;

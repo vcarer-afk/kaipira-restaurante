@@ -722,6 +722,7 @@ async function startServer() {
   // Abrir / Fechar Caixa
   app.post('/api/caixa/abrir', (req, res) => {
     const { valor_abertura, observacoes } = req.body;
+    state.proximoCodigoSenha = 1;
     state.caixa = {
       id: generateNumericId(),
       data_caixa: new Date().toISOString().split('T')[0],
@@ -741,6 +742,7 @@ async function startServer() {
       ],
     };
 
+    saveState(state);
     broadcast('CASH_OPENED', state.caixa);
     res.json(state.caixa);
   });

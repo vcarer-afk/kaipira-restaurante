@@ -1426,6 +1426,20 @@ export default function AdminApp() {
   const handleAbrirCaixa = async (valor: number, observacoes?: string) => {
     const novo = await abrirCaixaSupabase(valor, observacoes);
     setCaixa(novo);
+
+    // Atualiza também nas configurações o timestamp de abertura para sincronizar e limpar o Painel de Senhas
+    const novoAbertoEm = novo.aberto_em || new Date().toISOString();
+    const novasCfg: ConfiguracoesSistema = {
+      ...configuracoes,
+      caixa_aberto_em: novoAbertoEm,
+    };
+    setConfiguracoes(novasCfg);
+    try {
+      await handleSaveConfiguracoes(novasCfg);
+    } catch (cfgErr) {
+      console.warn('Aviso ao sincronizar caixa_aberto_em nas configurações:', cfgErr);
+    }
+
     // Padrão do Restaurante Kaipira: ao abrir o restaurante as mesas estarão vazias (a não ser que estejam reservadas)
     try {
       const mesasReset = await resetarMesasVaziasSupabase(mesas, reservas);
@@ -1816,6 +1830,7 @@ export default function AdminApp() {
           <LedPanel
             pedidos={pedidos}
             configuracoes={configuracoes}
+            caixa={caixa}
             onOpenSettings={() => setActiveTab('configuracoes')}
             onBack={() => setActiveTab('dashboard')}
           />

@@ -354,13 +354,56 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     pedidoPayload.forma_pagamento = String(formaPagamentoFinal);
   }
 
-  // Se codigo_senha numérico foi fornecido
-  if (pedido.codigo_senha && Number(pedido.codigo_senha) > 0) {
-    pedidoPayload.codigo_senha = Number(pedido.codigo_senha);
+  // Calcula codigo_senha sequencial do turno (começa em #1 ao abrir o caixa diário)
+  let proximoCodigoSenha = 1;
+  try {
+    // 1. Busca o caixa mais recente para saber o início do turno
+    const { data: caixaAtual } = await supabase
+      .from('caixa_diario')
+      .select('aberto_em, data_caixa, status')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // 2. Busca também em configurações caso aberto_em não esteja na tabela caixa_diario
+    let confAbertoEm: string | undefined = undefined;
+    try {
+      const { data: cfgRow } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+      confAbertoEm = cfgRow?.dados?.caixa_aberto_em;
+    } catch {}
+
+    const inicioTurno =
+      (caixaAtual?.status === 'aberto' && (caixaAtual.aberto_em || confAbertoEm))
+        ? (caixaAtual.aberto_em || confAbertoEm!)
+        : (confAbertoEm || caixaAtual?.aberto_em || `${new Date().toLocaleDateString('en-CA')}T00:00:00.000Z`);
+
+    // 3. Busca a maior senha já criada após o início do turno
+    const { data: pedidosTurno } = await supabase
+      .from('pedidos')
+      .select('codigo_senha')
+      .gte('criado_em', inicioTurno)
+      .order('codigo_senha', { ascending: false })
+      .limit(1);
+
+    const maiorSenhaTurno =
+      pedidosTurno && pedidosTurno.length > 0 && pedidosTurno[0].codigo_senha
+        ? Number(pedidosTurno[0].codigo_senha) || 0
+        : 0;
+
+    proximoCodigoSenha = maiorSenhaTurno + 1;
+  } catch (seqErr) {
+    console.warn('Aviso ao calcular próximo codigo_senha:', seqErr);
   }
 
+  const codigoSenhaFinal =
+    pedido.codigo_senha && Number(pedido.codigo_senha) > 0
+      ? Number(pedido.codigo_senha)
+      : proximoCodigoSenha;
+
+  pedidoPayload.codigo_senha = codigoSenhaFinal;
+
   let pedidoIdGerado = idFallback;
-  let codigoSenhaGerado = codigoSenhaFallback;
+  let codigoSenhaGerado = codigoSenhaFinal;
 
   try {
     let { data, error } = await supabase
@@ -1356,13 +1399,14 @@ export async function abrirCaixaSupabase(
 
     const existingRow = rows && rows.length > 0 ? rows[0] : null;
 
-    // Payload contendo estritamente as colunas reais da tabela
+    // Payload contendo as colunas reais da tabela com timestamp de abertura
     const payload: Record<string, any> = {
       data_caixa: dataHoje,
       [caixaAberturaCol]: Number(valor_abertura) || 0,
       valor_fechamento: null,
       status: 'aberto',
       observacoes: observacoes ? observacoes.toUpperCase().trim() : null,
+      aberto_em: now,
     };
 
     if (existingRow && existingRow.id) {
@@ -1377,27 +1421,33 @@ export async function abrirCaixaSupabase(
       .maybeSingle();
 
     if (upsertError) {
+      if (upsertError.message?.includes('aberto_em')) {
+        delete payload.aberto_em;
+      }
       // Se falhou por nome de coluna (valor_abertura vs valor_apertura)
       if (upsertError.message?.includes('valor_') || (upsertError as any).code === 'PGRST204') {
         caixaAberturaCol = caixaAberturaCol === 'valor_abertura' ? 'valor_apertura' : 'valor_abertura';
         delete payload['valor_abertura'];
         delete payload['valor_apertura'];
         payload[caixaAberturaCol] = Number(valor_abertura) || 0;
-
-        const retry = await supabase
-          .from('caixa_diario')
-          .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
-          .select()
-          .maybeSingle();
-
-        upsertData = retry.data;
-        upsertError = retry.error;
       }
+
+      const retry = await supabase
+        .from('caixa_diario')
+        .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
+        .select()
+        .maybeSingle();
+
+      upsertData = retry.data;
+      upsertError = retry.error;
     }
 
     if (upsertError) {
       console.warn('Upsert de abertura com id falhou, tentando insert direto:', upsertError.message);
       delete payload.id;
+      if (upsertError.message?.includes('aberto_em')) {
+        delete payload.aberto_em;
+      }
       const { data: insData } = await supabase
         .from('caixa_diario')
         .insert(payload)
@@ -1409,6 +1459,17 @@ export async function abrirCaixaSupabase(
       }
     } else if (upsertData && upsertData.id) {
       novoCaixa.id = upsertData.id;
+    }
+
+    // Persiste também o marcador do início do turno nas configurações para sincronizar painéis e senhas
+    try {
+      const { data: cfgRow } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+      const dados = (cfgRow?.dados || {}) as Record<string, any>;
+      dados.caixa_aberto_em = now;
+      dados.ultimo_codigo_senha = 0;
+      await supabase.from('configuracoes').update({ dados, atualizado_em: now }).eq('id', 1);
+    } catch (cErr) {
+      console.warn('Aviso ao sincronizar timestamp de abertura em configuracoes:', cErr);
     }
   } catch (err) {
     console.warn('Erro ao abrir caixa no Supabase:', err);

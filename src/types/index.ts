@@ -250,4 +250,5 @@ export interface ConfiguracoesSistema {
   cardapio_diario_cache?: CardapioDiarioConfig;
   // Diagnóstico na Vitrine
   exibir_diagnostico_vitrine?: boolean;
+  caixa_aberto_em?: string;
 }
