@@ -169,6 +169,39 @@ export function mergePedidosPreservingClient(
 }
 
 
+export function temPermissaoAba(aba: ActiveTab, perfil?: Perfil, role?: TipoUsuario): boolean {
+  const cargo = perfil?.cargo || role || 'admin';
+  if (cargo === 'master' || cargo === 'admin') {
+    return true;
+  }
+  if (perfil?.permissoes && Array.isArray(perfil.permissoes) && perfil.permissoes.length > 0) {
+    const modulo = (aba === 'led' ? 'senhas' : aba) as any;
+    return perfil.permissoes.includes(modulo);
+  }
+  // Retrocompatibilidade para cargos padrão sem permissões granulares
+  if (cargo === 'cozinha') return aba === 'kds' || aba === 'estoque' || aba === 'senhas' || aba === 'led';
+  if (cargo === 'garcom') return aba === 'mesas' || aba === 'pdv';
+  if (cargo === 'entregador') return aba === 'expedicao';
+  if (cargo === 'atendente') return aba === 'pdv' || aba === 'mesas' || aba === 'expedicao';
+  if (cargo === 'supervisor') return aba !== 'configuracoes';
+  return true;
+}
+
+const TAB_ORDER: ActiveTab[] = [
+  'dashboard',
+  'pdv',
+  'mesas',
+  'kds',
+  'expedicao',
+  'caixa',
+  'estoque',
+  'led',
+  'cardapio-dia',
+  'mensalistas',
+  'cadastros',
+  'configuracoes',
+];
+
 export default function AdminApp() {
   // Authentication State (In-Memory / Cloud Session - ZERO localStorage)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -205,7 +238,16 @@ export default function AdminApp() {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
     };
-  }, [activeTab]);
+  }, [activeTab, setActiveTab]);
+
+  // Proteção de rotas: redireciona automaticamente para a primeira aba permitida se a atual não for autorizada
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!temPermissaoAba(activeTab, currentPerfil, currentRole)) {
+      const allowedTab = TAB_ORDER.find((tab) => temPermissaoAba(tab, currentPerfil, currentRole)) || 'pdv';
+      setActiveTab(allowedTab);
+    }
+  }, [activeTab, currentPerfil, currentRole, isAuthenticated, setActiveTab]);
 
   const [isSlideMenuOpen, setIsSlideMenuOpen] = useState<boolean>(false);
   const [selectedMesaNumber, setSelectedMesaNumber] = useState<number | undefined>(undefined);
@@ -475,6 +517,23 @@ export default function AdminApp() {
         const users = await fetchUsuariosSupabase();
         if (users && users.length > 0) {
           setUsuarios(users);
+          setCurrentPerfil((prev) => {
+            if (!prev) return prev;
+            const matched = users.find(
+              (u) =>
+                (u.email && prev.email && u.email.toLowerCase() === prev.email.toLowerCase()) ||
+                u.id === prev.id
+            );
+            if (matched) {
+              return {
+                ...prev,
+                nome: matched.nome || prev.nome,
+                cargo: matched.cargo || prev.cargo,
+                permissoes: matched.permissoes,
+              };
+            }
+            return prev;
+          });
         }
       } catch (err) {
         console.warn('Conectando a usuarios do Supabase...', err);

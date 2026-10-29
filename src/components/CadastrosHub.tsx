@@ -10,6 +10,8 @@ import {
   BairroTaxa,
   ItemEstoque,
   FormaPagamentoConfig,
+  ModuloPermissao,
+  TODAS_PERMISSOES,
 } from '../types';
 import { StockManager } from './StockManager';
 import { formatPhone, formatBRL } from '../utils/formatters';
@@ -74,6 +76,12 @@ import {
   Image,
   Upload,
   Loader2,
+  LayoutDashboard,
+  ChefHat,
+  Bike,
+  Banknote,
+  BellRing,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface CadastrosHubProps {
@@ -118,6 +126,26 @@ export type CadastrosSubTab =
   | 'insumos'
   | 'formas_pagamento'
   | 'sql';
+
+export const MODULOS_PERMISSAO_CONFIG: Array<{
+  id: ModuloPermissao;
+  label: string;
+  desc: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: 'dashboard', label: '1. Dashboard / Indicadores', desc: 'Métricas, faturamento e resumo diário', icon: LayoutDashboard },
+  { id: 'pdv', label: '2. PDV / Novo Pedido', desc: 'Abertura rápida e lançamento de pedidos', icon: ShoppingBag },
+  { id: 'mesas', label: '3. Mapa de Mesas', desc: 'Controle de mesas 1 a 20 e comandas', icon: Utensils },
+  { id: 'kds', label: '4. KDS / Cozinha', desc: 'Fila de pedidos e preparo em tempo real', icon: ChefHat },
+  { id: 'expedicao', label: '5. Expedição / Entregas', desc: 'Despacho de pedidos e controle de motoboys', icon: Bike },
+  { id: 'caixa', label: '6. Frente de Caixa', desc: 'Abertura, fechamento, sangrias e suprimentos', icon: Banknote },
+  { id: 'estoque', label: '7. Controle de Estoque', desc: 'Gestão de insumos e alertas de falta', icon: Boxes },
+  { id: 'senhas', label: '8. Painel TV / Senhas', desc: 'Display de senhas chamadas para retirada', icon: BellRing },
+  { id: 'cardapio-dia', label: '9. Cardápio do Dia', desc: 'Definição do cardápio e pratos de hoje', icon: Sparkles },
+  { id: 'mensalistas', label: '10. Mensalistas / Fiado', desc: 'Extrato, pagamentos e limite de clientes', icon: DollarSign },
+  { id: 'cadastros', label: '11. Cadastros Gerais', desc: 'Produtos, clientes, mesas, categorias e bairros', icon: Tag },
+  { id: 'configuracoes', label: '12. Configurações', desc: 'Dados da empresa, impressoras e temas', icon: Sliders },
+];
 
 export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   usuarios,
@@ -185,6 +213,7 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const [formUserCargo, setFormUserCargo] = useState<TipoUsuario>('atendente');
   const [formUserSenha, setFormUserSenha] = useState('1234');
   const [formUserStatus, setFormUserStatus] = useState<'ativo' | 'inativo'>('ativo');
+  const [formUserPermissoes, setFormUserPermissoes] = useState<ModuloPermissao[]>([]);
   const [showFormPassword, setShowFormPassword] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UsuarioSistema | null>(null);
   const [isSeedingMaster, setIsSeedingMaster] = useState(false);
@@ -377,6 +406,7 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
     setFormUserCargo('atendente');
     setFormUserSenha('1234');
     setFormUserStatus('ativo');
+    setFormUserPermissoes(['pdv', 'mesas', 'expedicao']);
     setShowFormPassword(false);
     setFeedbackMessage(null);
     setShowUserModal(true);
@@ -391,6 +421,19 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
     setFormUserCargo(u.cargo);
     setFormUserSenha(u.senha || 'DNDIGQOL');
     setFormUserStatus(u.status || 'ativo');
+    if (u.permissoes && Array.isArray(u.permissoes) && u.permissoes.length > 0) {
+      setFormUserPermissoes([...u.permissoes]);
+    } else if (u.cargo === 'master' || u.cargo === 'admin') {
+      setFormUserPermissoes([...TODAS_PERMISSOES]);
+    } else if (u.cargo === 'cozinha') {
+      setFormUserPermissoes(['kds', 'estoque', 'senhas']);
+    } else if (u.cargo === 'garcom') {
+      setFormUserPermissoes(['mesas', 'pdv']);
+    } else if (u.cargo === 'entregador') {
+      setFormUserPermissoes(['expedicao']);
+    } else {
+      setFormUserPermissoes(['pdv', 'mesas', 'expedicao']);
+    }
     setShowFormPassword(false);
     setFeedbackMessage(null);
     setShowUserModal(true);
@@ -414,6 +457,13 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
     }
 
     setIsSaving(true);
+    const resolvedPermissoes: ModuloPermissao[] =
+      formUserCargo === 'master' || formUserCargo === 'admin'
+        ? [...TODAS_PERMISSOES]
+        : formUserPermissoes.length > 0
+        ? formUserPermissoes
+        : (['pdv'] as ModuloPermissao[]);
+
     const payload: Partial<UsuarioSistema> = {
       id: editingUserId || undefined,
       nome: formUserNome.toUpperCase().trim(),
@@ -422,6 +472,7 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
       cargo: formUserCargo,
       senha: formUserSenha,
       status: formUserStatus,
+      permissoes: resolvedPermissoes,
     };
 
     const res = await salvarUsuarioSupabase(payload);
@@ -3125,7 +3176,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
           <form
             onSubmit={handleSaveUser}
-            className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+            className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
@@ -3253,6 +3304,113 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                 </label>
               </div>
             </div>
+
+            {/* PERMISSÕES GRANULARES POR MÓDULO - Visível e editável apenas para Administrador/Master */}
+            {(currentPerfil?.cargo === 'admin' || currentPerfil?.cargo === 'master' || !currentPerfil) && (
+              <div className="pt-3 border-t border-neutral-800 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-black text-white flex items-center gap-1.5 uppercase">
+                      <ShieldCheck className="w-4 h-4 text-amber-500" />
+                      <span>Permissões de Acesso por Módulo</span>
+                    </label>
+                    <p className="text-[11px] text-neutral-400">
+                      Defina quais abas e recursos este funcionário poderá acessar.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800 font-bold self-start sm:self-auto">
+                    {formUserCargo === 'master' || formUserCargo === 'admin'
+                      ? 'Todos liberados (Perfil Administrador)'
+                      : `${formUserPermissoes.length} de ${MODULOS_PERMISSAO_CONFIG.length} liberados`}
+                  </span>
+                </div>
+
+                {/* BOTÕES DE PRESET RÁPIDO */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setFormUserPermissoes([...TODAS_PERMISSOES])}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer"
+                  >
+                    Marcar Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormUserPermissoes(['kds', 'estoque', 'senhas'])}
+                    className="px-2.5 py-1 bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-800/80 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer"
+                  >
+                    Preset Cozinha
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormUserPermissoes(['mesas', 'pdv'])}
+                    className="px-2.5 py-1 bg-blue-950/60 hover:bg-blue-900/80 text-blue-300 border border-blue-800/80 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer"
+                  >
+                    Preset Salão/Garçom
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormUserPermissoes(['pdv', 'mesas', 'expedicao'])}
+                    className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-800/80 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer"
+                  >
+                    Preset Atendimento/Balcão
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormUserPermissoes(['caixa', 'pdv', 'expedicao', 'mensalistas'])}
+                    className="px-2.5 py-1 bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-800/80 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer"
+                  >
+                    Preset Caixa/Gerência
+                  </button>
+                </div>
+
+                {/* GRADE DE CHECKBOXES DOS 12 MÓDULOS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 max-h-56 overflow-y-auto pr-1">
+                  {MODULOS_PERMISSAO_CONFIG.map((mod) => {
+                    const isChecked =
+                      formUserCargo === 'master' || formUserCargo === 'admin'
+                        ? true
+                        : formUserPermissoes.includes(mod.id);
+                    const ModIcon = mod.icon;
+                    return (
+                      <label
+                        key={mod.id}
+                        onClick={() => {
+                          if (formUserCargo === 'master' || formUserCargo === 'admin') return;
+                          setFormUserPermissoes((prev) =>
+                            prev.includes(mod.id)
+                              ? prev.filter((m) => m !== mod.id)
+                              : [...prev, mod.id]
+                          );
+                        }}
+                        className={`flex items-start gap-2.5 p-2 rounded-xl border text-xs cursor-pointer transition-all select-none ${
+                          isChecked
+                            ? 'bg-amber-950/30 border-amber-600/80 text-white'
+                            : 'bg-neutral-850/60 border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          disabled={formUserCargo === 'master' || formUserCargo === 'admin'}
+                          onChange={() => {}}
+                          className="mt-0.5 rounded accent-amber-500 cursor-pointer pointer-events-none"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 font-bold uppercase text-[11px]">
+                            <ModIcon className={`w-3.5 h-3.5 shrink-0 ${isChecked ? 'text-amber-400' : 'text-neutral-500'}`} />
+                            <span className="truncate">{mod.label}</span>
+                          </div>
+                          <p className="text-[10px] text-neutral-500 leading-tight mt-0.5 line-clamp-1">
+                            {mod.desc}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
               <button

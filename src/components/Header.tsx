@@ -77,6 +77,22 @@ export const Header: React.FC<HeaderProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  const temPermissao = (aba: ActiveTab): boolean => {
+    if (currentRole === 'master' || currentRole === 'admin' || currentPerfil?.cargo === 'master' || currentPerfil?.cargo === 'admin') {
+      return true;
+    }
+    if (currentPerfil?.permissoes && Array.isArray(currentPerfil.permissoes) && currentPerfil.permissoes.length > 0) {
+      const modulo = aba === 'led' ? 'senhas' : (aba as any);
+      return currentPerfil.permissoes.includes(modulo);
+    }
+    if (currentRole === 'cozinha') return aba === 'kds' || aba === 'estoque' || aba === 'senhas' || aba === 'led';
+    if (currentRole === 'garcom') return aba === 'mesas' || aba === 'pdv';
+    if (currentRole === 'entregador') return aba === 'expedicao';
+    if (currentRole === 'atendente') return aba === 'pdv' || aba === 'mesas' || aba === 'expedicao';
+    if (currentRole === 'supervisor') return aba !== 'configuracoes';
+    return true;
+  };
+
   return (
     <header className="sticky top-0 z-40 bg-neutral-900 border-b border-neutral-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
@@ -167,56 +183,60 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Quick Nav: KDS COZINHA (Pisca em vermelho quando houver pedidos pendentes/em_preparacao) */}
-          <button
-            type="button"
-            onClick={() => onSelectTab('kds')}
-            className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-              pendingKdsCount > 0
-                ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
-                : activeTab === 'kds'
-                ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
-                : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
-            }`}
-            title={
-              pendingKdsCount > 0
-                ? `${pendingKdsCount} pedido(s) pendente(s) na cozinha!`
-                : 'KDS Cozinha'
-            }
-          >
-            <ChefHat className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline uppercase">KDS</span>
-            {pendingKdsCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
-                {pendingKdsCount}
-              </span>
-            )}
-          </button>
+          {temPermissao('kds') && (
+            <button
+              type="button"
+              onClick={() => onSelectTab('kds')}
+              className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                pendingKdsCount > 0
+                  ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
+                  : activeTab === 'kds'
+                  ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
+                  : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
+              }`}
+              title={
+                pendingKdsCount > 0
+                  ? `${pendingKdsCount} pedido(s) pendente(s) na cozinha!`
+                  : 'KDS Cozinha'
+              }
+            >
+              <ChefHat className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline uppercase">KDS</span>
+              {pendingKdsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
+                  {pendingKdsCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Quick Nav: EXPEDIÇÃO DELIVERY (Pisca em vermelho quando houver pedidos prontos aguardando entrega) */}
-          <button
-            type="button"
-            onClick={() => onSelectTab('expedicao')}
-            className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-              deliveryProntosCount > 0
-                ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
-                : activeTab === 'expedicao'
-                ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
-                : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
-            }`}
-            title={
-              deliveryProntosCount > 0
-                ? `${deliveryProntosCount} entrega(s) pronta(s) aguardando despacho!`
-                : 'Expedição & Delivery'
-            }
-          >
-            <Bike className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline uppercase">Expedição</span>
-            {deliveryProntosCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
-                {deliveryProntosCount}
-              </span>
-            )}
-          </button>
+          {temPermissao('expedicao') && (
+            <button
+              type="button"
+              onClick={() => onSelectTab('expedicao')}
+              className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                deliveryProntosCount > 0
+                  ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
+                  : activeTab === 'expedicao'
+                  ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
+                  : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
+              }`}
+              title={
+                deliveryProntosCount > 0
+                  ? `${deliveryProntosCount} entrega(s) pronta(s) aguardando despacho!`
+                  : 'Expedição & Delivery'
+              }
+            >
+              <Bike className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline uppercase">Expedição</span>
+              {deliveryProntosCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
+                  {deliveryProntosCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Somente na tela do Administrador/Master/Supervisor: Conexões Ativas "Conectados xx" (oculto em mobile < 640px) */}
           {(currentRole === 'admin' || currentRole === 'master' || currentRole === 'supervisor') && (

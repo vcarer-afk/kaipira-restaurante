@@ -145,12 +145,29 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
     },
   ];
 
+  const temPermissao = (aba: ActiveTab): boolean => {
+    if (currentRole === 'master' || currentRole === 'admin' || currentPerfil?.cargo === 'master' || currentPerfil?.cargo === 'admin') {
+      return true;
+    }
+    if (currentPerfil?.permissoes && Array.isArray(currentPerfil.permissoes) && currentPerfil.permissoes.length > 0) {
+      const modulo = (aba === 'led' ? 'senhas' : aba) as any;
+      return currentPerfil.permissoes.includes(modulo);
+    }
+    if (currentRole === 'cozinha') return aba === 'kds' || aba === 'estoque' || aba === 'senhas' || aba === 'led';
+    if (currentRole === 'garcom') return aba === 'mesas' || aba === 'pdv';
+    if (currentRole === 'entregador') return aba === 'expedicao';
+    if (currentRole === 'atendente') return aba === 'pdv' || aba === 'mesas' || aba === 'expedicao';
+    if (currentRole === 'supervisor') return aba !== 'configuracoes';
+    return true;
+  };
+
   const handleItemClick = (id: ActiveTab) => {
     onSelectTab(id);
     onClose();
   };
 
   const isLeft = posicaoMenu === 'esquerda';
+  const visibleMenuItems = menuItems.filter((item) => temPermissao(item.id));
 
   return (
     <>
@@ -233,7 +250,7 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
 
         {/* Scrollable Navigation List */}
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          {menuItems.map((item) => {
+          {visibleMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             // Master e Supervisor têm livre acesso a todas as telas

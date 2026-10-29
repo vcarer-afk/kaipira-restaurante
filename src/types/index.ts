@@ -16,6 +16,35 @@ export interface FormaPagamentoConfig {
   criado_em?: string;
 }
 
+export type ModuloPermissao =
+  | 'dashboard'
+  | 'pdv'
+  | 'mesas'
+  | 'kds'
+  | 'expedicao'
+  | 'caixa'
+  | 'estoque'
+  | 'senhas'
+  | 'cardapio-dia'
+  | 'mensalistas'
+  | 'cadastros'
+  | 'configuracoes';
+
+export const TODAS_PERMISSOES: ModuloPermissao[] = [
+  'dashboard',
+  'pdv',
+  'mesas',
+  'kds',
+  'expedicao',
+  'caixa',
+  'estoque',
+  'senhas',
+  'cardapio-dia',
+  'mensalistas',
+  'cadastros',
+  'configuracoes',
+];
+
 export interface UsuarioSistema {
   id: string;
   nome: string; // UPPERCASE
@@ -24,6 +53,7 @@ export interface UsuarioSistema {
   cargo: TipoUsuario;
   status: 'ativo' | 'inativo';
   senha?: string;
+  permissoes?: ModuloPermissao[];
   criado_em: string;
   atualizado_em?: string;
 }
@@ -34,6 +64,7 @@ export interface Perfil {
   email?: string;
   telefone?: string;
   cargo: TipoUsuario;
+  permissoes?: ModuloPermissao[];
   criado_em: string;
 }
 

@@ -2019,6 +2019,30 @@ export async function fetchUsuariosSupabase(): Promise<UsuarioSistema[]> {
       }
     }
 
+    // Carrega mapa de permissões granulares por módulo salvo em configuracoes
+    let permMap: Record<string, any> = {};
+    try {
+      const { data: cfgRow } = await supabase
+        .from('configuracoes')
+        .select('dados')
+        .eq('id', 1)
+        .maybeSingle();
+      if (cfgRow?.dados?.permissoes_usuarios) {
+        permMap = cfgRow.dados.permissoes_usuarios;
+      }
+    } catch {}
+
+    finalUsers = finalUsers.map((u) => {
+      const emailLower = (u.email || '').toLowerCase().trim();
+      const perms = (u.permissoes && Array.isArray(u.permissoes) && u.permissoes.length > 0)
+        ? u.permissoes
+        : permMap[emailLower];
+      return {
+        ...u,
+        permissoes: perms || undefined,
+      };
+    });
+
     return finalUsers;
   } catch (err) {
     console.warn('Erro ao carregar usuários do Supabase:', err);
@@ -2033,6 +2057,7 @@ export async function fetchUsuariosSupabase(): Promise<UsuarioSistema[]> {
  * - Telefone com máscara obrigatória (99) 9-9999-9999
  * - Email único, formato livre
  * - Cargo: master, admin, atendente, cozinha, garcom, entregador
+ * - Permissões granulares de acesso por módulo
  */
 export async function salvarUsuarioSupabase(
   usuario: Partial<UsuarioSistema>
@@ -2047,13 +2072,14 @@ export async function salvarUsuarioSupabase(
     return { success: false, error: 'O Telefone é obrigatório.' };
   }
 
-  const payload: Partial<UsuarioSistema> = {
+  const payload: any = {
     nome: usuario.nome.trim().toUpperCase(),
     email: usuario.email.trim().toLowerCase(),
     telefone: formatPhone(usuario.telefone.trim()),
     cargo: usuario.cargo || 'atendente',
     status: usuario.status || 'ativo',
     senha: usuario.senha?.trim() || '1234',
+    permissoes: usuario.permissoes || undefined,
     atualizado_em: new Date().toISOString(),
   };
 
@@ -2062,18 +2088,55 @@ export async function salvarUsuarioSupabase(
   }
 
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('usuarios')
       .upsert(payload, { onConflict: 'email' })
       .select()
       .single();
+
+    if (error && (error.message?.includes('permissoes') || (error as any).code === 'PGRST204')) {
+      delete payload.permissoes;
+      const retry = await supabase
+        .from('usuarios')
+        .upsert(payload, { onConflict: 'email' })
+        .select()
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       console.warn('Erro Supabase ao salvar usuário:', error.message);
       return { success: false, error: error.message };
     }
 
-    return { success: true, data: data as UsuarioSistema };
+    // Backup redundante em configuracoes.dados.permissoes_usuarios para garantia absoluta na nuvem
+    if (usuario.email && usuario.permissoes) {
+      try {
+        const { data: cfgRow } = await supabase
+          .from('configuracoes')
+          .select('dados')
+          .eq('id', 1)
+          .maybeSingle();
+        const dados = (cfgRow?.dados || {}) as Record<string, any>;
+        const permMap = dados.permissoes_usuarios || {};
+        permMap[usuario.email.toLowerCase().trim()] = usuario.permissoes;
+        dados.permissoes_usuarios = permMap;
+        await supabase
+          .from('configuracoes')
+          .update({ dados, atualizado_em: new Date().toISOString() })
+          .eq('id', 1);
+      } catch (cErr) {
+        console.warn('Aviso ao sincronizar permissões em configuracoes:', cErr);
+      }
+    }
+
+    const savedUser: UsuarioSistema = {
+      ...(data as UsuarioSistema),
+      permissoes: usuario.permissoes,
+    };
+
+    return { success: true, data: savedUser };
   } catch (err: any) {
     console.warn('Exceção ao salvar usuário:', err);
     return { success: false, error: err.message || 'Erro de conexão com o banco na nuvem.' };
