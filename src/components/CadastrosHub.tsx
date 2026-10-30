@@ -82,6 +82,7 @@ import {
   Banknote,
   BellRing,
   ShieldCheck,
+  FileText,
 } from 'lucide-react';
 
 interface CadastrosHubProps {
@@ -145,6 +146,7 @@ export const MODULOS_PERMISSAO_CONFIG: Array<{
   { id: 'mensalistas', label: '10. Mensalistas / Fiado', desc: 'Extrato, pagamentos e limite de clientes', icon: DollarSign },
   { id: 'cadastros', label: '11. Cadastros Gerais', desc: 'Produtos, clientes, mesas, categorias e bairros', icon: Tag },
   { id: 'configuracoes', label: '12. Configurações', desc: 'Dados da empresa, impressoras e temas', icon: Sliders },
+  { id: 'relatorios', label: '13. Relatórios & DRE', desc: 'Fechamento de caixa, DRE, meios de pagamento e canais', icon: FileText },
 ];
 
 export const CadastrosHub: React.FC<CadastrosHubProps> = ({
@@ -3357,7 +3359,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFormUserPermissoes(['caixa', 'pdv', 'expedicao', 'mensalistas'])}
+                    onClick={() => setFormUserPermissoes(['caixa', 'pdv', 'expedicao', 'mensalistas', 'relatorios'])}
                     className="px-2.5 py-1 bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-800/80 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer"
                   >
                     Preset Caixa/Gerência

@@ -35,6 +35,7 @@ import { TablesSaloon } from './components/TablesSaloon';
 import { MensalistasManager } from './components/MensalistasManager';
 import { StockManager } from './components/StockManager';
 import { CashRegister } from './components/CashRegister';
+import { FinancialReports } from './components/FinancialReports';
 import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
 import { playAlertChime, isSalaoPedido } from './utils/formatters';
@@ -194,6 +195,7 @@ const TAB_ORDER: ActiveTab[] = [
   'kds',
   'expedicao',
   'caixa',
+  'relatorios',
   'estoque',
   'led',
   'cardapio-dia',
@@ -1969,6 +1971,17 @@ export default function AdminApp() {
             onConferirEntrega={handleConferirEntrega}
             onConferirEntregasConsolidadas={handleConferirEntregasConsolidadas}
             onConfirmarPagamento={handleConfirmarPagamentoPedido}
+          />
+        )}
+
+        {/* Relatórios Financeiros & DRE */}
+        {activeTab === 'relatorios' && (
+          <FinancialReports
+            caixa={caixa}
+            clientes={clientes}
+            configuracoes={configuracoes}
+            pedidos={pedidos}
+            onPrintThermalReceipt={(p) => setPrintReceiptPedido(p)}
           />
         )}
       </main>

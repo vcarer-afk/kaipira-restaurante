@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { Cloud, Menu, Clock, Users, ChefHat, Bike } from 'lucide-react';
+import { Cloud, Menu, Clock, Users, ChefHat, Bike, FileText } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
@@ -17,6 +17,7 @@ export type ActiveTab =
   | 'mensalistas'
   | 'estoque'
   | 'caixa'
+  | 'relatorios'
   | 'supabase';
 
 interface HeaderProps {
@@ -235,6 +236,23 @@ export const Header: React.FC<HeaderProps> = ({
                   {deliveryProntosCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {/* Quick Nav: RELATÓRIOS (Visível se tiver permissão) */}
+          {temPermissao('relatorios') && (
+            <button
+              type="button"
+              onClick={() => onSelectTab('relatorios')}
+              className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                activeTab === 'relatorios'
+                  ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
+                  : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
+              }`}
+              title="Central de Relatórios Financeiros e Gerenciais"
+            >
+              <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="hidden md:inline uppercase">Relatórios</span>
             </button>
           )}
 

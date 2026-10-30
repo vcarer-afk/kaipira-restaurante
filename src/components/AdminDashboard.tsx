@@ -55,6 +55,7 @@ import {
   Check,
   Volume2,
   Tv,
+  FileText,
 } from 'lucide-react';
 
 function describeArc(
@@ -1015,7 +1016,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* KPI Cards Strip com gradientes sutis */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Faturamento Hoje */}
-        <div className="bg-gradient-to-br from-neutral-850 to-neutral-900 p-5 rounded-2xl border border-neutral-800 flex flex-col justify-between shadow-md relative overflow-hidden group hover:border-amber-500/50 transition-all">
+        <div
+          onClick={() => onNavigate('relatorios' as any)}
+          className="bg-gradient-to-br from-neutral-850 to-neutral-900 p-5 rounded-2xl border border-neutral-800 flex flex-col justify-between shadow-md relative overflow-hidden group hover:border-amber-500/50 transition-all cursor-pointer"
+          title="Ver Relatório Consolidado de Faturamento"
+        >
           <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/10 rounded-full blur-xl pointer-events-none group-hover:bg-amber-500/20 transition-all" />
           <div className="flex items-center justify-between text-neutral-400">
             <span className="text-xs font-extrabold uppercase tracking-wider text-amber-400">Faturamento Real (Auditado)</span>
@@ -1028,8 +1033,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
           <div className="flex items-center justify-between text-[11px] text-neutral-400 pt-2 border-t border-neutral-800">
             <span>{pedidosConfirmados.length} pedidos faturados</span>
-            <span className="text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60">
-              Auditado no Caixa
+            <span className="text-amber-400 hover:text-amber-300 font-bold bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60 flex items-center gap-1">
+              Ver Relatório →
             </span>
           </div>
         </div>
@@ -2363,6 +2368,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <Banknote className="w-4 h-4" />
             <span>Caixa</span>
+          </button>
+
+          <button
+            onClick={() => onNavigate('relatorios' as any)}
+            className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-transform hover:scale-105 active:scale-95 uppercase cursor-pointer"
+            title="Abrir Central de Relatórios Financeiros e Gerenciais"
+          >
+            <FileText className="w-4 h-4 text-amber-400" />
+            <span>Relatórios</span>
           </button>
 
           <button

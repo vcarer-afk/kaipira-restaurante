@@ -21,6 +21,7 @@ import {
   Users,
   Crown,
   Sparkles,
+  FileText,
 } from 'lucide-react';
 
 interface SlideMenuRightProps {
@@ -135,6 +136,13 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
       desc: 'Abertura, fechamento e sangrias',
       icon: Banknote,
       roles: ['admin', 'atendente'],
+    },
+    {
+      id: 'relatorios' as ActiveTab,
+      label: 'RELATÓRIOS & DRE',
+      desc: 'Fechamento, meios de pagamento e canais',
+      icon: FileText,
+      roles: ['admin', 'master', 'supervisor'],
     },
     {
       id: 'configuracoes' as ActiveTab,

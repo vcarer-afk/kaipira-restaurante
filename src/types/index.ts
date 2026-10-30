@@ -16,6 +16,23 @@ export interface FormaPagamentoConfig {
   criado_em?: string;
 }
 
+export type ActiveTab =
+  | 'dashboard'
+  | 'cardapio-dia'
+  | 'cadastros'
+  | 'configuracoes'
+  | 'pdv'
+  | 'kds'
+  | 'led'
+  | 'senhas'
+  | 'mesas'
+  | 'expedicao'
+  | 'mensalistas'
+  | 'estoque'
+  | 'caixa'
+  | 'relatorios'
+  | 'supabase';
+
 export type ModuloPermissao =
   | 'dashboard'
   | 'pdv'
@@ -28,7 +45,8 @@ export type ModuloPermissao =
   | 'cardapio-dia'
   | 'mensalistas'
   | 'cadastros'
-  | 'configuracoes';
+  | 'configuracoes'
+  | 'relatorios';
 
 export const TODAS_PERMISSOES: ModuloPermissao[] = [
   'dashboard',
@@ -43,6 +61,7 @@ export const TODAS_PERMISSOES: ModuloPermissao[] = [
   'mensalistas',
   'cadastros',
   'configuracoes',
+  'relatorios',
 ];
 
 export interface UsuarioSistema {
