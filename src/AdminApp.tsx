@@ -36,6 +36,7 @@ import { MensalistasManager } from './components/MensalistasManager';
 import { StockManager } from './components/StockManager';
 import { CashRegister } from './components/CashRegister';
 import { FinancialReports } from './components/FinancialReports';
+import { DeliveryReports } from './components/DeliveryReports';
 import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
 import { playAlertChime, isSalaoPedido } from './utils/formatters';
@@ -218,6 +219,9 @@ export default function AdminApp() {
     const saved = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab;
     return saved || 'dashboard';
   });
+
+  // Sub-abas internas para Central de Relatórios
+  const [subAbaRelatorio, setSubAbaRelatorio] = useState<'financeiro' | 'delivery'>('financeiro');
 
   const setActiveTab = useCallback((newTab: ActiveTab) => {
     setActiveTabState(newTab);
@@ -1976,13 +1980,46 @@ export default function AdminApp() {
 
         {/* Relatórios Financeiros & DRE */}
         {activeTab === 'relatorios' && (
-          <FinancialReports
-            caixa={caixa}
-            clientes={clientes}
-            configuracoes={configuracoes}
-            pedidos={pedidos}
-            onPrintThermalReceipt={(p) => setPrintReceiptPedido(p)}
-          />
+          <div className="flex flex-col gap-4">
+            {/* Sub-abas de Relatórios */}
+            <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+              <button
+                onClick={() => setSubAbaRelatorio('financeiro')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer ${
+                  subAbaRelatorio === 'financeiro'
+                    ? 'bg-amber-500 text-black font-black shadow-md'
+                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+              >
+                1. Financeiro & Caixa
+              </button>
+              <button
+                onClick={() => setSubAbaRelatorio('delivery')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer ${
+                  subAbaRelatorio === 'delivery'
+                    ? 'bg-amber-500 text-black font-black shadow-md'
+                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+              >
+                2. Delivery & Motoboys
+              </button>
+            </div>
+
+            {subAbaRelatorio === 'financeiro' ? (
+              <FinancialReports
+                caixa={caixa}
+                clientes={clientes}
+                configuracoes={configuracoes}
+                pedidos={pedidos}
+                onPrintThermalReceipt={(p) => setPrintReceiptPedido(p)}
+              />
+            ) : (
+              <DeliveryReports
+                configuracoes={configuracoes}
+                pedidos={pedidos}
+              />
+            )}
+          </div>
         )}
       </main>
 
