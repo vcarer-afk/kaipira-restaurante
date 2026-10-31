@@ -37,6 +37,7 @@ import { StockManager } from './components/StockManager';
 import { CashRegister } from './components/CashRegister';
 import { FinancialReports } from './components/FinancialReports';
 import { DeliveryReports } from './components/DeliveryReports';
+import { KitchenSalesReports } from './components/KitchenSalesReports';
 import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
 import { playAlertChime, isSalaoPedido } from './utils/formatters';
@@ -221,7 +222,7 @@ export default function AdminApp() {
   });
 
   // Sub-abas internas para Central de Relatórios
-  const [subAbaRelatorio, setSubAbaRelatorio] = useState<'financeiro' | 'delivery'>('financeiro');
+  const [subAbaRelatorio, setSubAbaRelatorio] = useState<'financeiro' | 'delivery' | 'cozinha'>('financeiro');
 
   const setActiveTab = useCallback((newTab: ActiveTab) => {
     setActiveTabState(newTab);
@@ -1982,10 +1983,10 @@ export default function AdminApp() {
         {activeTab === 'relatorios' && (
           <div className="flex flex-col gap-4">
             {/* Sub-abas de Relatórios */}
-            <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+            <div className="flex items-center gap-2 border-b border-neutral-800 pb-2 overflow-x-auto">
               <button
                 onClick={() => setSubAbaRelatorio('financeiro')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer ${
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
                   subAbaRelatorio === 'financeiro'
                     ? 'bg-amber-500 text-black font-black shadow-md'
                     : 'bg-neutral-800 text-neutral-400 hover:text-white'
@@ -1995,7 +1996,7 @@ export default function AdminApp() {
               </button>
               <button
                 onClick={() => setSubAbaRelatorio('delivery')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer ${
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
                   subAbaRelatorio === 'delivery'
                     ? 'bg-amber-500 text-black font-black shadow-md'
                     : 'bg-neutral-800 text-neutral-400 hover:text-white'
@@ -2003,9 +2004,19 @@ export default function AdminApp() {
               >
                 2. Delivery & Motoboys
               </button>
+              <button
+                onClick={() => setSubAbaRelatorio('cozinha')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                  subAbaRelatorio === 'cozinha'
+                    ? 'bg-amber-500 text-black font-black shadow-md'
+                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+              >
+                3. Vendas & Cozinha (Curva ABC)
+              </button>
             </div>
 
-            {subAbaRelatorio === 'financeiro' ? (
+            {subAbaRelatorio === 'financeiro' && (
               <FinancialReports
                 caixa={caixa}
                 clientes={clientes}
@@ -2013,10 +2024,20 @@ export default function AdminApp() {
                 pedidos={pedidos}
                 onPrintThermalReceipt={(p) => setPrintReceiptPedido(p)}
               />
-            ) : (
+            )}
+            {subAbaRelatorio === 'delivery' && (
               <DeliveryReports
                 configuracoes={configuracoes}
                 pedidos={pedidos}
+              />
+            )}
+            {subAbaRelatorio === 'cozinha' && (
+              <KitchenSalesReports
+                configuracoes={configuracoes}
+                estoque={estoque}
+                mesas={mesas}
+                pedidos={pedidos}
+                produtos={produtos}
               />
             )}
           </div>
