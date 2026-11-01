@@ -22,6 +22,7 @@ import {
   FormaPagamentoConfig,
   ItemPedido,
   Pagamento,
+  IngredienteComposicao,
 } from '../types';
 import {
   INITIAL_CONFIGURACOES,
@@ -2574,6 +2575,9 @@ export async function salvarProdutoSupabase(
       preco_delivery: Number(produto.preco_delivery) || Number(produto.preco_salao) || 0,
       dia_semana: Array.isArray(produto.dia_semana) ? produto.dia_semana : [1, 2, 3, 4, 5, 6],
       pausado: !!produto.pausado,
+      tipo_produto: produto.tipo_produto || 'preparado',
+      item_estoque_id: produto.item_estoque_id ? (Number(produto.item_estoque_id) || produto.item_estoque_id) : null,
+      custo_estimado: produto.custo_estimado !== undefined ? Number(produto.custo_estimado) : 0,
     };
 
     if (produto.url_imagem !== undefined) {
@@ -2584,20 +2588,100 @@ export async function salvarProdutoSupabase(
       payload.id = produto.id;
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('produtos')
       .upsert(payload)
       .select()
       .maybeSingle();
 
     if (error) {
+      console.warn('Aviso salvar produto Supabase (tentando fallback sem novas colunas):', error.message);
+      if (
+        error.message?.includes('tipo_produto') ||
+        error.message?.includes('item_estoque_id') ||
+        error.message?.includes('custo_estimado')
+      ) {
+        delete payload.tipo_produto;
+        delete payload.item_estoque_id;
+        delete payload.custo_estimado;
+        const retry = await supabase.from('produtos').upsert(payload).select().maybeSingle();
+        data = retry.data;
+        error = retry.error;
+      }
+    }
+
+    if (error) {
       console.warn('Aviso salvar produto Supabase:', error.message);
       return { success: false, error: error.message };
     }
 
+    const prodSalvoId = Number(data?.id) || Number(produto.id);
+
+    // Persistência da composição (Ficha Técnica / Insumos / Combo)
+    const composicaoValida = Array.isArray(produto.composicao) ? produto.composicao : [];
+
+    if (prodSalvoId > 0) {
+      // 1. Tabela dedicada 'produto_composicao' no Supabase
+      try {
+        await supabase.from('produto_composicao').delete().eq('produto_pai_id', prodSalvoId);
+      } catch {
+        try {
+          await supabase.from('produto_composicao').delete().eq('produto_id', prodSalvoId);
+        } catch {}
+      }
+
+      if (composicaoValida.length > 0) {
+        const rows = composicaoValida.map((comp) => ({
+          produto_pai_id: prodSalvoId,
+          item_estoque_id: comp.item_estoque_id ? Number(comp.item_estoque_id) : null,
+          produto_filho_id: comp.produto_filho_id ? Number(comp.produto_filho_id) : null,
+          quantidade: Number(comp.quantidade) || 1,
+          unidade_medida: String(comp.unidade_medida || 'un').toLowerCase().trim(),
+        }));
+
+        try {
+          const { error: insErr } = await supabase.from('produto_composicao').insert(rows);
+          if (insErr) {
+            const fallbackRows = rows.map((r: any) => ({
+              ...r,
+              produto_id: r.produto_pai_id,
+            }));
+            await supabase.from('produto_composicao').insert(fallbackRows);
+          }
+        } catch (compErr) {
+          console.warn('Aviso salvar produto_composicao:', compErr);
+        }
+      }
+
+      // 2. Backup redundante em configuracoes.dados.produtos_composicao para garantia absoluta
+      try {
+        const { data: cfgRow } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+        const dados = (cfgRow?.dados || {}) as Record<string, any>;
+        const compMap = dados.produtos_composicao || {};
+        compMap[String(prodSalvoId)] = {
+          tipo_produto: produto.tipo_produto || 'preparado',
+          item_estoque_id: produto.item_estoque_id,
+          custo_estimado: produto.custo_estimado || 0,
+          composicao: composicaoValida,
+        };
+        dados.produtos_composicao = compMap;
+        await supabase.from('configuracoes').update({ dados, atualizado_em: new Date().toISOString() }).eq('id', 1);
+      } catch (cErr) {
+        console.warn('Aviso backup composição em configuracoes:', cErr);
+      }
+    }
+
+    const produtoRetornado: Produto = {
+      ...(data as Produto || produto as Produto),
+      tipo_produto: produto.tipo_produto || 'preparado',
+      item_estoque_id: produto.item_estoque_id,
+      custo_estimado: Number(produto.custo_estimado) || 0,
+      composicao: composicaoValida,
+    };
+
     return {
       success: true,
-      data: (data as Produto) || (produto as Produto),
+      data: produtoRetornado,
     };
   } catch (err: any) {
     console.warn('Erro ao salvar produto no Supabase:', err);
@@ -2831,7 +2915,7 @@ export async function excluirCategoriaSupabase(id: number): Promise<{ success: b
  */
 export async function fetchProdutosSupabase(): Promise<Produto[]> {
   try {
-    // Tenta carregar produtos com opcionais vinculados
+    // 1. Tenta carregar produtos com opcionais vinculados
     let prods: any[] = [];
     const { data: dataWithOpcionais, error: errOpcionais } = await supabase
       .from('produtos')
@@ -2852,19 +2936,67 @@ export async function fetchProdutosSupabase(): Promise<Produto[]> {
       }
     }
 
-    return prods.map((p) => ({
-      id: Number(p.id),
-      categoria_id: Number(p.categoria_id) || 1,
-      nome: (p.nome || '').toUpperCase().trim(),
-      descricao: (p.descricao || '').toUpperCase().trim(),
-      preco_salao: Number(p.preco_salao) || 0,
-      preco_delivery: Number(p.preco_delivery) || Number(p.preco_salao) || 0,
-      url_imagem: p.url_imagem,
-      dia_semana: Array.isArray(p.dia_semana) ? p.dia_semana : [1, 2, 3, 4, 5, 6],
-      pausado: Boolean(p.pausado),
-      criado_em: p.criado_em || new Date().toISOString(),
-      opcionais: Array.isArray(p.opcionais) ? p.opcionais : [],
-    }));
+    // 2. Consulta secundária na tabela produto_composicao para carregar ficha técnica
+    let composicoesDb: any[] = [];
+    try {
+      const { data: compData, error: compErr } = await supabase
+        .from('produto_composicao')
+        .select('*');
+      if (!compErr && Array.isArray(compData)) {
+        composicoesDb = compData;
+      }
+    } catch {}
+
+    // 3. Backup de composições em configuracoes.dados
+    let backupComposicoes: Record<string, any> = {};
+    try {
+      const { data: cfgRow } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+      if (cfgRow?.dados?.produtos_composicao) {
+        backupComposicoes = cfgRow.dados.produtos_composicao;
+      }
+    } catch {}
+
+    return prods.map((p) => {
+      const prodId = Number(p.id);
+
+      // Itens da composição vinculados a este produto
+      const compsItem = composicoesDb
+        .filter((c) => Number(c.produto_pai_id || c.produto_id) === prodId)
+        .map((c) => ({
+          id: c.id,
+          produto_pai_id: prodId,
+          item_estoque_id: c.item_estoque_id ? Number(c.item_estoque_id) : undefined,
+          produto_filho_id: c.produto_filho_id ? Number(c.produto_filho_id) : undefined,
+          quantidade: Number(c.quantidade) || 1,
+          unidade_medida: c.unidade_medida || 'un',
+        }));
+
+      const backupInfo = backupComposicoes[String(prodId)] || {};
+      const finalComposicao: IngredienteComposicao[] =
+        compsItem.length > 0
+          ? compsItem
+          : Array.isArray(backupInfo.composicao)
+          ? backupInfo.composicao
+          : (p.composicao || []);
+
+      return {
+        id: prodId,
+        categoria_id: Number(p.categoria_id) || 1,
+        nome: (p.nome || '').toUpperCase().trim(),
+        descricao: (p.descricao || '').toUpperCase().trim(),
+        preco_salao: Number(p.preco_salao) || 0,
+        preco_delivery: Number(p.preco_delivery) || Number(p.preco_salao) || 0,
+        url_imagem: p.url_imagem,
+        dia_semana: Array.isArray(p.dia_semana) ? p.dia_semana : [1, 2, 3, 4, 5, 6],
+        pausado: Boolean(p.pausado),
+        tipo_produto: p.tipo_produto || backupInfo.tipo_produto || 'preparado',
+        item_estoque_id: p.item_estoque_id || backupInfo.item_estoque_id || undefined,
+        custo_estimado: Number(p.custo_estimado) || Number(backupInfo.custo_estimado) || 0,
+        composicao: finalComposicao,
+        criado_em: p.criado_em || new Date().toISOString(),
+        opcionais: Array.isArray(p.opcionais) ? p.opcionais : [],
+      };
+    });
   } catch (err) {
     console.warn('Erro ao carregar produtos do Supabase:', err);
     return [];

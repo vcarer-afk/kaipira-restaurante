@@ -115,6 +115,20 @@ export interface Opcional {
   preco_adicional: number;
 }
 
+export type TipoProduto = 'preparado' | 'pronto' | 'combo';
+
+export interface IngredienteComposicao {
+  id?: number | string;
+  produto_pai_id?: number | string;
+  item_estoque_id?: number | string;
+  produto_filho_id?: number | string;
+  quantidade: number;
+  unidade_medida: string; // 'un', 'fatia', 'kg', 'g', 'colher', 'concha'
+  // Metadados auxiliares para renderização
+  item_estoque_nome?: string;
+  custo_unitario?: number;
+}
+
 export interface Produto {
   id: number;
   categoria_id: number;
@@ -127,6 +141,10 @@ export interface Produto {
   pausado: boolean;
   criado_em: string;
   opcionais?: Opcional[];
+  tipo_produto?: TipoProduto;
+  item_estoque_id?: number | string; // Para produtos prontos de revenda direta
+  custo_estimado?: number;
+  composicao?: IngredienteComposicao[];
 }
 
 export type CanalCardapio = 'delivery_balcao' | 'mesas';
@@ -152,6 +170,7 @@ export interface ItemEstoque {
   quantidade_atual: number;
   unidade_medida: string;
   estoque_minimo: number;
+  custo_unitario?: number;
   fornecedor_info?: string;
   atualizado_em: string;
 }

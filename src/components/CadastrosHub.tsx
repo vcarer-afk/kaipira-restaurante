@@ -12,6 +12,8 @@ import {
   FormaPagamentoConfig,
   ModuloPermissao,
   TODAS_PERMISSOES,
+  TipoProduto,
+  IngredienteComposicao,
 } from '../types';
 import { StockManager } from './StockManager';
 import { formatPhone, formatBRL } from '../utils/formatters';
@@ -254,6 +256,15 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const [formProdDiasSemana, setFormProdDiasSemana] = useState<number[]>([1, 2, 3, 4, 5, 6]);
   const [formProdPausado, setFormProdPausado] = useState(false);
   const [formProdUrlImagem, setFormProdUrlImagem] = useState('');
+  const [formProdTipo, setFormProdTipo] = useState<TipoProduto>('preparado');
+  const [formProdItemEstoqueId, setFormProdItemEstoqueId] = useState<string>('');
+  const [formProdComposicao, setFormProdComposicao] = useState<IngredienteComposicao[]>([]);
+  const [novoIngredienteEstoqueId, setNovoIngredienteEstoqueId] = useState<string>('');
+  const [novoIngredienteQtd, setNovoIngredienteQtd] = useState<string>('1');
+  const [novoIngredienteUnidade, setNovoIngredienteUnidade] = useState<string>('un');
+  const [novoIngredienteCusto, setNovoIngredienteCusto] = useState<string>('0.00');
+  const [novoComboProdId, setNovoComboProdId] = useState<string>('');
+  const [novoComboQtd, setNovoComboQtd] = useState<string>('1');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadImageError, setUploadImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -634,6 +645,15 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
     setFormProdDiasSemana([1, 2, 3, 4, 5, 6]);
     setFormProdPausado(false);
     setFormProdUrlImagem('');
+    setFormProdTipo('preparado');
+    setFormProdItemEstoqueId('');
+    setFormProdComposicao([]);
+    setNovoIngredienteEstoqueId('');
+    setNovoIngredienteQtd('1');
+    setNovoIngredienteUnidade('un');
+    setNovoIngredienteCusto('0.00');
+    setNovoComboProdId('');
+    setNovoComboQtd('1');
     setUploadImageError(null);
     setFeedbackMessage(null);
     setShowProductModal(true);
@@ -650,9 +670,58 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
     setFormProdDiasSemana(p.dia_semana || [1, 2, 3, 4, 5, 6]);
     setFormProdPausado(!!p.pausado);
     setFormProdUrlImagem(p.url_imagem || '');
+    setFormProdTipo(p.tipo_produto || (p.categoria_id === 4 ? 'pronto' : 'preparado'));
+    setFormProdItemEstoqueId(p.item_estoque_id ? String(p.item_estoque_id) : '');
+    setFormProdComposicao(p.composicao ? [...p.composicao] : []);
+    setNovoIngredienteEstoqueId('');
+    setNovoIngredienteQtd('1');
+    setNovoIngredienteUnidade('un');
+    setNovoIngredienteCusto('0.00');
+    setNovoComboProdId('');
+    setNovoComboQtd('1');
     setUploadImageError(null);
     setFeedbackMessage(null);
     setShowProductModal(true);
+  };
+
+  const handleAddIngrediente = () => {
+    if (!novoIngredienteEstoqueId) return;
+    const estItem = estoque.find((e) => e.id === Number(novoIngredienteEstoqueId));
+    const qtdNum = parseFloat(novoIngredienteQtd) || 1;
+    const custoNum = parseFloat(novoIngredienteCusto) || 0;
+
+    const novo: IngredienteComposicao = {
+      id: Date.now(),
+      item_estoque_id: Number(novoIngredienteEstoqueId),
+      quantidade: qtdNum,
+      unidade_medida: novoIngredienteUnidade || estItem?.unidade_medida || 'un',
+      item_estoque_nome: estItem?.item_nome,
+      custo_unitario: custoNum,
+    };
+
+    setFormProdComposicao((prev) => [...prev, novo]);
+    setNovoIngredienteEstoqueId('');
+    setNovoIngredienteQtd('1');
+    setNovoIngredienteCusto('0.00');
+  };
+
+  const handleAddComboItem = () => {
+    if (!novoComboProdId) return;
+    const prodFilho = produtos.find((p) => p.id === Number(novoComboProdId));
+    const qtdNum = parseInt(novoComboQtd) || 1;
+
+    const novo: IngredienteComposicao = {
+      id: Date.now(),
+      produto_filho_id: Number(novoComboProdId),
+      quantidade: qtdNum,
+      unidade_medida: 'un',
+      item_estoque_nome: prodFilho?.nome,
+      custo_unitario: prodFilho?.custo_estimado || 0,
+    };
+
+    setFormProdComposicao((prev) => [...prev, novo]);
+    setNovoComboProdId('');
+    setNovoComboQtd('1');
   };
 
   const handleUploadProductImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -702,6 +771,24 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
       ? parseFloat(formProdPrecoDelivery.replace(',', '.'))
       : precoSalao;
 
+    // Calcula o custo estimado total
+    let custoTotalCalculado = 0;
+    if (formProdTipo === 'preparado') {
+      custoTotalCalculado = formProdComposicao.reduce(
+        (acc, c) => acc + (Number(c.quantidade) || 0) * (Number(c.custo_unitario) || 0),
+        0
+      );
+    } else if (formProdTipo === 'combo') {
+      custoTotalCalculado = formProdComposicao.reduce((acc, c) => {
+        const filho = produtos.find((p) => p.id === Number(c.produto_filho_id));
+        return (
+          acc +
+          (Number(c.quantidade) || 1) *
+            (Number(filho?.custo_estimado) || (Number(filho?.preco_delivery) || Number(filho?.preco_salao) || 0) * 0.4)
+        );
+      }, 0);
+    }
+
     setIsSaving(true);
     const prodPayload: Partial<Produto> = {
       id: editingProductId || undefined,
@@ -713,6 +800,10 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
       dia_semana: formProdDiasSemana,
       pausado: formProdPausado,
       url_imagem: formProdUrlImagem ? formProdUrlImagem.trim() : undefined,
+      tipo_produto: formProdTipo,
+      item_estoque_id: formProdTipo === 'pronto' && formProdItemEstoqueId ? Number(formProdItemEstoqueId) : undefined,
+      custo_estimado: Number(custoTotalCalculado.toFixed(2)),
+      composicao: formProdTipo === 'pronto' ? [] : formProdComposicao,
     };
 
     if (onSaveProduto) {
@@ -2085,6 +2176,19 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-800 text-neutral-300 border border-neutral-700">
                                 {cat?.nome || 'CARDÁPIO'}
                               </span>
+                              {p.tipo_produto === 'pronto' ? (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-950/80 text-cyan-300 border border-cyan-800">
+                                  🥤 PRONTO
+                                </span>
+                              ) : p.tipo_produto === 'combo' ? (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-950/80 text-purple-300 border border-purple-800">
+                                  📦 COMBO
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-950/80 text-amber-300 border border-amber-800">
+                                  🍳 PREPARADO
+                                </span>
+                              )}
                               {p.pausado && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-950 text-red-300 border border-red-800 flex items-center gap-1">
                                   <Ban className="w-3 h-3" />
@@ -2175,7 +2279,29 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                           <td className="px-4 py-3 font-bold text-neutral-100 uppercase">
                             <div className="flex items-center gap-2.5">
                               {renderProductCategoryVisual(p.categoria_id, p.url_imagem, p.nome)}
-                              <span>{p.nome}</span>
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <span>{p.nome}</span>
+                                  {p.tipo_produto === 'pronto' ? (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-950/80 text-cyan-300 border border-cyan-800">
+                                      🥤 PRONTO
+                                    </span>
+                                  ) : p.tipo_produto === 'combo' ? (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-950/80 text-purple-300 border border-purple-800">
+                                      📦 COMBO
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-950/80 text-amber-300 border border-amber-800">
+                                      🍳 PREPARADO
+                                    </span>
+                                  )}
+                                </div>
+                                {p.custo_estimado !== undefined && p.custo_estimado > 0 && (
+                                  <span className="text-[10px] text-neutral-400 font-mono font-normal">
+                                    CMV: {formatBRL(p.custo_estimado)}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="px-4 py-3 uppercase text-neutral-400">{cat?.nome || '-'}</td>
@@ -3597,246 +3723,637 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
       )}
 
       {/* MODAL 3: PRODUTO / PRATO */}
-      {showProductModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
-          <form
-            onSubmit={handleSaveProductForm}
-            className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
-          >
-            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-              <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
-                <ShoppingBag className="w-4 h-4 text-amber-500" />
-                <span>{isEditingProduct ? 'Editar Prato / Produto' : 'Novo Prato / Produto'}</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowProductModal(false)}
-                className="text-neutral-400 hover:text-white p-1 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
+      {showProductModal && (() => {
+        const cmvCalculado = formProdComposicao.reduce(
+          (acc, c) => acc + (Number(c.quantidade) || 0) * (Number(c.custo_unitario) || 0),
+          0
+        );
+        const precoVendaSalaoNum = parseFloat(formProdPrecoSalao.replace(',', '.')) || 0;
+        const margemBrutaValor = precoVendaSalaoNum - cmvCalculado;
+        const margemBrutaPercentual = precoVendaSalaoNum > 0 ? (margemBrutaValor / precoVendaSalaoNum) * 100 : 0;
 
-            <div>
-              <label className="text-xs font-bold text-neutral-300 block mb-1">
-                NOME DO PRATO / PRODUTO: *
-              </label>
-              <UpperInput
-                required
-                value={formProdNome}
-                onChange={(e) => setFormProdNome(e.target.value)}
-                placeholder="EX: FEIJOADA COMPLETA DA FAZENDA"
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-neutral-300 block mb-1">
-                CATEGORIA: *
-              </label>
-              <select
-                value={formProdCategoriaId}
-                onChange={(e) => setFormProdCategoriaId(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs uppercase"
-              >
-                {categorias.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-neutral-300 block mb-1">
-                DESCRIÇÃO / INGREDIENTES:
-              </label>
-              <UpperTextarea
-                rows={2}
-                value={formProdDescricao}
-                onChange={(e) => setFormProdDescricao(e.target.value)}
-                placeholder="EX: FEIJÃO PRETO SELECIONADO COM CARNES NOBRES..."
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-neutral-300 block mb-1">
-                  PREÇO SALÃO (R$): *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formProdPrecoSalao}
-                  onChange={(e) => setFormProdPrecoSalao(e.target.value)}
-                  placeholder="49.90"
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-amber-400 font-mono font-bold rounded-lg text-xs"
-                />
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+            <form
+              onSubmit={handleSaveProductForm}
+              className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
+                  <ShoppingBag className="w-4 h-4 text-amber-500" />
+                  <span>{isEditingProduct ? 'Editar Prato / Produto' : 'Novo Prato / Produto'}</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowProductModal(false)}
+                  className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+                >
+                  ✕
+                </button>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-neutral-300 block mb-1">
-                  PREÇO DELIVERY (R$):
-                </label>
-                <input
-                  type="text"
-                  value={formProdPrecoDelivery}
-                  onChange={(e) => setFormProdPrecoDelivery(e.target.value)}
-                  placeholder="44.90"
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-cyan-400 font-mono font-bold rounded-lg text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Campo de Upload de Foto do Produto (Supabase Storage) */}
-            <div className="bg-neutral-850/80 border border-neutral-700/80 p-3.5 rounded-xl flex flex-col gap-2.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-neutral-300 flex items-center gap-1.5 uppercase">
-                  <Cloud className="w-4 h-4 text-amber-500" />
-                  <span>Foto do Produto (Supabase Storage):</span>
-                </label>
-                {formProdUrlImagem && (
+              {/* SELETOR DE CLASSIFICAÇÃO / ENGENHARIA DE CARDÁPIO */}
+              <div className="bg-neutral-850 p-2.5 rounded-xl border border-neutral-750 flex flex-col gap-2">
+                <div className="text-[11px] font-black uppercase tracking-wider text-neutral-300 flex items-center justify-between">
+                  <span>Classificação / Engenharia de Cardápio:</span>
+                  <span className="text-[10px] text-amber-400 font-bold">
+                    {formProdTipo === 'preparado' && 'Cozinha / Receita com Insumos'}
+                    {formProdTipo === 'pronto' && 'Revenda Direta 1:1'}
+                    {formProdTipo === 'combo' && 'Kit Promocional de Pratos'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setFormProdUrlImagem('');
-                      setUploadImageError(null);
-                    }}
-                    className="text-[11px] text-red-400 hover:text-red-300 font-bold underline cursor-pointer"
+                    onClick={() => setFormProdTipo('preparado')}
+                    className={`px-3 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      formProdTipo === 'preparado'
+                        ? 'bg-amber-500 text-black font-black shadow-md scale-[1.02]'
+                        : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                    }`}
                   >
-                    Remover Foto
+                    <span>🍳 Preparado</span>
                   </button>
-                )}
-              </div>
 
-              <div className="flex items-center gap-3">
-                {formProdUrlImagem ? (
-                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-900 border border-neutral-700 shrink-0 shadow-xs relative">
-                    <img
-                      src={formProdUrlImagem}
-                      alt="Preview"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                ) : (
-                  <div className="w-16 h-16 rounded-xl bg-neutral-800 border border-dashed border-neutral-700 flex flex-col items-center justify-center shrink-0 text-neutral-500">
-                    <ShoppingBag className="w-6 h-6 text-neutral-600 mb-0.5" />
-                    <span className="text-[9px] font-bold">SEM FOTO</span>
-                  </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => setFormProdTipo('pronto')}
+                    className={`px-3 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      formProdTipo === 'pronto'
+                        ? 'bg-amber-500 text-black font-black shadow-md scale-[1.02]'
+                        : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🥤 Pronto</span>
+                  </button>
 
-                <div className="flex-1 flex flex-col gap-1.5 min-w-0">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    accept="image/*"
-                    onChange={handleUploadProductImage}
-                    className="hidden"
-                  />
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={isUploadingImage}
-                      onClick={() => fileInputRef.current?.click()}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
-                        isUploadingImage
-                          ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
-                          : 'bg-amber-600 hover:bg-amber-500 text-white shadow-xs'
-                      }`}
-                    >
-                      <Cloud className="w-3.5 h-3.5" />
-                      <span>{isUploadingImage ? 'Enviando Imagem...' : 'Enviar Imagem'}</span>
-                    </button>
-                    {formProdUrlImagem && (
-                      <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5" />
-                        Imagem Salva
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={formProdUrlImagem}
-                    onChange={(e) => setFormProdUrlImagem(e.target.value)}
-                    placeholder="URL pública da foto no Supabase ou envie pelo botão acima..."
-                    className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-lg text-[11px] truncate"
-                  />
-                  {uploadImageError && (
-                    <span className="text-[10px] text-red-400 font-semibold">{uploadImageError}</span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setFormProdTipo('combo')}
+                    className={`px-3 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      formProdTipo === 'combo'
+                        ? 'bg-amber-500 text-black font-black shadow-md scale-[1.02]'
+                        : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    <span>📦 Combo</span>
+                  </button>
                 </div>
               </div>
-            </div>
 
-            <div>
-              <label className="text-xs font-bold text-neutral-300 block mb-1">
-                DIAS DE PROGRAMAÇÃO DA SEMANA:
-              </label>
-              <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase">
-                {[
-                  { dia: 1, label: 'Seg' },
-                  { dia: 2, label: 'Ter' },
-                  { dia: 3, label: 'Qua' },
-                  { dia: 4, label: 'Qui' },
-                  { dia: 5, label: 'Sex' },
-                  { dia: 6, label: 'Sáb' },
-                ].map(({ dia, label }) => {
-                  const isChecked = formProdDiasSemana.includes(dia);
-                  return (
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  NOME DO PRATO / PRODUTO: *
+                </label>
+                <UpperInput
+                  required
+                  value={formProdNome}
+                  onChange={(e) => setFormProdNome(e.target.value)}
+                  placeholder="EX: FEIJOADA COMPLETA DA FAZENDA"
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  CATEGORIA: *
+                </label>
+                <select
+                  value={formProdCategoriaId}
+                  onChange={(e) => setFormProdCategoriaId(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs uppercase"
+                >
+                  {categorias.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  DESCRIÇÃO / INGREDIENTES:
+                </label>
+                <UpperTextarea
+                  rows={2}
+                  value={formProdDescricao}
+                  onChange={(e) => setFormProdDescricao(e.target.value)}
+                  placeholder="EX: FEIJÃO PRETO SELECIONADO COM CARNES NOBRES..."
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-lg text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-neutral-300 block mb-1">
+                    PREÇO SALÃO (R$): *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formProdPrecoSalao}
+                    onChange={(e) => setFormProdPrecoSalao(e.target.value)}
+                    placeholder="49.90"
+                    className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-amber-400 font-mono font-bold rounded-lg text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-neutral-300 block mb-1">
+                    PREÇO DELIVERY (R$):
+                  </label>
+                  <input
+                    type="text"
+                    value={formProdPrecoDelivery}
+                    onChange={(e) => setFormProdPrecoDelivery(e.target.value)}
+                    placeholder="44.90"
+                    className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-cyan-400 font-mono font-bold rounded-lg text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* PAINEL DINÂMICO 1: REVENDA DIRETA (PRONTO) */}
+              {formProdTipo === 'pronto' && (
+                <div className="bg-neutral-850/90 border border-cyan-800/60 p-3.5 rounded-xl flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <Boxes className="w-4 h-4 text-cyan-400" />
+                    <label className="text-xs font-black text-cyan-300 uppercase">
+                      Vincular ao Insumo do Estoque (Baixa 1:1 Direta):
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-neutral-400">
+                    Selecione o insumo correspondente no estoque (ex: refrigerante, água, cerveja ou doce). Cada venda deste produto dará baixa automática de 1 unidade no estoque selecionado.
+                  </p>
+                  <select
+                    value={formProdItemEstoqueId}
+                    onChange={(e) => setFormProdItemEstoqueId(e.target.value)}
+                    className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs uppercase"
+                  >
+                    <option value="">-- SELECIONE O INSUMO DO ESTOQUE --</option>
+                    {estoque.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.item_nome} (Saldo Atual: {item.quantidade_atual} {item.unidade_medida || 'un'} | Custo: {formatBRL(item.custo_unitario || 0)})
+                      </option>
+                    ))}
+                  </select>
+                  {formProdItemEstoqueId && (
+                    <div className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 mt-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Vínculo ativo com o insumo #{formProdItemEstoqueId} do estoque.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* PAINEL DINÂMICO 2: FICHA TÉCNICA (PREPARADO) */}
+              {formProdTipo === 'preparado' && (
+                <div className="bg-neutral-850/90 border border-amber-900/40 p-4 rounded-xl flex flex-col gap-3">
+                  <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+                    <div className="flex items-center gap-2">
+                      <ChefHat className="w-4 h-4 text-amber-500" />
+                      <div>
+                        <h4 className="text-xs font-black text-white uppercase">
+                          Ficha Técnica / Composição de Insumos & Embalagens
+                        </h4>
+                        <p className="text-[10px] text-neutral-400">
+                          Insumos que serão baixados do estoque na conclusão do preparo deste prato.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-mono font-bold text-amber-400">
+                      {formProdComposicao.length} {formProdComposicao.length === 1 ? 'item' : 'itens'}
+                    </span>
+                  </div>
+
+                  {/* LINHA DE ADIÇÃO DE NOVO INGREDIENTE */}
+                  <div className="bg-neutral-900 p-2.5 rounded-lg border border-neutral-800 flex flex-col gap-2">
+                    <span className="text-[10px] font-black uppercase text-neutral-400">
+                      + Adicionar Ingrediente / Insumo à Ficha Técnica:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                      <div className="sm:col-span-5">
+                        <select
+                          value={novoIngredienteEstoqueId}
+                          onChange={(e) => {
+                            const id = e.target.value;
+                            setNovoIngredienteEstoqueId(id);
+                            if (id) {
+                              const item = estoque.find((it) => it.id === Number(id));
+                              if (item) {
+                                if (item.unidade_medida) setNovoIngredienteUnidade(item.unidade_medida);
+                                if (item.custo_unitario) setNovoIngredienteCusto(String(item.custo_unitario));
+                              }
+                            }
+                          }}
+                          className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs uppercase"
+                        >
+                          <option value="">Selecione o Insumo do Estoque...</option>
+                          {estoque.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.item_nome} ({item.unidade_medida || 'un'} | Custo: {formatBRL(item.custo_unitario || 0)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0.001"
+                          placeholder="Qtd"
+                          value={novoIngredienteQtd}
+                          onChange={(e) => setNovoIngredienteQtd(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-white font-mono rounded-lg text-xs text-center"
+                          title="Quantidade consumida por porção"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <select
+                          value={novoIngredienteUnidade}
+                          onChange={(e) => setNovoIngredienteUnidade(e.target.value)}
+                          className="w-full px-2 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-lg text-xs uppercase"
+                        >
+                          <option value="un">un</option>
+                          <option value="g">g</option>
+                          <option value="kg">kg</option>
+                          <option value="ml">ml</option>
+                          <option value="l">litro</option>
+                          <option value="fatia">fatia</option>
+                          <option value="concha">concha</option>
+                          <option value="colher">colher</option>
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-3 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={handleAddIngrediente}
+                          disabled={!novoIngredienteEstoqueId}
+                          className="flex-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:hover:bg-amber-600 text-white rounded-lg text-xs font-black uppercase flex items-center justify-center gap-1 cursor-pointer transition-all"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Inserir</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TABELA DE COMPOSIÇÃO ATUAL */}
+                  {formProdComposicao.length > 0 ? (
+                    <div className="overflow-x-auto rounded-lg border border-neutral-800 bg-neutral-900/60 max-h-48 overflow-y-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-neutral-850 text-neutral-400 uppercase text-[10px] font-bold border-b border-neutral-800 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2">Insumo / Ingrediente</th>
+                            <th className="px-2 py-2 text-center">Qtd</th>
+                            <th className="px-2 py-2 text-center">Unidade</th>
+                            <th className="px-2 py-2 text-right">Custo Un.</th>
+                            <th className="px-3 py-2 text-right">Subtotal</th>
+                            <th className="px-2 py-2 text-center w-8">Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-800/60 font-mono">
+                          {formProdComposicao.map((item, idx) => {
+                            const est = estoque.find((e) => e.id === Number(item.item_estoque_id));
+                            const subtotal = (Number(item.quantidade) || 0) * (Number(item.custo_unitario) || 0);
+                            return (
+                              <tr key={item.id || idx} className="hover:bg-neutral-850/40">
+                                <td className="px-3 py-2 font-bold text-neutral-200 uppercase font-sans">
+                                  {item.item_estoque_nome || est?.item_nome || `Insumo #${item.item_estoque_id}`}
+                                </td>
+                                <td className="px-2 py-2 text-center text-white font-bold">
+                                  {item.quantidade}
+                                </td>
+                                <td className="px-2 py-2 text-center text-neutral-400 uppercase">
+                                  {item.unidade_medida}
+                                </td>
+                                <td className="px-2 py-2 text-right text-neutral-300">
+                                  {formatBRL(item.custo_unitario || 0)}
+                                </td>
+                                <td className="px-3 py-2 text-right font-black text-amber-400">
+                                  {formatBRL(subtotal)}
+                                </td>
+                                <td className="px-2 py-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFormProdComposicao((prev) => prev.filter((_, i) => i !== idx));
+                                    }}
+                                    className="p-1 text-red-400 hover:text-red-300 hover:bg-red-950/50 rounded cursor-pointer transition-colors"
+                                    title="Remover insumo"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-3 text-center bg-neutral-900/50 border border-dashed border-neutral-800 rounded-lg text-neutral-400 text-xs">
+                      Nenhum insumo ou ingrediente adicionado à ficha técnica ainda.
+                    </div>
+                  )}
+
+                  {/* RESUMO DE CMV E MARGEM BRUTA */}
+                  <div className="grid grid-cols-3 gap-2 bg-neutral-900 p-3 rounded-lg border border-neutral-800 font-mono">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-neutral-400 uppercase font-sans font-bold">CMV Estimado:</span>
+                      <span className="text-sm font-black text-amber-400">{formatBRL(cmvCalculado)}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-neutral-400 uppercase font-sans font-bold">Preço Salão:</span>
+                      <span className="text-sm font-bold text-neutral-200">{formatBRL(precoVendaSalaoNum)}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-neutral-400 uppercase font-sans font-bold">Margem Bruta:</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-sm font-black ${margemBrutaValor >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {formatBRL(margemBrutaValor)}
+                        </span>
+                        <span className={`text-[10px] font-bold px-1 rounded ${margemBrutaPercentual >= 40 ? 'bg-emerald-950 text-emerald-300' : 'bg-amber-950 text-amber-300'}`}>
+                          {margemBrutaPercentual.toFixed(0)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* PAINEL DINÂMICO 3: COMBO / KIT PROMOCIONAL */}
+              {formProdTipo === 'combo' && (
+                <div className="bg-neutral-850/90 border border-purple-900/40 p-4 rounded-xl flex flex-col gap-3">
+                  <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Boxes className="w-4 h-4 text-purple-400" />
+                      <div>
+                        <h4 className="text-xs font-black text-white uppercase">
+                          Itens do Combo / Kit Promocional
+                        </h4>
+                        <p className="text-[10px] text-neutral-400">
+                          Selecione os produtos do cardápio que fazem parte deste combo.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-mono font-bold text-purple-400">
+                      {formProdComposicao.length} {formProdComposicao.length === 1 ? 'item' : 'itens'}
+                    </span>
+                  </div>
+
+                  {/* LINHA DE ADIÇÃO DE PRODUTO AO COMBO */}
+                  <div className="bg-neutral-900 p-2.5 rounded-lg border border-neutral-800 flex flex-col gap-2">
+                    <span className="text-[10px] font-black uppercase text-neutral-400">
+                      + Adicionar Prato ou Bebida ao Combo:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                      <div className="sm:col-span-7">
+                        <select
+                          value={novoComboProdId}
+                          onChange={(e) => setNovoComboProdId(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-xs uppercase"
+                        >
+                          <option value="">Selecione o Produto...</option>
+                          {produtos
+                            .filter((p) => p.id !== editingProductId)
+                            .map((prod) => (
+                              <option key={prod.id} value={prod.id}>
+                                {prod.nome} ({formatBRL(prod.preco_salao)})
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="Qtd"
+                          value={novoComboQtd}
+                          onChange={(e) => setNovoComboQtd(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-white font-mono rounded-lg text-xs text-center"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <button
+                          type="button"
+                          onClick={handleAddComboItem}
+                          disabled={!novoComboProdId}
+                          className="w-full px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:hover:bg-purple-600 text-white rounded-lg text-xs font-black uppercase flex items-center justify-center gap-1 cursor-pointer transition-all"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Inserir</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TABELA DE ITENS DO COMBO */}
+                  {formProdComposicao.length > 0 ? (
+                    <div className="overflow-x-auto rounded-lg border border-neutral-800 bg-neutral-900/60 max-h-48 overflow-y-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-neutral-850 text-neutral-400 uppercase text-[10px] font-bold border-b border-neutral-800 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2">Produto Integrante</th>
+                            <th className="px-2 py-2 text-center">Quantidade</th>
+                            <th className="px-2 py-2 text-right">Preço Ref.</th>
+                            <th className="px-2 py-2 text-center w-8">Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-800/60 font-mono">
+                          {formProdComposicao.map((item, idx) => {
+                            const prodFilho = produtos.find((p) => p.id === Number(item.produto_filho_id));
+                            return (
+                              <tr key={item.id || idx} className="hover:bg-neutral-850/40">
+                                <td className="px-3 py-2 font-bold text-neutral-200 uppercase font-sans">
+                                  {item.item_estoque_nome || prodFilho?.nome || `Produto #${item.produto_filho_id}`}
+                                </td>
+                                <td className="px-2 py-2 text-center text-white font-bold">
+                                  {item.quantidade}x
+                                </td>
+                                <td className="px-2 py-2 text-right text-neutral-300">
+                                  {formatBRL(prodFilho?.preco_salao || 0)}
+                                </td>
+                                <td className="px-2 py-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFormProdComposicao((prev) => prev.filter((_, i) => i !== idx));
+                                    }}
+                                    className="p-1 text-red-400 hover:text-red-300 hover:bg-red-950/50 rounded cursor-pointer transition-colors"
+                                    title="Remover produto do combo"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-3 text-center bg-neutral-900/50 border border-dashed border-neutral-800 rounded-lg text-neutral-400 text-xs">
+                      Nenhum item adicionado a este combo ainda.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Campo de Upload de Foto do Produto (Supabase Storage) */}
+              <div className="bg-neutral-850/80 border border-neutral-700/80 p-3.5 rounded-xl flex flex-col gap-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-neutral-300 flex items-center gap-1.5 uppercase">
+                    <Cloud className="w-4 h-4 text-amber-500" />
+                    <span>Foto do Produto (Supabase Storage):</span>
+                  </label>
+                  {formProdUrlImagem && (
                     <button
-                      key={dia}
                       type="button"
                       onClick={() => {
-                        setFormProdDiasSemana((prev) =>
-                          isChecked ? prev.filter((d) => d !== dia) : [...prev, dia]
-                        );
+                        setFormProdUrlImagem('');
+                        setUploadImageError(null);
                       }}
-                      className={`px-3 py-1.5 rounded-lg border text-xs cursor-pointer ${
-                        isChecked
-                          ? 'bg-amber-600 text-white border-amber-500'
-                          : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-white'
-                      }`}
+                      className="text-[11px] text-red-400 hover:text-red-300 font-bold underline cursor-pointer"
                     >
-                      {label}
+                      Remover Foto
                     </button>
-                  );
-                })}
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {formProdUrlImagem ? (
+                    <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-900 border border-neutral-700 shrink-0 shadow-xs relative">
+                      <img
+                        src={formProdUrlImagem}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl bg-neutral-800 border border-dashed border-neutral-700 flex flex-col items-center justify-center shrink-0 text-neutral-500">
+                      <ShoppingBag className="w-6 h-6 text-neutral-600 mb-0.5" />
+                      <span className="text-[9px] font-bold">SEM FOTO</span>
+                    </div>
+                  )}
+
+                  <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      onChange={handleUploadProductImage}
+                      className="hidden"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isUploadingImage}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                          isUploadingImage
+                            ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
+                            : 'bg-amber-600 hover:bg-amber-500 text-white shadow-xs'
+                        }`}
+                      >
+                        <Cloud className="w-3.5 h-3.5" />
+                        <span>{isUploadingImage ? 'Enviando Imagem...' : 'Enviar Imagem'}</span>
+                      </button>
+                      {formProdUrlImagem && (
+                        <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" />
+                          Imagem Salva
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={formProdUrlImagem}
+                      onChange={(e) => setFormProdUrlImagem(e.target.value)}
+                      placeholder="URL pública da foto no Supabase ou envie pelo botão acima..."
+                      className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-lg text-[11px] truncate"
+                    />
+                    {uploadImageError && (
+                      <span className="text-[10px] text-red-400 font-semibold">{uploadImageError}</span>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <div className="pt-2 border-t border-neutral-800">
-              <label className="flex items-center gap-2 text-xs font-bold uppercase cursor-pointer text-neutral-300">
-                <input
-                  type="checkbox"
-                  checked={formProdPausado}
-                  onChange={(e) => setFormProdPausado(e.target.checked)}
-                  className="accent-red-500 w-4 h-4"
-                />
-                <span>Pausar / Marcar como Esgotado</span>
-              </label>
-            </div>
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">
+                  DIAS DE PROGRAMAÇÃO DA SEMANA:
+                </label>
+                <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase">
+                  {[
+                    { dia: 1, label: 'Seg' },
+                    { dia: 2, label: 'Ter' },
+                    { dia: 3, label: 'Qua' },
+                    { dia: 4, label: 'Qui' },
+                    { dia: 5, label: 'Sex' },
+                    { dia: 6, label: 'Sáb' },
+                  ].map(({ dia, label }) => {
+                    const isChecked = formProdDiasSemana.includes(dia);
+                    return (
+                      <button
+                        key={dia}
+                        type="button"
+                        onClick={() => {
+                          setFormProdDiasSemana((prev) =>
+                            isChecked ? prev.filter((d) => d !== dia) : [...prev, dia]
+                          );
+                        }}
+                        className={`px-3 py-1.5 rounded-lg border text-xs cursor-pointer ${
+                          isChecked
+                            ? 'bg-amber-600 text-white border-amber-500'
+                            : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-white'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
-              <button
-                type="button"
-                onClick={() => setShowProductModal(false)}
-                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
-              >
-                <Cloud className="w-4 h-4" />
-                <span>{isSaving ? 'Gravando...' : 'Salvar Prato'}</span>
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+              <div className="pt-2 border-t border-neutral-800">
+                <label className="flex items-center gap-2 text-xs font-bold uppercase cursor-pointer text-neutral-300">
+                  <input
+                    type="checkbox"
+                    checked={formProdPausado}
+                    onChange={(e) => setFormProdPausado(e.target.checked)}
+                    className="accent-red-500 w-4 h-4"
+                  />
+                  <span>Pausar / Marcar como Esgotado</span>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProductModal(false)}
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
+                >
+                  <Cloud className="w-4 h-4" />
+                  <span>{isSaving ? 'Gravando...' : 'Salvar Prato'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
 
       {/* MODAL 4: MESA */}
       {showMesaModal && (
