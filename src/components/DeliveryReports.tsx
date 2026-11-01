@@ -5,8 +5,10 @@ import {
   Bike,
   MapPin,
   Printer,
+  Eye,
   UserCheck,
 } from 'lucide-react';
+import { imprimirRelatorioLimpo } from '../utils/printReport';
 
 interface DeliveryReportsProps {
   pedidos: Pedido[];
@@ -29,6 +31,7 @@ export const DeliveryReports: React.FC<DeliveryReportsProps> = ({
   configuracoes,
 }) => {
   const [periodoFiltro, setPeriodoFiltro] = useState<'hoje' | 'ontem' | '7dias' | 'mes'>('hoje');
+  const [modoVisualizacao, setModoVisualizacao] = useState(false);
 
   const hojeIso = new Date().toISOString().split('T')[0];
 
@@ -229,11 +232,48 @@ export const DeliveryReports: React.FC<DeliveryReportsProps> = ({
               </button>
             ))}
           </div>
+
+          <div className="flex items-center gap-2">
+            {/* Botão 1: Visualizar */}
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById('area-conteudo-relatorio');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                setModoVisualizacao(true);
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 border transition-all cursor-pointer ${
+                modoVisualizacao
+                  ? 'bg-amber-500 text-black border-amber-500 shadow-sm'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
+              }`}
+            >
+              <Eye className="w-4 h-4" />
+              <span>Visualizar</span>
+            </button>
+
+            {/* Botão 2: Imprimir (Gera PDF / Impressão Nativa sem oklch) */}
+            <button
+              type="button"
+              onClick={() => {
+                const element = document.getElementById('area-conteudo-relatorio');
+                if (!element) return;
+                imprimirRelatorioLimpo('Relatorio_Logistica_Motoboys_Kaipira', element.innerHTML);
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-sm transition-transform active:scale-95 cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Imprimir / PDF</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Grid Principal: 1. Cards de Acerto por Motoboy & 2. Tabela de Bairros */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div
+        id="area-conteudo-relatorio"
+        className="pt-0 mt-0 grid grid-cols-1 lg:grid-cols-12 gap-6"
+      >
         {/* Coluna Esquerda: Acerto Individual dos Motoboys (7 colunas) */}
         <div className="lg:col-span-7 flex flex-col gap-4">
           <div className="flex items-center justify-between">

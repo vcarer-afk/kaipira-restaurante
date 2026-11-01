@@ -11,7 +11,7 @@ import {
   DollarSign,
   Calendar,
   Printer,
-  Download,
+  Eye,
   CreditCard,
   Banknote,
   Bike,
@@ -23,8 +23,7 @@ import {
   ShieldCheck,
   TrendingUp,
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+import { imprimirRelatorioLimpo } from '../utils/printReport';
 
 interface FinancialReportsProps {
   pedidos: Pedido[];
@@ -41,9 +40,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({
   configuracoes,
 }) => {
   const [periodoFiltro, setPeriodoFiltro] = useState<'hoje' | 'ontem' | '7dias' | 'mes'>('hoje');
-  const [dataInicioPersonalizada, setDataInicioPersonalizada] = useState('');
-  const [dataFimPersonalizada, setDataFimPersonalizada] = useState('');
-  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [modoVisualizacao, setModoVisualizacao] = useState(false);
 
   // Filtro de data flexível
   const hojeIso = new Date().toISOString().split('T')[0];
@@ -128,37 +125,6 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({
   const totalSangrias = sangrias.reduce((acc, m) => acc + (Number(m.valor) || 0), 0);
   const dinheiroEsperadoGaveta = (Number(caixa?.valor_abertura) || 0) + totaisPagamentos.dinheiro + totalSuprimentos - totalSangrias;
 
-  // Exportação em PDF A4 alinhada ao topo
-  const handleExportPDF = async () => {
-    setIsExportingPDF(true);
-    try {
-      const element = document.getElementById('relatorio-financeiro-print');
-      if (!element) return;
-
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        scrollY: 0,
-        scrollX: 0,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = 210;
-      const margin = 8;
-      const contentWidth = pdfWidth - margin * 2;
-      const contentHeight = (canvas.height * contentWidth) / canvas.width;
-
-      pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight, undefined, 'FAST');
-      pdf.save(`Relatorio_Financeiro_Kaipira_${hojeIso}.pdf`);
-    } catch (err) {
-      console.error('Erro ao gerar PDF:', err);
-    } finally {
-      setIsExportingPDF(false);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-6">
       {/* Header com Filtros de Período e Ações */}
@@ -200,22 +166,46 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({
             ))}
           </div>
 
-          <button
-            type="button"
-            onClick={handleExportPDF}
-            disabled={isExportingPDF}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-sm transition-transform active:scale-95 cursor-pointer disabled:opacity-50"
-          >
-            <Download className="w-4 h-4" />
-            <span>{isExportingPDF ? 'Gerando...' : 'Exportar PDF A4'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Botão 1: Visualizar */}
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById('area-conteudo-relatorio');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                setModoVisualizacao(true);
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 border transition-all cursor-pointer ${
+                modoVisualizacao
+                  ? 'bg-amber-500 text-black border-amber-500 shadow-sm'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
+              }`}
+            >
+              <Eye className="w-4 h-4" />
+              <span>Visualizar</span>
+            </button>
+
+            {/* Botão 2: Imprimir (Gera PDF / Impressão Nativa sem oklch) */}
+            <button
+              type="button"
+              onClick={() => {
+                const element = document.getElementById('area-conteudo-relatorio');
+                if (!element) return;
+                imprimirRelatorioLimpo('Relatorio_Financeiro_Kaipira', element.innerHTML);
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-sm transition-transform active:scale-95 cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Imprimir / PDF</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Relatório Visual e Imprimível */}
       <div
-        id="relatorio-financeiro-print"
-        className="bg-neutral-850 p-6 rounded-2xl border border-neutral-800 shadow-md space-y-6 text-white"
+        id="area-conteudo-relatorio"
+        className="pt-0 mt-0 bg-neutral-850 p-6 rounded-2xl border border-neutral-800 shadow-md space-y-6 text-white"
       >
         {/* Cabeçalho Oficial do Relatório */}
         <div className="border-b border-neutral-800 pb-4 text-center">

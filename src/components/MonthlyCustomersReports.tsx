@@ -3,16 +3,15 @@ import { Pedido, Cliente, ConfiguracoesSistema, CaixaDiario } from '../types';
 import { formatBRL } from '../utils/formatters';
 import {
   Briefcase,
-  Download,
   Printer,
+  Eye,
   Search,
   MessageCircle,
   FileText,
   Building2,
   ArrowRight,
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+import { imprimirRelatorioLimpo } from '../utils/printReport';
 
 interface MonthlyCustomersReportsProps {
   clientes: Cliente[];
@@ -30,7 +29,7 @@ export const MonthlyCustomersReports: React.FC<MonthlyCustomersReportsProps> = (
 }) => {
   const [busca, setBusca] = useState('');
   const [clienteSelecionadoId, setClienteSelecionadoId] = useState<string | null>(null);
-  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [modoVisualizacao, setModoVisualizacao] = useState(false);
 
   const hojeIso = new Date().toISOString().split('T')[0];
 
@@ -170,37 +169,6 @@ export const MonthlyCustomersReports: React.FC<MonthlyCustomersReportsProps> = (
     }, 250);
   };
 
-  // Exportação em PDF A4
-  const handleExportPDF = async () => {
-    setIsExportingPDF(true);
-    try {
-      const element = document.getElementById('relatorio-mensalistas-print');
-      if (!element) return;
-
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        scrollY: 0,
-        scrollX: 0,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = 210;
-      const margin = 8;
-      const contentWidth = pdfWidth - margin * 2;
-      const contentHeight = (canvas.height * contentWidth) / canvas.width;
-
-      pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight, undefined, 'FAST');
-      pdf.save(`Relatorio_Mensalistas_${hojeIso}.pdf`);
-    } catch (err) {
-      console.error('Erro ao gerar PDF de mensalistas:', err);
-    } finally {
-      setIsExportingPDF(false);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-6">
       {/* Banner Superior & Ações */}
@@ -218,21 +186,46 @@ export const MonthlyCustomersReports: React.FC<MonthlyCustomersReportsProps> = (
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
+          {/* Botão 1: Visualizar */}
           <button
             type="button"
-            onClick={handleExportPDF}
-            disabled={isExportingPDF}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-sm transition-transform active:scale-95 cursor-pointer disabled:opacity-50"
+            onClick={() => {
+              const el = document.getElementById('area-conteudo-relatorio');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+              setModoVisualizacao(true);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 border transition-all cursor-pointer ${
+              modoVisualizacao
+                ? 'bg-amber-500 text-black border-amber-500 shadow-sm'
+                : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
+            }`}
           >
-            <Download className="w-4 h-4" />
-            <span>{isExportingPDF ? 'Gerando...' : 'Exportar Extrato A4'}</span>
+            <Eye className="w-4 h-4" />
+            <span>Visualizar</span>
+          </button>
+
+          {/* Botão 2: Imprimir (Gera PDF / Impressão Nativa sem oklch) */}
+          <button
+            type="button"
+            onClick={() => {
+              const element = document.getElementById('area-conteudo-relatorio');
+              if (!element) return;
+              imprimirRelatorioLimpo('Relatorio_Mensalistas_Kaipira', element.innerHTML);
+            }}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-sm transition-transform active:scale-95 cursor-pointer"
+          >
+            <Printer className="w-4 h-4" />
+            <span>Imprimir / PDF</span>
           </button>
         </div>
       </div>
 
       {/* Grid Principal: 1. Lista Geral & 2. Ficha Espelho Individual */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div
+        id="area-conteudo-relatorio"
+        className="pt-0 mt-0 grid grid-cols-1 lg:grid-cols-12 gap-6"
+      >
         {/* Coluna Esquerda: Extrato Consolidado de Clientes (7 colunas) */}
         <div className="lg:col-span-7 flex flex-col gap-4">
           <div className="flex items-center justify-between">
