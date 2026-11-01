@@ -220,6 +220,7 @@ export interface Pedido {
   conferencia_entrega?: 'pendente' | 'conferido';
   conferido_por?: string;
   conferido_em?: string;
+  estoque_baixado?: boolean;
   criado_em: string;
   atualizado_em: string;
 }

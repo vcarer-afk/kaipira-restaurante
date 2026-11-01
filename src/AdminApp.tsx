@@ -980,7 +980,12 @@ export default function AdminApp() {
   };
 
   // Order status updates via Supabase
-  const handleUpdateOrderStatus = async (id: number, status: StatusPedido, entregador?: string) => {
+  const handleUpdateOrderStatus = async (
+    id: number,
+    status: StatusPedido,
+    entregador?: string,
+    estoque_baixado?: boolean
+  ) => {
     setPedidos((prev) =>
       prev.map((p) => {
         if (p.id === id) {
@@ -991,6 +996,7 @@ export default function AdminApp() {
             endereco_entrega: (p as any).endereco_entrega,
           };
           if (entregador) updated.entregador_nome = entregador;
+          if (estoque_baixado !== undefined) updated.estoque_baixado = estoque_baixado;
           if (p.tipo === 'delivery' && status === 'entregue') {
             updated.conferencia_entrega = 'pendente';
           }
@@ -999,7 +1005,7 @@ export default function AdminApp() {
         return p;
       })
     );
-    await atualizarStatusPedidoSupabase(id, status, entregador);
+    await atualizarStatusPedidoSupabase(id, status, entregador, estoque_baixado);
   };
 
   // Conferência de entrega pelo Gerente ou Supervisor no Caixa
@@ -1888,6 +1894,8 @@ export default function AdminApp() {
           <KitchenKDS
             pedidos={pedidos}
             produtos={produtos}
+            estoque={estoque}
+            onUpdateStockItem={handleUpdateStockItem}
             onUpdateStatus={handleUpdateOrderStatus}
             onPrintReceipt={(p) => setPrintReceiptPedido(p)}
           />

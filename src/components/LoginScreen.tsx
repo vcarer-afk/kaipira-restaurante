@@ -100,18 +100,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
         {/* Login Box */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 sm:p-8 shadow-2xl backdrop-blur-md">
-          <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-5">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs font-black uppercase text-neutral-200 tracking-wider">
-                Autenticação Supabase
-              </span>
-            </div>
-            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-900">
-              RLS ATIVO
-            </span>
-          </div>
-
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Username / E-mail */}
             <div>

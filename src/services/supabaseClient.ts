@@ -633,6 +633,7 @@ let pedidosCols = {
   conferido_por: false,
   conferido_em: false,
   entregador_nome: false,
+  estoque_baixado: false,
 };
 
 async function checkPedidosSchema() {
@@ -645,6 +646,7 @@ async function checkPedidosSchema() {
       pedidosCols.conferido_por = 'conferido_por' in first;
       pedidosCols.conferido_em = 'conferido_em' in first;
       pedidosCols.entregador_nome = 'entregador_nome' in first;
+      pedidosCols.estoque_baixado = 'estoque_baixado' in first;
       pedidosColumnsChecked = true;
     }
   } catch {}
@@ -702,6 +704,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
         pedidosCols.conferido_por = 'conferido_por' in pedidosData[0];
         pedidosCols.conferido_em = 'conferido_em' in pedidosData[0];
         pedidosCols.entregador_nome = 'entregador_nome' in pedidosData[0];
+        pedidosCols.estoque_baixado = 'estoque_baixado' in pedidosData[0];
         pedidosColumnsChecked = true;
       }
 
@@ -758,6 +761,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           conferencia_entrega: statusConf,
           conferido_por: p.conferido_por || confLocal?.conferido_por || undefined,
           conferido_em: p.conferido_em || confLocal?.conferido_em || undefined,
+          estoque_baixado: Boolean(p.estoque_baixado),
           criado_em: p.criado_em || new Date().toISOString(),
           atualizado_em: p.atualizado_em || new Date().toISOString(),
         };
@@ -776,6 +780,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
         pedidosCols.conferido_por = 'conferido_por' in simplePeds[0];
         pedidosCols.conferido_em = 'conferido_em' in simplePeds[0];
         pedidosCols.entregador_nome = 'entregador_nome' in simplePeds[0];
+        pedidosCols.estoque_baixado = 'estoque_baixado' in simplePeds[0];
         pedidosColumnsChecked = true;
       }
 
@@ -860,6 +865,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
           conferencia_entrega: statusConf,
           conferido_por: p.conferido_por || confLocal?.conferido_por || undefined,
           conferido_em: p.conferido_em || confLocal?.conferido_em || undefined,
+          estoque_baixado: Boolean(p.estoque_baixado),
           criado_em: p.criado_em || new Date().toISOString(),
           atualizado_em: p.atualizado_em || new Date().toISOString(),
         };
@@ -874,7 +880,8 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
 export async function atualizarStatusPedidoSupabase(
   id: number,
   status: StatusPedido,
-  entregador_nome?: string
+  entregador_nome?: string,
+  estoque_baixado?: boolean
 ): Promise<void> {
   try {
     await checkPedidosSchema();
@@ -885,6 +892,9 @@ export async function atualizarStatusPedidoSupabase(
     if (entregador_nome && pedidosCols.entregador_nome) {
       payload.entregador_nome = entregador_nome;
     }
+    if (estoque_baixado !== undefined && pedidosCols.estoque_baixado) {
+      payload.estoque_baixado = estoque_baixado;
+    }
     if (status === 'entregue' && pedidosCols.conferencia_entrega) {
       payload.conferencia_entrega = 'pendente';
     }
@@ -894,11 +904,26 @@ export async function atualizarStatusPedidoSupabase(
       // Fallback sem colunas adicionais para evitar 400 Bad Request se a coluna não existir no Supabase
       pedidosCols.conferencia_entrega = false;
       pedidosCols.entregador_nome = false;
+      pedidosCols.estoque_baixado = false;
       pedidosColumnsChecked = true;
       await supabase.from('pedidos').update({ status }).eq('id', id);
     }
   } catch (err) {
     console.warn('Erro ao atualizar status do pedido no Supabase:', err);
+  }
+}
+
+export async function atualizarPedidoEstoqueBaixadoSupabase(
+  id: number,
+  estoque_baixado: boolean = true
+): Promise<void> {
+  try {
+    await checkPedidosSchema();
+    if (pedidosCols.estoque_baixado) {
+      await supabase.from('pedidos').update({ estoque_baixado }).eq('id', id);
+    }
+  } catch (err) {
+    console.warn('Erro ao atualizar estoque_baixado no Supabase:', err);
   }
 }
 
