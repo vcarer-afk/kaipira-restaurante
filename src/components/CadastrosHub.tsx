@@ -18,6 +18,7 @@ import {
 import { StockManager } from './StockManager';
 import { formatPhone, formatBRL } from '../utils/formatters';
 import { UpperInput, UpperTextarea } from './UpperInput';
+import { converterParaUnidadeBaseEstoque } from '../utils/stockDeduction';
 import {
   salvarUsuarioSupabase,
   excluirUsuarioSupabase,
@@ -150,6 +151,31 @@ export const MODULOS_PERMISSAO_CONFIG: Array<{
   { id: 'configuracoes', label: '12. Configurações', desc: 'Dados da empresa, impressoras e temas', icon: Sliders },
   { id: 'relatorios', label: '13. Relatórios & DRE', desc: 'Fechamento de caixa, DRE, meios de pagamento e canais', icon: FileText },
 ];
+
+export const formatarImpactoKg = (qtdVal: string | number, unid: string): string | null => {
+  const q = typeof qtdVal === 'number' ? qtdVal : parseFloat(String(qtdVal).replace(',', '.'));
+  if (isNaN(q) || q <= 0) return null;
+  const u = (unid || '').toLowerCase().trim();
+  if (u.includes('concha')) {
+    return `≈ ${(q * 0.130).toFixed(3)} kg`;
+  }
+  if (u.includes('colher')) {
+    return `≈ ${(q * 0.070).toFixed(3)} kg`;
+  }
+  if (u.includes('fatia')) {
+    return `≈ ${(q * 0.025).toFixed(3)} kg`;
+  }
+  if (u === 'g' || u === 'gramas') {
+    return `≈ ${(q / 1000).toFixed(3)} kg`;
+  }
+  if (u === 'kg' || u === 'quilos') {
+    return `${q.toFixed(3)} kg`;
+  }
+  if (u === 'ml' || u === 'mililitros') {
+    return `≈ ${(q / 1000).toFixed(3)} L`;
+  }
+  return null;
+};
 
 export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   usuarios,
@@ -687,14 +713,21 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
   const handleAddIngrediente = () => {
     if (!novoIngredienteEstoqueId) return;
     const estItem = estoque.find((e) => e.id === Number(novoIngredienteEstoqueId));
-    const qtdNum = parseFloat(novoIngredienteQtd) || 1;
-    const custoNum = parseFloat(novoIngredienteCusto) || 0;
+    const qtdNum = parseFloat(String(novoIngredienteQtd).replace(',', '.')) || 1;
+    let custoNum = parseFloat(String(novoIngredienteCusto).replace(',', '.')) || 0;
+    const unidEscolhida = novoIngredienteUnidade || estItem?.unidade_medida || 'un';
+
+    // Se o item do estoque tiver custo unitário cadastrado, calcula o custo proporcional real pela conversão
+    if (estItem?.custo_unitario && estItem.custo_unitario > 0) {
+      const equivBase = converterParaUnidadeBaseEstoque(1, unidEscolhida, estItem.unidade_medida || 'un');
+      custoNum = Number((equivBase * Number(estItem.custo_unitario)).toFixed(3));
+    }
 
     const novo: IngredienteComposicao = {
       id: Date.now(),
       item_estoque_id: Number(novoIngredienteEstoqueId),
       quantidade: qtdNum,
-      unidade_medida: novoIngredienteUnidade || estItem?.unidade_medida || 'un',
+      unidade_medida: unidEscolhida,
       item_estoque_nome: estItem?.item_nome,
       custo_unitario: custoNum,
     };
@@ -3931,8 +3964,11 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                     <span className="text-[10px] font-black uppercase text-neutral-400">
                       + Adicionar Ingrediente / Insumo à Ficha Técnica:
                     </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                      <div className="sm:col-span-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start">
+                      <div className="sm:col-span-4">
+                        <label className="text-[10px] text-neutral-400 font-bold uppercase block mb-1">
+                          Insumo do Estoque:
+                        </label>
                         <select
                           value={novoIngredienteEstoqueId}
                           onChange={(e) => {
@@ -3958,6 +3994,9 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                       </div>
 
                       <div className="sm:col-span-2">
+                        <label className="text-[10px] text-neutral-400 font-bold uppercase block mb-1">
+                          Quantidade:
+                        </label>
                         <input
                           type="number"
                           step="any"
@@ -3968,31 +4007,39 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                           className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-white font-mono rounded-lg text-xs text-center"
                           title="Quantidade consumida por porção"
                         />
+                        {formatarImpactoKg(novoIngredienteQtd, novoIngredienteUnidade) && (
+                          <span className="text-[10px] text-amber-400 font-mono font-bold block mt-1 text-center truncate bg-amber-950/40 border border-amber-900/50 rounded px-1 py-0.5">
+                            {formatarImpactoKg(novoIngredienteQtd, novoIngredienteUnidade)}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="sm:col-span-2">
+                      <div className="sm:col-span-3">
+                        <label className="text-[10px] text-neutral-400 font-bold uppercase block mb-1">
+                          Unidade de Medida:
+                        </label>
                         <select
                           value={novoIngredienteUnidade}
                           onChange={(e) => setNovoIngredienteUnidade(e.target.value)}
-                          className="w-full px-2 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-lg text-xs uppercase"
+                          className="w-full px-2 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-lg text-xs"
                         >
-                          <option value="un">un</option>
-                          <option value="g">g</option>
-                          <option value="kg">kg</option>
+                          <option value="un">un (unidade/embalagem)</option>
+                          <option value="g">g (gramas)</option>
+                          <option value="kg">kg (quilos)</option>
                           <option value="ml">ml</option>
                           <option value="l">litro</option>
-                          <option value="fatia">fatia</option>
-                          <option value="concha">concha</option>
-                          <option value="colher">colher</option>
+                          <option value="concha">concha (~130g)</option>
+                          <option value="colher">colher industrial (~70g)</option>
+                          <option value="fatia">fatia (~25g)</option>
                         </select>
                       </div>
 
-                      <div className="sm:col-span-3 flex items-center gap-1.5">
+                      <div className="sm:col-span-3 flex flex-col justify-end pt-5">
                         <button
                           type="button"
                           onClick={handleAddIngrediente}
                           disabled={!novoIngredienteEstoqueId}
-                          className="flex-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:hover:bg-amber-600 text-white rounded-lg text-xs font-black uppercase flex items-center justify-center gap-1 cursor-pointer transition-all"
+                          className="w-full px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:hover:bg-amber-600 text-white rounded-lg text-xs font-black uppercase flex items-center justify-center gap-1 cursor-pointer transition-all shadow-xs"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           <span>Inserir</span>
@@ -4008,7 +4055,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                         <thead className="bg-neutral-850 text-neutral-400 uppercase text-[10px] font-bold border-b border-neutral-800 sticky top-0">
                           <tr>
                             <th className="px-3 py-2">Insumo / Ingrediente</th>
-                            <th className="px-2 py-2 text-center">Qtd</th>
+                            <th className="px-2 py-2 text-center">Qtd / Impacto</th>
                             <th className="px-2 py-2 text-center">Unidade</th>
                             <th className="px-2 py-2 text-right">Custo Un.</th>
                             <th className="px-3 py-2 text-right">Subtotal</th>
@@ -4019,15 +4066,24 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                           {formProdComposicao.map((item, idx) => {
                             const est = estoque.find((e) => e.id === Number(item.item_estoque_id));
                             const subtotal = (Number(item.quantidade) || 0) * (Number(item.custo_unitario) || 0);
+                            const impacto = formatarImpactoKg(item.quantidade, item.unidade_medida);
+
                             return (
                               <tr key={item.id || idx} className="hover:bg-neutral-850/40">
                                 <td className="px-3 py-2 font-bold text-neutral-200 uppercase font-sans">
                                   {item.item_estoque_nome || est?.item_nome || `Insumo #${item.item_estoque_id}`}
                                 </td>
-                                <td className="px-2 py-2 text-center text-white font-bold">
-                                  {item.quantidade}
+                                <td className="px-2 py-2 text-center">
+                                  <div className="flex flex-col items-center">
+                                    <span className="text-white font-bold">{item.quantidade}</span>
+                                    {impacto && (
+                                      <span className="text-[10px] text-amber-400 font-mono font-semibold">
+                                        {impacto}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
-                                <td className="px-2 py-2 text-center text-neutral-400 uppercase">
+                                <td className="px-2 py-2 text-center text-neutral-400 uppercase text-[11px]">
                                   {item.unidade_medida}
                                 </td>
                                 <td className="px-2 py-2 text-right text-neutral-300">

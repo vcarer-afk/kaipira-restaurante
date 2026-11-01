@@ -124,13 +124,6 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
       roles: ['admin', 'atendente'],
     },
     {
-      id: 'estoque' as ActiveTab,
-      label: 'ESTOQUE & INSUMOS',
-      desc: 'Carnes, grãos e estoque mínimo',
-      icon: Boxes,
-      roles: ['admin', 'cozinha'],
-    },
-    {
       id: 'caixa' as ActiveTab,
       label: 'CAIXA DIÁRIO',
       desc: 'Abertura, fechamento e sangrias',

@@ -11,6 +11,62 @@ export interface ItemDeducaoCalculada {
   ficara_abaixo_minimo: boolean;
 }
 
+/**
+ * Conversor matemático de unidades de medida e utensílios industriais de cozinha.
+ * Harmoniza a unidade informada na ficha técnica/receita com a unidade base armazenada no estoque.
+ */
+export const converterParaUnidadeBaseEstoque = (
+  quantidadeReceita: number,
+  unidadeReceita: string,
+  unidadeEstoque: string
+): number => {
+  const uRec = (unidadeReceita || '').toLowerCase().trim();
+  const uEst = (unidadeEstoque || '').toLowerCase().trim();
+
+  // Utensílios Industriais Padrão -> convertidos para KG ou G
+  if (uRec.includes('concha')) {
+    const pesoConchaKg = 0.130; // 130g padrão de concha industrial
+    return uEst === 'g' || uEst === 'gramas' ? quantidadeReceita * 130 : quantidadeReceita * pesoConchaKg;
+  }
+
+  if (uRec.includes('colher')) {
+    const pesoColherKg = 0.070; // 70g (arroz/feijão industrial)
+    return uEst === 'g' || uEst === 'gramas' ? quantidadeReceita * 70 : quantidadeReceita * pesoColherKg;
+  }
+
+  if (uRec.includes('fatia')) {
+    const pesoFatiaKg = 0.025; // 25g por fatia de frios
+    return uEst === 'g' || uEst === 'gramas' ? quantidadeReceita * 25 : quantidadeReceita * pesoFatiaKg;
+  }
+
+  // Gramas para Quilos
+  if ((uRec === 'g' || uRec === 'gramas') && (uEst === 'kg' || uEst === 'quilos')) {
+    return quantidadeReceita / 1000;
+  }
+
+  // Quilos para Gramas (se estoque estiver em g)
+  if ((uRec === 'kg' || uRec === 'quilos') && (uEst === 'g' || uEst === 'gramas')) {
+    return quantidadeReceita * 1000;
+  }
+
+  // Mililitros para Litros
+  if ((uRec === 'ml' || uRec === 'mililitros') && (uEst === 'l' || uEst === 'litro' || uEst === 'litros')) {
+    return quantidadeReceita / 1000;
+  }
+
+  // Litros para Mililitros
+  if ((uRec === 'l' || uRec === 'litro' || uRec === 'litros') && (uEst === 'ml' || uEst === 'mililitros')) {
+    return quantidadeReceita * 1000;
+  }
+
+  // Unidade direta ou equivalentes
+  return quantidadeReceita;
+};
+
+/**
+ * Calcula a dedução total de insumos de um pedido levando em conta produtos prontos,
+ * produtos preparados (com Ficha Técnica) e combos.
+ */
 export const calcularDeducoesDoPedido = (
   pedido: Pedido,
   produtos: Produto[] = [],
@@ -58,7 +114,7 @@ export const calcularDeducoesDoPedido = (
       if (itemEst) {
         const id = itemEst.id;
         const anterior = mapaDeducoes.get(id);
-        const qtdDeb = (anterior ? anterior.quantidade_debitar : 0) + qtdComprada;
+        const qtdDeb = Number(((anterior ? anterior.quantidade_debitar : 0) + qtdComprada).toFixed(3));
 
         mapaDeducoes.set(id, {
           item_estoque_id: id,
@@ -79,15 +135,21 @@ export const calcularDeducoesDoPedido = (
         if (!itemEst) return;
 
         const id = itemEst.id;
-        const qtdNecessaria = (Number(ingrediente.quantidade) || 0) * qtdComprada;
+        // Converte a unidade da receita para a unidade base do estoque (ex: concha -> kg, g -> kg)
+        const qtdConvertida = converterParaUnidadeBaseEstoque(
+          Number(ingrediente.quantidade) || 0,
+          ingrediente.unidade_medida,
+          itemEst.unidade_medida
+        );
+        const qtdNecessaria = qtdConvertida * qtdComprada;
         const anterior = mapaDeducoes.get(id);
-        const qtdDeb = (anterior ? anterior.quantidade_debitar : 0) + qtdNecessaria;
+        const qtdDeb = Number(((anterior ? anterior.quantidade_debitar : 0) + qtdNecessaria).toFixed(3));
 
         mapaDeducoes.set(id, {
           item_estoque_id: id,
           item_nome: itemEst.item_nome,
           quantidade_debitar: qtdDeb,
-          unidade_medida: ingrediente.unidade_medida || itemEst.unidade_medida || 'un',
+          unidade_medida: itemEst.unidade_medida || 'un',
           quantidade_atual: Number(itemEst.quantidade_atual) || 0,
           estoque_minimo: Number(itemEst.estoque_minimo) || 0,
         });
@@ -107,10 +169,12 @@ export const calcularDeducoesDoPedido = (
                 const id = itemEst.id;
                 const deb = (Number(comp.quantidade) || 1) * qtdComprada;
                 const anterior = mapaDeducoes.get(id);
+                const qtdDeb = Number(((anterior ? anterior.quantidade_debitar : 0) + deb).toFixed(3));
+
                 mapaDeducoes.set(id, {
                   item_estoque_id: id,
                   item_nome: itemEst.item_nome,
-                  quantidade_debitar: (anterior ? anterior.quantidade_debitar : 0) + deb,
+                  quantidade_debitar: qtdDeb,
                   unidade_medida: itemEst.unidade_medida || 'un',
                   quantidade_atual: Number(itemEst.quantidade_atual) || 0,
                   estoque_minimo: Number(itemEst.estoque_minimo) || 0,
@@ -123,14 +187,22 @@ export const calcularDeducoesDoPedido = (
                 if (!ing.item_estoque_id) return;
                 const itemEst = mapaEstoque.get(ing.item_estoque_id) || mapaEstoque.get(String(ing.item_estoque_id));
                 if (!itemEst) return;
+
                 const id = itemEst.id;
-                const deb = (Number(ing.quantidade) || 0) * (Number(comp.quantidade) || 1) * qtdComprada;
+                const qtdConvertida = converterParaUnidadeBaseEstoque(
+                  Number(ing.quantidade) || 0,
+                  ing.unidade_medida,
+                  itemEst.unidade_medida
+                );
+                const deb = qtdConvertida * (Number(comp.quantidade) || 1) * qtdComprada;
                 const anterior = mapaDeducoes.get(id);
+                const qtdDeb = Number(((anterior ? anterior.quantidade_debitar : 0) + deb).toFixed(3));
+
                 mapaDeducoes.set(id, {
                   item_estoque_id: id,
                   item_nome: itemEst.item_nome,
-                  quantidade_debitar: (anterior ? anterior.quantidade_debitar : 0) + deb,
-                  unidade_medida: ing.unidade_medida || itemEst.unidade_medida || 'un',
+                  quantidade_debitar: qtdDeb,
+                  unidade_medida: itemEst.unidade_medida || 'un',
                   quantidade_atual: Number(itemEst.quantidade_atual) || 0,
                   estoque_minimo: Number(itemEst.estoque_minimo) || 0,
                 });
@@ -143,9 +215,11 @@ export const calcularDeducoesDoPedido = (
   });
 
   return Array.from(mapaDeducoes.values()).map((d) => {
-    const saldoFinal = d.quantidade_atual - d.quantidade_debitar;
+    const qtdDebFormatada = Number(d.quantidade_debitar.toFixed(3));
+    const saldoFinal = Number((d.quantidade_atual - qtdDebFormatada).toFixed(3));
     return {
       ...d,
+      quantidade_debitar: qtdDebFormatada,
       ficara_negativo: d.quantidade_atual <= 0 || saldoFinal < 0,
       ficara_abaixo_minimo: saldoFinal <= d.estoque_minimo && saldoFinal >= 0,
     };
