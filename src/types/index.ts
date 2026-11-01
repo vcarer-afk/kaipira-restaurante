@@ -175,6 +175,18 @@ export interface ItemEstoque {
   atualizado_em: string;
 }
 
+export interface MovimentacaoEstoque {
+  id: number | string;
+  item_estoque_id: number | string;
+  pedido_id?: number | string | null;
+  tipo_movimentacao: 'saida_kds' | 'ajuste_manual' | 'entrada_compra';
+  quantidade_movimentada: number;
+  saldo_anterior?: number;
+  saldo_posterior?: number;
+  motivo?: string;
+  criado_em?: string;
+}
+
 export interface Mesa {
   id: number;
   numero: number;

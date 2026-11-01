@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { ItemEstoque } from '../types';
+import { ItemEstoque, MovimentacaoEstoque } from '../types';
+import { fetchMovimentacoesItemEstoque, registrarAjusteManualEstoque } from '../services/supabaseClient';
 import { UpperInput } from './UpperInput';
 import {
   Boxes,
@@ -17,6 +18,10 @@ import {
   Cloud,
   CheckCircle,
   RefreshCw,
+  History,
+  FileText,
+  AlertCircle,
+  Calendar,
 } from 'lucide-react';
 
 interface StockManagerProps {
@@ -39,8 +44,20 @@ export const StockManager: React.FC<StockManagerProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [search, setSearch] = useState<string>('');
   const [apenasAlerta, setApenasAlerta] = useState<boolean>(false);
+  const [filtroRapido, setFiltroRapido] = useState<'todos' | 'minimo' | 'negativo'>('todos');
   const [sortMode, setSortMode] = useState<EstoqueSortMode>('nome');
   const [cloudNotification, setCloudNotification] = useState<string | null>(null);
+
+  // Modal 1: Ajuste / Inventário com Auditoria
+  const [inventarioItem, setInventarioItem] = useState<ItemEstoque | null>(null);
+  const [inventarioNovoSaldo, setInventarioNovoSaldo] = useState<string>('');
+  const [inventarioMotivo, setInventarioMotivo] = useState<string>('Contagem física de fim de expediente');
+  const [isSavingInventario, setIsSavingInventario] = useState<boolean>(false);
+
+  // Modal 2: Histórico de Movimentações / Extrato do Insumo
+  const [extratoItem, setExtratoItem] = useState<ItemEstoque | null>(null);
+  const [extratoMovs, setExtratoMovs] = useState<MovimentacaoEstoque[]>([]);
+  const [isLoadingExtrato, setIsLoadingExtrato] = useState<boolean>(false);
 
   // New Item Modal
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -131,15 +148,24 @@ export const StockManager: React.FC<StockManagerProps> = ({
     }
   }, [estoqueProp]);
 
-  // Alert counter
-  const alertItemsCount = useMemo(
+  // Alert counters
+  const totalNegativos = useMemo(
+    () => items.filter((it) => it.quantidade_atual <= 0).length,
+    [items]
+  );
+
+  const totalAbaixoMinimo = useMemo(
     () => items.filter((it) => it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo).length,
     [items]
   );
 
+  const alertItemsCount = totalAbaixoMinimo;
+
   // Filtered & Sorted items
   const filteredAndSortedEstoque = useMemo(() => {
     let result = items.filter((it) => {
+      if (filtroRapido === 'minimo' && (it.estoque_minimo <= 0 || it.quantidade_atual > it.estoque_minimo)) return false;
+      if (filtroRapido === 'negativo' && it.quantidade_atual > 0) return false;
       if (apenasAlerta && (it.estoque_minimo <= 0 || it.quantidade_atual > it.estoque_minimo)) return false;
       if (search) {
         const query = search.toLowerCase();
@@ -156,16 +182,67 @@ export const StockManager: React.FC<StockManagerProps> = ({
       result.sort((a, b) => b.id - a.id);
     } else if (sortMode === 'critico') {
       result.sort((a, b) => {
-        const aCritical = a.estoque_minimo > 0 && a.quantidade_atual <= a.estoque_minimo;
-        const bCritical = b.estoque_minimo > 0 && b.quantidade_atual <= b.estoque_minimo;
-        if (aCritical && !bCritical) return -1;
-        if (!aCritical && bCritical) return 1;
+        if (a.quantidade_atual <= 0 && b.quantidade_atual > 0) return -1;
+        if (a.quantidade_atual > 0 && b.quantidade_atual <= 0) return 1;
         return a.quantidade_atual - b.quantidade_atual;
       });
     }
 
     return result;
-  }, [items, apenasAlerta, search, sortMode]);
+  }, [items, filtroRapido, apenasAlerta, search, sortMode]);
+
+  const handleOpenInventario = (it: ItemEstoque) => {
+    setInventarioItem(it);
+    setInventarioNovoSaldo(String(it.quantidade_atual));
+    setInventarioMotivo('Contagem física de fim de expediente');
+  };
+
+  const handleConfirmInventario = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inventarioItem || isSavingInventario) return;
+
+    const novoSaldo = parseFloat(inventarioNovoSaldo.replace(',', '.'));
+    if (isNaN(novoSaldo)) return;
+
+    setIsSavingInventario(true);
+    try {
+      await registrarAjusteManualEstoque(inventarioItem.id, novoSaldo, inventarioMotivo);
+
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === inventarioItem.id
+            ? { ...it, quantidade_atual: novoSaldo, atualizado_em: new Date().toISOString() }
+            : it
+        )
+      );
+
+      if (onUpdateItem) {
+        onUpdateItem(inventarioItem.id, { quantidade_atual: novoSaldo });
+      }
+
+      showNotification(`Estoque de ${inventarioItem.item_nome} ajustado para ${novoSaldo} ${inventarioItem.unidade_medida.toUpperCase()}!`);
+      setInventarioItem(null);
+    } catch (err: any) {
+      console.error('Erro ao ajustar estoque:', err);
+      alert('Erro ao registrar ajuste: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsSavingInventario(false);
+    }
+  };
+
+  const handleOpenExtrato = async (it: ItemEstoque) => {
+    setExtratoItem(it);
+    setIsLoadingExtrato(true);
+    try {
+      const movs = await fetchMovimentacoesItemEstoque(it.id);
+      setExtratoMovs(movs);
+    } catch (err) {
+      console.warn('Erro ao carregar extrato de insumo:', err);
+      setExtratoMovs([]);
+    } finally {
+      setIsLoadingExtrato(false);
+    }
+  };
 
   /**
    * 2. Inserir novo insumo diretamente no Supabase (.insert()) - 100% Nuvem
@@ -589,6 +666,60 @@ export const StockManager: React.FC<StockManagerProps> = ({
         </div>
       )}
 
+      {/* Quick Filters Bar: [Todos] | [⚠️ Abaixo do Mínimo] | [🚨 Saldo Negativo / Zerado] */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-neutral-900/60 p-2.5 rounded-2xl border border-neutral-800">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFiltroRapido('todos')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+              filtroRapido === 'todos'
+                ? 'bg-amber-500 text-neutral-950 shadow-sm font-black'
+                : 'bg-neutral-850 hover:bg-neutral-800 text-neutral-300 border border-neutral-700/60'
+            }`}
+          >
+            <span>Todos</span>
+            <span className="text-[10px] px-1.5 py-0.5 bg-black/25 rounded font-mono">
+              {items.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFiltroRapido('minimo')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+              filtroRapido === 'minimo'
+                ? 'bg-amber-600 text-white shadow-sm font-black'
+                : 'bg-neutral-850 hover:bg-neutral-800 text-amber-400 border border-amber-900/40'
+            }`}
+          >
+            <span>⚠️ Abaixo do Mínimo</span>
+            <span className="text-[10px] px-1.5 py-0.5 bg-amber-950/60 rounded font-mono text-amber-200">
+              {totalAbaixoMinimo}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFiltroRapido('negativo')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+              filtroRapido === 'negativo'
+                ? 'bg-red-600 text-white shadow-sm font-black'
+                : 'bg-neutral-850 hover:bg-neutral-800 text-red-400 border border-red-900/40'
+            }`}
+          >
+            <span>🚨 Saldo Negativo / Zerado</span>
+            <span className="text-[10px] px-1.5 py-0.5 bg-red-950/60 rounded font-mono text-red-200">
+              {totalNegativos}
+            </span>
+          </button>
+        </div>
+
+        <div className="text-[11px] text-neutral-400 font-mono">
+          Exibindo <strong>{filteredAndSortedEstoque.length}</strong> de {items.length} itens
+        </div>
+      </div>
+
       {/* Filter, Search & Sorting Bar */}
       <div className="bg-neutral-850 p-3 sm:p-4 rounded-2xl border border-neutral-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-xs">
         <div className="relative flex-1">
@@ -646,29 +777,47 @@ export const StockManager: React.FC<StockManagerProps> = ({
           {/* MOBILE CARDS VIEW (Visible on small screens) */}
           <div className="grid grid-cols-1 gap-2.5 sm:hidden">
             {filteredAndSortedEstoque.map((it) => {
-              const isAlert = it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo;
+              const isNegativo = it.quantidade_atual < 0;
+              const isAbaixoMinimo = !isNegativo && it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo;
 
               return (
                 <div
                   key={it.id}
                   className={`p-3.5 rounded-xl border transition-all ${
-                    isAlert ? 'bg-red-950/20 border-red-800/80 shadow-xs' : 'bg-neutral-850 border-neutral-800'
+                    isNegativo
+                      ? 'bg-red-950/40 border-red-700/80 shadow-md ring-1 ring-red-700/50'
+                      : isAbaixoMinimo
+                      ? 'bg-amber-950/30 border-amber-700/70 shadow-xs'
+                      : 'bg-neutral-850 border-neutral-800'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <div>
-                      <span className="font-bold text-white uppercase text-xs block leading-tight">
-                        {it.item_nome}
-                      </span>
+                    <div className="min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenExtrato(it)}
+                        className="text-left group flex items-center gap-1.5 cursor-pointer"
+                        title="Ver extrato de movimentações"
+                      >
+                        <span className="font-bold text-white uppercase text-xs block leading-tight group-hover:text-amber-400 transition-colors truncate">
+                          {it.item_nome}
+                        </span>
+                        <History className="w-3.5 h-3.5 text-neutral-400 group-hover:text-amber-400 shrink-0 transition-colors" />
+                      </button>
                       <span className="text-[10px] text-neutral-400 uppercase mt-0.5 block">
                         {it.fornecedor_info || 'COMPRA LOCAL (PIRACICABA)'}
                       </span>
                     </div>
 
-                    {isAlert ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase bg-red-950 text-red-400 border border-red-800 shrink-0">
-                        <AlertTriangle className="w-3 h-3" />
-                        Crítico
+                    {isNegativo ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase bg-red-950 text-red-300 border border-red-600 shrink-0 animate-pulse">
+                        <AlertCircle className="w-3 h-3 text-red-400" />
+                        Saldo Negativo
+                      </span>
+                    ) : isAbaixoMinimo ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-950 text-amber-300 border border-amber-700 shrink-0">
+                        <AlertTriangle className="w-3 h-3 text-amber-400" />
+                        Abaixo Mínimo
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-950 text-emerald-400 border border-emerald-900 shrink-0">
@@ -682,7 +831,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                   <div className="flex items-center justify-between py-2 border-t border-b border-neutral-800/80 my-2 text-xs">
                     <div>
                       <span className="text-[10px] text-neutral-400 uppercase block font-bold">Qtd Atual</span>
-                      <span className={`text-sm font-black font-mono ${isAlert ? 'text-red-400' : 'text-white'}`}>
+                      <span className={`text-sm font-black font-mono ${isNegativo ? 'text-red-400' : isAbaixoMinimo ? 'text-amber-400' : 'text-white'}`}>
                         {it.quantidade_atual} {it.unidade_medida.toUpperCase()}
                       </span>
                     </div>
@@ -719,9 +868,9 @@ export const StockManager: React.FC<StockManagerProps> = ({
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => handleOpenAdjust(it)}
-                        className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-amber-400 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1"
-                        title="Ajuste rápido"
+                        onClick={() => handleOpenInventario(it)}
+                        className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 shadow-xs cursor-pointer"
+                        title="Acerto rápido de inventário físico com auditoria"
                       >
                         <Sliders className="w-3 h-3" />
                         <span>Ajustar</span>
@@ -729,9 +878,18 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
                       <button
                         type="button"
+                        onClick={() => handleOpenExtrato(it)}
+                        className="p-1.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 hover:text-amber-400 border border-neutral-700 rounded-lg cursor-pointer"
+                        title="Ver histórico de movimentações"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleOpenFullEdit(it)}
                         className="p-1.5 bg-neutral-800 hover:bg-neutral-750 text-white border border-neutral-700 rounded-lg"
-                        title="Editar insumo"
+                        title="Editar cadastro completo do insumo"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
@@ -762,24 +920,39 @@ export const StockManager: React.FC<StockManagerProps> = ({
                     <th className="p-3.5 text-right">Estoque Mínimo</th>
                     <th className="p-3.5 text-center">Status</th>
                     <th className="p-3.5">Fornecedor / Origem</th>
-                    <th className="p-3.5 text-right">Ações & Ajuste Rápido</th>
+                    <th className="p-3.5 text-right">Ações & Ajuste de Inventário</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800">
                   {filteredAndSortedEstoque.map((it) => {
-                    const isAlert = it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo;
+                    const isNegativo = it.quantidade_atual < 0;
+                    const isAbaixoMinimo = !isNegativo && it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo;
 
                     return (
                       <tr
                         key={it.id}
                         className={`hover:bg-neutral-800/40 transition-colors ${
-                          isAlert ? 'bg-red-950/20' : ''
+                          isNegativo
+                            ? 'bg-red-950/30 ring-1 ring-red-800/40'
+                            : isAbaixoMinimo
+                            ? 'bg-amber-950/20'
+                            : ''
                         }`}
                       >
-                        {/* Name */}
+                        {/* Name with Extrato Click */}
                         <td className="p-3.5 font-bold text-white uppercase">
                           <div className="flex flex-col">
-                            <span>{it.item_nome}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenExtrato(it)}
+                              className="text-left group flex items-center gap-1.5 cursor-pointer"
+                              title="Clique para ver o extrato de movimentações deste insumo"
+                            >
+                              <span className="group-hover:text-amber-400 transition-colors">
+                                {it.item_nome}
+                              </span>
+                              <History className="w-3.5 h-3.5 text-neutral-500 group-hover:text-amber-400 shrink-0 transition-colors" />
+                            </button>
                             <span className="text-[10px] text-neutral-400 font-mono">
                               CÓD: #{it.id}
                             </span>
@@ -788,7 +961,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
                         {/* Current Quantity */}
                         <td className="p-3.5 text-right tabular-nums">
-                          <span className={`text-sm font-black font-mono ${isAlert ? 'text-red-400' : 'text-white'}`}>
+                          <span className={`text-sm font-black font-mono ${isNegativo ? 'text-red-400 font-extrabold' : isAbaixoMinimo ? 'text-amber-400' : 'text-white'}`}>
                             {it.quantidade_atual} {it.unidade_medida.toUpperCase()}
                           </span>
                         </td>
@@ -802,9 +975,14 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
                         {/* Status Indicator */}
                         <td className="p-3.5 text-center">
-                          {isAlert ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-black uppercase bg-red-950 text-red-400 border border-red-800">
-                              <AlertTriangle className="w-3 h-3" />
+                          {isNegativo ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-black uppercase bg-red-950 text-red-300 border border-red-700 animate-pulse">
+                              <AlertCircle className="w-3 h-3 text-red-400" />
+                              Saldo Negativo
+                            </span>
+                          ) : isAbaixoMinimo ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-black uppercase bg-amber-950 text-amber-300 border border-amber-700">
+                              <AlertTriangle className="w-3 h-3 text-amber-400" />
                               Repor Urgente
                             </span>
                           ) : (
@@ -841,14 +1019,25 @@ export const StockManager: React.FC<StockManagerProps> = ({
                               <Plus className="w-3 h-3" />
                             </button>
 
-                            {/* Adjust Modal */}
+                            {/* Acerto Rápido de Inventário [Ajustar] */}
                             <button
                               type="button"
-                              onClick={() => handleOpenAdjust(it)}
-                              className="p-1.5 bg-neutral-800 hover:bg-amber-900/50 text-neutral-300 hover:text-amber-300 border border-neutral-700 rounded-lg cursor-pointer"
-                              title="Ajuste rápido de estoque e mínimo"
+                              onClick={() => handleOpenInventario(it)}
+                              className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                              title="Acerto rápido de saldo contado (Físico/Inventário) com registro de auditoria"
                             >
                               <Sliders className="w-3.5 h-3.5" />
+                              <span>Ajustar</span>
+                            </button>
+
+                            {/* Extrato / Histórico */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenExtrato(it)}
+                              className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-amber-400 border border-neutral-700 rounded-lg cursor-pointer"
+                              title="Extrato de movimentações do insumo"
+                            >
+                              <History className="w-3.5 h-3.5" />
                             </button>
 
                             {/* Full Edit Modal */}
@@ -856,7 +1045,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                               type="button"
                               onClick={() => handleOpenFullEdit(it)}
                               className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 rounded-lg cursor-pointer"
-                              title="Alterar cadastro do insumo"
+                              title="Alterar cadastro completo do insumo"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -1295,6 +1484,282 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* MODAL: ACERTO RÁPIDO DE INVENTÁRIO (COM REGISTRO DE AUDITORIA) */}
+      {inventarioItem && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <form
+            onSubmit={handleConfirmInventario}
+            className="bg-neutral-850 rounded-2xl border border-neutral-700 max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-amber-500" />
+                <h3 className="text-sm font-black text-white uppercase">
+                  Acerto de Inventário Físico
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInventarioItem(null)}
+                className="text-neutral-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Insumo Info & Current Balance Card */}
+            <div className={`p-3.5 rounded-xl border ${
+              inventarioItem.quantidade_atual < 0
+                ? 'bg-red-950/40 border-red-700/80'
+                : 'bg-neutral-900 border-neutral-800'
+            }`}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <span className="text-xs font-bold text-white uppercase block">
+                    {inventarioItem.item_nome}
+                  </span>
+                  <span className="text-[11px] text-neutral-400 font-mono mt-0.5 block">
+                    Estoque Mínimo: {inventarioItem.estoque_minimo} {inventarioItem.unidade_medida.toUpperCase()}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-neutral-400 uppercase block font-bold">Saldo Atual</span>
+                  <span className={`text-base font-black font-mono ${
+                    inventarioItem.quantidade_atual < 0 ? 'text-red-400 animate-pulse' : 'text-white'
+                  }`}>
+                    {inventarioItem.quantidade_atual} {inventarioItem.unidade_medida.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              {inventarioItem.quantidade_atual < 0 && (
+                <div className="mt-2 pt-2 border-t border-red-800/40 text-[11px] text-red-300 flex items-center gap-1.5 font-bold">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+                  <span>Item operou no negativo após saídas da cozinha. Informe a contagem física real.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Input: Novo Saldo Contado (Físico) */}
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                NOVO SALDO CONTADO (FÍSICO) EM {inventarioItem.unidade_medida.toUpperCase()}: *
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                autoFocus
+                value={inventarioNovoSaldo}
+                onChange={(e) => setInventarioNovoSaldo(e.target.value)}
+                placeholder="Ex: 10"
+                className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-700 text-white font-mono text-base font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              {/* Calculated Delta */}
+              {inventarioNovoSaldo !== '' && !isNaN(parseFloat(inventarioNovoSaldo.replace(',', '.'))) && (
+                <div className="mt-1.5 text-[11px] font-mono text-neutral-400 flex items-center justify-between">
+                  <span>Variação resultante:</span>
+                  <span className={`font-bold ${
+                    (parseFloat(inventarioNovoSaldo.replace(',', '.')) - inventarioItem.quantidade_atual) >= 0
+                      ? 'text-emerald-400'
+                      : 'text-red-400'
+                  }`}>
+                    {(parseFloat(inventarioNovoSaldo.replace(',', '.')) - inventarioItem.quantidade_atual) >= 0 ? '+' : ''}
+                    {(parseFloat(inventarioNovoSaldo.replace(',', '.')) - inventarioItem.quantidade_atual).toFixed(2)} {inventarioItem.unidade_medida.toUpperCase()}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Motivo do Ajuste com Sugestões Rápidas */}
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">
+                MOTIVO DO AJUSTE (AUDITORIA):
+              </label>
+              <input
+                type="text"
+                value={inventarioMotivo}
+                onChange={(e) => setInventarioMotivo(e.target.value)}
+                placeholder="Ex: Contagem / Inventário Físico"
+                className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500 mb-2 uppercase"
+              />
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  'Contagem / Inventário Físico',
+                  'Entrada de Fornecedor',
+                  'Correção de Baixa Indevida',
+                  'Descarte / Avaria'
+                ].map((sugestao) => (
+                  <button
+                    key={sugestao}
+                    type="button"
+                    onClick={() => setInventarioMotivo(sugestao)}
+                    className="px-2 py-1 rounded-lg text-[10px] font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700/60 transition-colors cursor-pointer"
+                  >
+                    {sugestao}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setInventarioItem(null)}
+                className="px-4 py-2 text-xs font-semibold text-neutral-400 hover:text-white cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingInventario || inventarioNovoSaldo === ''}
+                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold uppercase transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50 shadow-md"
+              >
+                <Check className="w-4 h-4" />
+                <span>{isSavingInventario ? 'Gravando...' : 'Confirmar Acerto'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL / DRAWER: EXTRATO DE MOVIMENTAÇÕES DO INSUMO */}
+      {extratoItem && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-neutral-850 rounded-2xl border border-neutral-700 max-w-xl w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-amber-500" />
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase">
+                    Extrato de Movimentações
+                  </h3>
+                  <span className="text-[11px] text-neutral-400 font-mono block">
+                    {extratoItem.item_nome} · CÓD #{extratoItem.id}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExtratoItem(null)}
+                className="text-neutral-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Current Balance Summary Bar */}
+            <div className="bg-neutral-900 p-3 rounded-xl border border-neutral-800 flex items-center justify-between shrink-0">
+              <div>
+                <span className="text-[10px] text-neutral-400 uppercase font-bold block">Saldo Atual no Estoque</span>
+                <span className={`text-base font-black font-mono ${extratoItem.quantidade_atual < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                  {extratoItem.quantidade_atual} {extratoItem.unidade_medida.toUpperCase()}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const it = extratoItem;
+                  setExtratoItem(null);
+                  handleOpenInventario(it);
+                }}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold uppercase flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Ajustar Saldo</span>
+              </button>
+            </div>
+
+            {/* History List */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[220px]">
+              {isLoadingExtrato ? (
+                <div className="p-8 text-center text-neutral-400 space-y-2">
+                  <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-xs uppercase font-bold">Carregando movimentações do Supabase...</p>
+                </div>
+              ) : extratoMovs.length === 0 ? (
+                <div className="p-8 text-center text-neutral-400 space-y-1 bg-neutral-900/60 rounded-xl border border-neutral-800">
+                  <FileText className="w-8 h-8 text-neutral-600 mx-auto" />
+                  <p className="text-xs font-bold uppercase">Nenhuma movimentação registrada ainda</p>
+                  <p className="text-[11px] text-neutral-500">
+                    As movimentações ocorrem automaticamente nas baixas do KDS ou em ajustes manuais.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-neutral-800 border border-neutral-800 rounded-xl overflow-hidden">
+                  {extratoMovs.map((m) => {
+                    const isPositive = m.quantidade_movimentada > 0;
+                    const isKds = m.tipo_movimentacao === 'saida_kds';
+                    const isCompra = m.tipo_movimentacao === 'entrada_compra';
+                    const isAjuste = m.tipo_movimentacao === 'ajuste_manual';
+
+                    return (
+                      <div
+                        key={m.id}
+                        className="p-3 bg-neutral-900 hover:bg-neutral-850/80 transition-colors flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                              isKds
+                                ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                                : isCompra
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                : 'bg-amber-950 text-amber-300 border border-amber-800'
+                            }`}>
+                              {isKds ? 'Baixa Cozinha (KDS)' : isCompra ? 'Entrada Compra' : 'Ajuste Manual'}
+                            </span>
+                            {m.pedido_id && (
+                              <span className="text-[10px] text-neutral-400 font-mono">
+                                Pedido #{m.pedido_id}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-neutral-400">
+                            {m.motivo || (isKds ? `Pedido #${m.pedido_id}` : 'Movimentação de estoque')}
+                          </div>
+                          {m.criado_em && (
+                            <span className="text-[10px] text-neutral-500 font-mono">
+                              {new Date(m.criado_em).toLocaleString('pt-BR')}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div className={`font-black font-mono text-sm ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {isPositive ? '+' : ''}{m.quantidade_movimentada} {extratoItem.unidade_medida.toUpperCase()}
+                          </div>
+                          {m.saldo_posterior !== undefined && m.saldo_posterior !== null && (
+                            <div className="text-[10px] text-neutral-400 font-mono">
+                              Saldo: <strong>{m.saldo_posterior} {extratoItem.unidade_medida.toUpperCase()}</strong>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-neutral-800 shrink-0 text-xs">
+              <span className="text-[11px] text-neutral-500">
+                Últimas {extratoMovs.length} movimentações auditadas
+              </span>
+              <button
+                type="button"
+                onClick={() => setExtratoItem(null)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-xl font-bold uppercase transition-colors cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

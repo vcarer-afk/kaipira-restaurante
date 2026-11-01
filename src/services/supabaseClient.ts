@@ -23,6 +23,7 @@ import {
   ItemPedido,
   Pagamento,
   IngredienteComposicao,
+  MovimentacaoEstoque,
 } from '../types';
 import {
   INITIAL_CONFIGURACOES,
@@ -3237,9 +3238,14 @@ export const processarBaixaEstoquePedido = async (
   pedidoId: number | string,
   deducoes: ItemDeducaoCalculada[]
 ) => {
-  // 1. Atualizar quantidades de cada item de stock
+  // 1. Atualizar quantidades de cada item de stock e registrar histórico
+  const novasMovimentacoes: MovimentacaoEstoque[] = [];
+
   for (const d of deducoes) {
-    const novoSaldo = Number((Number(d.quantidade_atual) - Number(d.quantidade_debitar)).toFixed(2));
+    const saldoAnterior = Number(d.quantidade_atual) || 0;
+    const debito = Number(d.quantidade_debitar) || 0;
+    const novoSaldo = Number((saldoAnterior - debito).toFixed(2));
+
     try {
       await supabase
         .from('estoque')
@@ -3251,6 +3257,57 @@ export const processarBaixaEstoquePedido = async (
     } catch (err) {
       console.warn(`[Supabase] Erro ao debitar insumo #${d.item_estoque_id}:`, err);
     }
+
+    const movRow: MovimentacaoEstoque = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      item_estoque_id: d.item_estoque_id,
+      pedido_id: pedidoId,
+      tipo_movimentacao: 'saida_kds',
+      quantidade_movimentada: -debito,
+      saldo_anterior: saldoAnterior,
+      saldo_posterior: novoSaldo,
+      motivo: `Baixa automática KDS - Pedido #${pedidoId}`,
+      criado_em: new Date().toISOString(),
+    };
+
+    novasMovimentacoes.push(movRow);
+
+    // Registra na tabela estoque_movimentacoes se disponível
+    try {
+      await supabase.from('estoque_movimentacoes').insert({
+        item_estoque_id: d.item_estoque_id,
+        pedido_id: pedidoId,
+        tipo_movimentacao: 'saida_kds',
+        quantidade_movimentada: -debito,
+        saldo_anterior: saldoAnterior,
+        saldo_posterior: novoSaldo,
+        motivo: `Baixa automática KDS - Pedido #${pedidoId}`,
+      });
+    } catch (err) {
+      // Falha silenciosa em caso de ausência da tabela
+    }
+  }
+
+  // Backup das movimentações no payload de configuracoes.dados
+  if (novasMovimentacoes.length > 0) {
+    try {
+      const { data: conf } = await supabase
+        .from('configuracoes')
+        .select('dados')
+        .eq('id', 1)
+        .maybeSingle();
+
+      const existingDados = conf?.dados || {};
+      const existingMovs = Array.isArray(existingDados.estoque_movimentacoes) ? existingDados.estoque_movimentacoes : [];
+      await supabase.from('configuracoes').upsert({
+        id: 1,
+        dados: {
+          ...existingDados,
+          estoque_movimentacoes: [...novasMovimentacoes, ...existingMovs].slice(0, 500),
+        },
+        atualizado_em: new Date().toISOString(),
+      }, { onConflict: 'id' });
+    } catch {}
   }
 
   // 2. Marcar o pedido como baixado e pronto
@@ -3267,3 +3324,127 @@ export const processarBaixaEstoquePedido = async (
     console.warn(`[Supabase] Erro ao marcar pedido #${pedidoId} como pronto/baixado:`, err);
   }
 };
+
+/**
+ * Busca o histórico recente de movimentações de um item de estoque (Etapa 3)
+ */
+export const fetchMovimentacoesItemEstoque = async (itemEstoqueId: number | string): Promise<MovimentacaoEstoque[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('estoque_movimentacoes')
+      .select('*')
+      .eq('item_estoque_id', itemEstoqueId)
+      .order('criado_em', { ascending: false })
+      .limit(30);
+
+    if (!error && data && data.length > 0) {
+      return data;
+    }
+  } catch (err) {
+    console.warn('[Supabase] Tabela estoque_movimentacoes não consultada diretamente, tentando backup:', err);
+  }
+
+  // Fallback no payload de configuracoes.dados.estoque_movimentacoes
+  try {
+    const { data: conf } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    const historico: MovimentacaoEstoque[] = conf?.dados?.estoque_movimentacoes || [];
+    return historico
+      .filter((m) => String(m.item_estoque_id) === String(itemEstoqueId))
+      .sort((a, b) => new Date(b.criado_em || 0).getTime() - new Date(a.criado_em || 0).getTime())
+      .slice(0, 30);
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Registra um ajuste manual de estoque com auditoria (Etapa 3)
+ */
+export const registrarAjusteManualEstoque = async (
+  itemEstoqueId: number | string,
+  novoSaldo: number,
+  motivo: string
+) => {
+  // 1. Obter saldo anterior
+  let saldoAnterior = 0;
+  try {
+    const { data: item } = await supabase
+      .from('estoque')
+      .select('quantidade_atual')
+      .eq('id', itemEstoqueId)
+      .single();
+
+    if (item) {
+      saldoAnterior = Number(item.quantidade_atual) || 0;
+    }
+  } catch (err) {
+    console.warn('[Supabase] Erro ao obter saldo anterior do estoque:', err);
+  }
+
+  const diferenca = Number((novoSaldo - saldoAnterior).toFixed(2));
+  const novaMovimentacao: MovimentacaoEstoque = {
+    id: Date.now(),
+    item_estoque_id: itemEstoqueId,
+    tipo_movimentacao: 'ajuste_manual',
+    quantidade_movimentada: diferenca,
+    saldo_anterior: saldoAnterior,
+    saldo_posterior: novoSaldo,
+    motivo: motivo || 'Ajuste manual de inventário',
+    criado_em: new Date().toISOString(),
+  };
+
+  // 2. Atualizar estoque
+  try {
+    await supabase
+      .from('estoque')
+      .update({
+        quantidade_atual: novoSaldo,
+        atualizado_em: new Date().toISOString(),
+      })
+      .eq('id', itemEstoqueId);
+  } catch (err) {
+    console.warn('[Supabase] Erro ao atualizar saldo na tabela estoque:', err);
+  }
+
+  // 3. Gravar histórico na tabela estoque_movimentacoes
+  try {
+    await supabase
+      .from('estoque_movimentacoes')
+      .insert({
+        item_estoque_id: itemEstoqueId,
+        tipo_movimentacao: 'ajuste_manual',
+        quantidade_movimentada: diferenca,
+        saldo_anterior: saldoAnterior,
+        saldo_posterior: novoSaldo,
+        motivo: motivo || 'Ajuste manual de inventário',
+      });
+  } catch (err) {
+    console.warn('[Supabase] Tabela estoque_movimentacoes indisponível para insert:', err);
+  }
+
+  // Backup em configuracoes.dados.estoque_movimentacoes
+  try {
+    const { data: conf } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    const existingDados = conf?.dados || {};
+    const existingMovs = Array.isArray(existingDados.estoque_movimentacoes) ? existingDados.estoque_movimentacoes : [];
+    await supabase.from('configuracoes').upsert({
+      id: 1,
+      dados: {
+        ...existingDados,
+        estoque_movimentacoes: [novaMovimentacao, ...existingMovs].slice(0, 500),
+      },
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  } catch {}
+};
+
