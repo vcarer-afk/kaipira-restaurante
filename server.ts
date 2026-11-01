@@ -21,7 +21,17 @@ import { Pedido, Mesa, Cliente, Produto, ItemEstoque, CaixaDiario, Reserva, Form
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 3000;
+// Suporte a argumentos CLI (--port XXXX, --host XXXX) e variáveis de ambiente
+const getArgValue = (argName: string): string | undefined => {
+  const idx = process.argv.indexOf(argName);
+  if (idx !== -1 && idx + 1 < process.argv.length) {
+    return process.argv[idx + 1];
+  }
+  return undefined;
+};
+
+const PORT = Number(getArgValue('--port') || process.env.PORT || 3000);
+const HOST = getArgValue('--host') || process.env.HOST || '0.0.0.0';
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'kaipira_cloud_db.json');
 const DB_BACKUP_FILE = path.join(DATA_DIR, 'kaipira_cloud_db.json.bak');
@@ -1009,7 +1019,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE caixa_diario;
   const isDev = process.env.NODE_ENV !== 'production';
   if (isDev) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR !== 'true' ? { port: 24679 } : false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -1023,10 +1036,36 @@ ALTER PUBLICATION supabase_realtime ADD TABLE caixa_diario;
     }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Restaurante Kaipira] Servidor em nuvem rodando na porta ${PORT}`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`[Restaurante Kaipira] Servidor em nuvem rodando em http://${HOST}:${PORT}`);
   });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[Restaurante Kaipira] Porta ${PORT} em uso. Aguardando liberação...`);
+    } else {
+      console.error('[Restaurante Kaipira] Erro no servidor:', err);
+    }
+  });
+
+  const shutdown = () => {
+    console.log('[Restaurante Kaipira] Encerrando servidor de forma graciosa...');
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('[Restaurante Kaipira] Exceção não tratada:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Restaurante Kaipira] Rejeição de Promise não tratada:', reason);
+});
 
 startServer().catch((err) => {
   console.error('Falha ao iniciar o servidor:', err);
