@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Pedido, StatusPedido, Produto, ItemEstoque } from '../types';
 import { formatTime, playAlertChime, isSalaoPedido } from '../utils/formatters';
+import { ItemDeducaoCalculada, calcularDeducoesDoPedido } from '../utils/stockDeduction';
+import { processarBaixaEstoquePedido } from '../services/supabaseClient';
 import {
   Clock,
   ChefHat,
@@ -33,13 +35,6 @@ interface ToastAlert {
   tipo: 'alerta' | 'aviso';
 }
 
-interface ConfirmZeroModalData {
-  pedido: Pedido;
-  itemZerado: ItemEstoque;
-  saldoAtual: number;
-  todosDebitos: Array<{ item: ItemEstoque; debitQty: number }>;
-}
-
 export const KitchenKDS: React.FC<KitchenKDSProps> = ({
   pedidos,
   produtos,
@@ -64,7 +59,11 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
   const [retiradosLocais, setRetiradosLocais] = useState<number[]>([]);
 
   // Diálogo de confirmação para insumos zerados ou negativos
-  const [confirmZeroModal, setConfirmZeroModal] = useState<ConfirmZeroModalData | null>(null);
+  const [pedidoPendenteConfirmacao, setPedidoPendenteConfirmacao] = useState<{
+    pedido: Pedido;
+    insumosCriticos: ItemDeducaoCalculada[];
+    todasDeducoes: ItemDeducaoCalculada[];
+  } | null>(null);
 
   // Alertas toast para avisos de estoque mínimo
   const [toastAlerts, setToastAlerts] = useState<ToastAlert[]>([]);
@@ -90,122 +89,6 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
   };
 
   /**
-   * Mapeia os insumos que devem ser debitados do estoque para o pedido
-   */
-  const mapearDebitosPedido = (
-    pedido: Pedido,
-    listaEstoque: ItemEstoque[]
-  ): Array<{ item: ItemEstoque; debitQty: number }> => {
-    if (!listaEstoque || listaEstoque.length === 0) return [];
-    const debitMap = new Map<number, { item: ItemEstoque; debitQty: number }>();
-
-    const addDebit = (item: ItemEstoque, qtd: number) => {
-      const existing = debitMap.get(item.id);
-      if (existing) {
-        existing.debitQty += qtd;
-      } else {
-        debitMap.set(item.id, { item, debitQty: qtd });
-      }
-    };
-
-    // 1. Embalagem térmica de marmitex (Delivery ou refeições marmitex)
-    const totalMarmitasOuDelivery = pedido.itens.reduce((acc, it) => {
-      const nome = (it.produto_nome || '').toUpperCase();
-      if (nome.includes('MARMITEX') || nome.includes('EXECUTIV') || pedido.tipo === 'delivery') {
-        return acc + (Number(it.quantidade) || 1);
-      }
-      return acc;
-    }, 0);
-
-    if (totalMarmitasOuDelivery > 0) {
-      const embItem = listaEstoque.find(
-        (e) =>
-          e.item_nome.includes('EMBALAGEM') ||
-          e.item_nome.includes('MARMITEX')
-      );
-      if (embItem) {
-        addDebit(embItem, totalMarmitasOuDelivery);
-      }
-    }
-
-    // 2. Mapeamento por produtos e receitas típicas da culinária Kaipira
-    pedido.itens.forEach((it) => {
-      const nome = (it.produto_nome || '').toUpperCase();
-      const qtd = Number(it.quantidade) || 1;
-
-      // Correspondência direta
-      const direto = listaEstoque.find(
-        (e) =>
-          e.item_nome === nome ||
-          nome.includes(e.item_nome) ||
-          e.item_nome.includes(nome)
-      );
-      if (direto) {
-        addDebit(direto, qtd);
-        return;
-      }
-
-      // Insumos por prato típico
-      if (nome.includes('FEIJOADA')) {
-        const feijaoPreto = listaEstoque.find((e) => e.item_nome.includes('FEIJÃO PRETO'));
-        const torresmo = listaEstoque.find((e) => e.item_nome.includes('TORRESMO') || e.item_nome.includes('BARRIGA'));
-        const couve = listaEstoque.find((e) => e.item_nome.includes('COUVE'));
-        if (feijaoPreto) addDebit(feijaoPreto, qtd * 0.2);
-        if (torresmo) addDebit(torresmo, qtd * 0.15);
-        if (couve) addDebit(couve, qtd * 0.25);
-      } else if (nome.includes('FRANGO')) {
-        const frango = listaEstoque.find((e) => e.item_nome.includes('FRANGO'));
-        const quiabo = listaEstoque.find((e) => e.item_nome.includes('QUIABO'));
-        if (frango) addDebit(frango, qtd * 0.35);
-        if (quiabo) addDebit(quiabo, qtd * 0.15);
-      } else if (nome.includes('COSTEL')) {
-        const costela = listaEstoque.find((e) => e.item_nome.includes('COSTELA'));
-        const mandioca = listaEstoque.find((e) => e.item_nome.includes('MANDIOCA'));
-        if (costela) addDebit(costela, qtd * 0.35);
-        if (mandioca) addDebit(mandioca, qtd * 0.25);
-      } else if (nome.includes('VIRADO')) {
-        const feijaoCarioca = listaEstoque.find((e) => e.item_nome.includes('FEIJÃO CARIOCA'));
-        const couve = listaEstoque.find((e) => e.item_nome.includes('COUVE'));
-        if (feijaoCarioca) addDebit(feijaoCarioca, qtd * 0.2);
-        if (couve) addDebit(couve, qtd * 0.25);
-      } else if (nome.includes('TORRESMO')) {
-        const torresmo = listaEstoque.find((e) => e.item_nome.includes('TORRESMO') || e.item_nome.includes('BARRIGA'));
-        if (torresmo) addDebit(torresmo, qtd * 0.5);
-      } else if (nome.includes('MANDIOCA')) {
-        const mandioca = listaEstoque.find((e) => e.item_nome.includes('MANDIOCA'));
-        if (mandioca) addDebit(mandioca, qtd * 0.4);
-      } else if (nome.includes('MARMITEX') || nome.includes('EXECUTIV')) {
-        const arroz = listaEstoque.find((e) => e.item_nome.includes('ARROZ'));
-        const feijao = listaEstoque.find((e) => e.item_nome.includes('FEIJÃO'));
-        if (arroz) addDebit(arroz, qtd * 0.2);
-        if (feijao) addDebit(feijao, qtd * 0.15);
-      }
-
-      // Opcionais extras
-      if (it.opcionais_selecionados && Array.isArray(it.opcionais_selecionados)) {
-        it.opcionais_selecionados.forEach((op) => {
-          const opNome = (op.nome || '').toUpperCase();
-          if (opNome.includes('TORRESMO')) {
-            const t = listaEstoque.find((e) => e.item_nome.includes('TORRESMO') || e.item_nome.includes('BARRIGA'));
-            if (t) addDebit(t, 0.2 * qtd);
-          } else if (opNome.includes('COUVE')) {
-            const c = listaEstoque.find((e) => e.item_nome.includes('COUVE'));
-            if (c) addDebit(c, 0.5 * qtd);
-          } else if (opNome.includes('QUIABO')) {
-            const q = listaEstoque.find((e) => e.item_nome.includes('QUIABO'));
-            if (q) addDebit(q, 0.2 * qtd);
-          } else if (opNome.includes('MANDIOCA')) {
-            const m = listaEstoque.find((e) => e.item_nome.includes('MANDIOCA'));
-            if (m) addDebit(m, 0.2 * qtd);
-          }
-        });
-      }
-    });
-
-    return Array.from(debitMap.values());
-  };
-
-  /**
    * Finaliza o pedido como pronto e atualiza a flag de idempotência estoque_baixado
    */
   const concluirPedidoPronto = (pedido: Pedido) => {
@@ -217,33 +100,41 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
   };
 
   /**
-   * Processa a dedução no estoque (permitindo saldo negativo) e dispara alertas de estoque mínimo
+   * Executa a baixa das deduções de estoque após aprovação (ou direto se nenhum negativo)
    */
-  const processarBaixaEstoqueEConcluir = async (
-    pedido: Pedido,
-    debitos: Array<{ item: ItemEstoque; debitQty: number }>
-  ) => {
+  const executarBaixaEstoqueConfirmada = async (dados: {
+    pedido: Pedido;
+    insumosCriticos: ItemDeducaoCalculada[];
+    todasDeducoes: ItemDeducaoCalculada[];
+  }) => {
+    const { pedido, todasDeducoes } = dados;
+    setPedidoPendenteConfirmacao(null);
+
     const novosAlertas: ToastAlert[] = [];
 
-    for (const d of debitos) {
-      const saldoAnterior = Number(d.item.quantidade_atual) || 0;
-      // Permite saldo negativo (ex: -1, -2, -3) para não travar a cozinha enquanto os ajustes cadastrais não forem concluídos
-      const novoSaldo = Number((saldoAnterior - d.debitQty).toFixed(2));
+    // 1. Atualizar cada item de estoque no estado e Supabase
+    for (const d of todasDeducoes) {
+      const saldoAnterior = Number(d.quantidade_atual) || 0;
+      const novoSaldo = Number((saldoAnterior - Number(d.quantidade_debitar)).toFixed(2));
 
       if (onUpdateStockItem) {
-        await onUpdateStockItem(d.item.id, { quantidade_atual: novoSaldo });
+        await onUpdateStockItem(Number(d.item_estoque_id), { quantidade_atual: novoSaldo });
       }
 
-      // Verificação de Estoque Mínimo (quantidade_atual <= estoque_minimo e quantidade_atual > 0)
-      if (novoSaldo <= d.item.estoque_minimo && novoSaldo > 0) {
+      // Verificação de Estoque Mínimo (ficara_abaixo_minimo)
+      if (d.ficara_abaixo_minimo) {
         novosAlertas.push({
-          id: `min-${d.item.id}-${Date.now()}-${Math.random()}`,
+          id: `min-${d.item_estoque_id}-${Date.now()}-${Math.random()}`,
           tipo: 'aviso',
-          mensagem: `Atenção! Estoque mínimo alcançado para ${d.item.item_nome} (Restam: ${novoSaldo} ${d.item.unidade_medida}).`,
+          mensagem: `Atenção! Estoque mínimo alcançado para ${d.item_nome} (Restam: ${novoSaldo} ${d.unidade_medida}).`,
         });
       }
     }
 
+    // 2. Persistir no Supabase através do motor de baixa
+    await processarBaixaEstoquePedido(pedido.id, todasDeducoes);
+
+    // 3. Disparar toasts de estoque mínimo
     if (novosAlertas.length > 0) {
       setToastAlerts((prev) => [...prev, ...novosAlertas]);
       setTimeout(() => {
@@ -251,6 +142,7 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
       }, 7000);
     }
 
+    // 4. Conclui pedido como pronto
     concluirPedidoPronto(pedido);
   };
 
@@ -267,37 +159,28 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
         return;
       }
 
-      // 2. Mapeamento de insumos a debitar
-      const debitos = mapearDebitosPedido(pedido, estoque);
+      // 2. Calcular deduções do pedido pela Ficha Técnica, Revenda e Combos
+      const todasDeducoes = calcularDeducoesDoPedido(pedido, produtos || [], estoque || []);
 
-      // 3. Verificação de Insumo Zerado ou Negativo (quantidade_atual <= 0)
-      const insumoZerado = debitos.find((d) => d.item.quantidade_atual <= 0);
-      if (insumoZerado) {
-        setConfirmZeroModal({
+      // 3. Filtrar insumos zerados ou que ficarão negativos (ficara_negativo: true)
+      const insumosCriticos = todasDeducoes.filter((d) => d.ficara_negativo);
+
+      if (insumosCriticos.length > 0) {
+        setPedidoPendenteConfirmacao({
           pedido,
-          itemZerado: insumoZerado.item,
-          saldoAtual: insumoZerado.item.quantidade_atual,
-          todosDebitos: debitos,
+          insumosCriticos,
+          todasDeducoes,
         });
         return;
       }
 
-      // Prossiga normalmente caso nenhum insumo esteja zerado/negativo
-      await processarBaixaEstoqueEConcluir(pedido, debitos);
+      // Se nenhum insumo ficar negativo, executa a dedução imediatamente
+      await executarBaixaEstoqueConfirmada({
+        pedido,
+        insumosCriticos: [],
+        todasDeducoes,
+      });
     }
-  };
-
-  const handleAbortZeroModal = () => {
-    // Se o operador selecionar "Não", aborte a ação e mantenha o pedido no status atual sem debitar estoque
-    setConfirmZeroModal(null);
-  };
-
-  const handleConfirmZeroModal = async () => {
-    // Se selecionar "Sim", prossiga com a operação normalmente, permitindo que a quantidade seja debitada ficando com saldo negativo
-    if (!confirmZeroModal) return;
-    const { pedido, todosDebitos } = confirmZeroModal;
-    setConfirmZeroModal(null);
-    await processarBaixaEstoqueEConcluir(pedido, todosDebitos);
   };
 
   const handleConfirmarRetirada = (pedido: Pedido) => {
@@ -488,62 +371,46 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
         </div>
       )}
 
-      {/* Diálogo de Confirmação: Insumo Zerado ou Negativo */}
-      {confirmZeroModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
-          <div className="bg-neutral-900 border border-amber-600/60 rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-5">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-950/80 border border-amber-600/60 flex items-center justify-center shrink-0">
-                <AlertCircle className="w-6 h-6 text-amber-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-base font-black text-white uppercase tracking-tight">
-                  Alerta de Estoque: Insumo Zerado
-                </h3>
-                <p className="text-xs text-neutral-400 mt-0.5">
-                  Pedido #{confirmZeroModal.pedido.codigo_senha} (
-                  {confirmZeroModal.pedido.tipo.toUpperCase()})
-                </p>
-              </div>
+      {/* Diálogo de Confirmação: Insumos da Ficha Técnica Zerados ou Negativos */}
+      {pedidoPendenteConfirmacao && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral-900 border border-amber-500/50 p-6 rounded-2xl max-w-md w-full shadow-2xl flex flex-col gap-4 text-white">
+            <div className="flex items-center gap-3 text-amber-400">
+              <AlertTriangle className="w-6 h-6 shrink-0"/>
+              <h3 className="text-base font-black uppercase">Insumo com Stock Zerado</h3>
             </div>
 
-            {/* Mensagem Literal Exigida pela Regra de Negócio */}
-            <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 text-sm font-bold text-neutral-200">
-              Insumo{' '}
-              <span className="text-amber-400 font-black">
-                {confirmZeroModal.itemZerado.item_nome}
-              </span>{' '}
-              está zerado (saldo atual:{' '}
-              <span className="text-red-400 font-mono font-black">
-                {confirmZeroModal.saldoAtual}{' '}
-                {confirmZeroModal.itemZerado.unidade_medida}
-              </span>
-              ). Continua? Sim ou Não
-            </div>
-
-            <p className="text-[11px] text-neutral-400 leading-relaxed">
-              * Ao selecionar <strong className="text-white">"Sim"</strong>, a
-              operação prosseguirá permitindo saldo negativo para não travar o
-              preparo na cozinha. Ao selecionar{' '}
-              <strong className="text-white">"Não"</strong>, a baixa será
-              abortada mantendo o pedido em preparo.
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              Os seguintes insumos da ficha técnica estão zerados ou ficarão negativos:
             </p>
 
-            {/* Botões Sim / Não */}
-            <div className="flex items-center justify-end gap-3 pt-2 border-t border-neutral-800">
+            <div className="space-y-1.5 max-h-40 overflow-y-auto bg-neutral-950 p-3 rounded-xl border border-neutral-800 text-xs font-mono">
+              {pedidoPendenteConfirmacao.insumosCriticos.map((ins) => (
+                <div key={ins.item_estoque_id} className="flex justify-between items-center text-red-400">
+                  <span>{ins.item_nome}</span>
+                  <span className="font-bold">Atual: {ins.quantidade_atual} {ins.unidade_medida} | Baixa: -{ins.quantidade_debitar}</span>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs font-bold text-amber-300">
+              Deseja continuar e registar o saldo negativo?
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
-                onClick={handleAbortZeroModal}
-                className="px-5 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white font-bold text-xs uppercase transition-colors cursor-pointer"
+                onClick={() => setPedidoPendenteConfirmacao(null)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold uppercase cursor-pointer"
               >
-                Não (Abortar)
+                Não (Voltar)
               </button>
               <button
                 type="button"
-                onClick={handleConfirmZeroModal}
-                className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs uppercase shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                onClick={() => executarBaixaEstoqueConfirmada(pedidoPendenteConfirmacao)}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-xl text-xs font-bold uppercase cursor-pointer"
               >
-                Sim (Prosseguir)
+                Sim (Continuar)
               </button>
             </div>
           </div>
@@ -649,3 +516,5 @@ export const KitchenKDS: React.FC<KitchenKDSProps> = ({
     </div>
   );
 };
+
+export const KitchenDisplay = KitchenKDS;

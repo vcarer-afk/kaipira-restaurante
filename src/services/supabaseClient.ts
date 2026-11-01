@@ -32,6 +32,7 @@ import {
   INITIAL_FORMAS_PAGAMENTO,
 } from '../data/seedData';
 import { formatPhone, formatBRL } from '../utils/formatters';
+import { ItemDeducaoCalculada } from '../utils/stockDeduction';
 
 // Re-export singleton Supabase client
 export { supabase };
@@ -3228,3 +3229,41 @@ export async function excluirFormaPagamentoSupabase(
 
   return updatedList;
 }
+
+/**
+ * Atualiza os saldos de estoque e a flag estoque_baixado no pedido (Etapa 2 - KDS)
+ */
+export const processarBaixaEstoquePedido = async (
+  pedidoId: number | string,
+  deducoes: ItemDeducaoCalculada[]
+) => {
+  // 1. Atualizar quantidades de cada item de stock
+  for (const d of deducoes) {
+    const novoSaldo = Number((Number(d.quantidade_atual) - Number(d.quantidade_debitar)).toFixed(2));
+    try {
+      await supabase
+        .from('estoque')
+        .update({
+          quantidade_atual: novoSaldo,
+          atualizado_em: new Date().toISOString(),
+        })
+        .eq('id', d.item_estoque_id);
+    } catch (err) {
+      console.warn(`[Supabase] Erro ao debitar insumo #${d.item_estoque_id}:`, err);
+    }
+  }
+
+  // 2. Marcar o pedido como baixado e pronto
+  try {
+    await supabase
+      .from('pedidos')
+      .update({
+        estoque_baixado: true,
+        status: 'pronto',
+        atualizado_em: new Date().toISOString(),
+      })
+      .eq('id', pedidoId);
+  } catch (err) {
+    console.warn(`[Supabase] Erro ao marcar pedido #${pedidoId} como pronto/baixado:`, err);
+  }
+};
