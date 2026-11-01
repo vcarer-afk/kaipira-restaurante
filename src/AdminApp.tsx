@@ -38,6 +38,7 @@ import { CashRegister } from './components/CashRegister';
 import { FinancialReports } from './components/FinancialReports';
 import { DeliveryReports } from './components/DeliveryReports';
 import { KitchenSalesReports } from './components/KitchenSalesReports';
+import { MonthlyCustomersReports } from './components/MonthlyCustomersReports';
 import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
 import { playAlertChime, isSalaoPedido } from './utils/formatters';
@@ -222,7 +223,7 @@ export default function AdminApp() {
   });
 
   // Sub-abas internas para Central de Relatórios
-  const [subAbaRelatorio, setSubAbaRelatorio] = useState<'financeiro' | 'delivery' | 'cozinha'>('financeiro');
+  const [subAbaRelatorio, setSubAbaRelatorio] = useState<'financeiro' | 'delivery' | 'cozinha' | 'mensalistas'>('financeiro');
 
   const setActiveTab = useCallback((newTab: ActiveTab) => {
     setActiveTabState(newTab);
@@ -2014,6 +2015,16 @@ export default function AdminApp() {
               >
                 3. Vendas & Cozinha (Curva ABC)
               </button>
+              <button
+                onClick={() => setSubAbaRelatorio('mensalistas')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                  subAbaRelatorio === 'mensalistas'
+                    ? 'bg-amber-500 text-black font-black shadow-md'
+                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+              >
+                4. Clientes & Mensalistas
+              </button>
             </div>
 
             {subAbaRelatorio === 'financeiro' && (
@@ -2038,6 +2049,15 @@ export default function AdminApp() {
                 mesas={mesas}
                 pedidos={pedidos}
                 produtos={produtos}
+              />
+            )}
+            {subAbaRelatorio === 'mensalistas' && (
+              <MonthlyCustomersReports
+                caixa={caixa}
+                clientes={clientes}
+                configuracoes={configuracoes}
+                onNavigate={setActiveTab}
+                pedidos={pedidos}
               />
             )}
           </div>
