@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { DeliveryReports } from './DeliveryReports';
 
 interface FinancialReportsProps {
   pedidos: Pedido[];
@@ -41,7 +40,6 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({
   clientes = [],
   configuracoes,
 }) => {
-  const [subAbaAtiva, setSubAbaAtiva] = useState<'financeiro' | 'delivery'>('financeiro');
   const [periodoFiltro, setPeriodoFiltro] = useState<'hoje' | 'ontem' | '7dias' | 'mes'>('hoje');
   const [dataInicioPersonalizada, setDataInicioPersonalizada] = useState('');
   const [dataFimPersonalizada, setDataFimPersonalizada] = useState('');
@@ -163,60 +161,20 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Sub-Aba Navigation: Item 1 (Financeiro & Caixa) vs Item 2 (Delivery & Acerto de Motoboys) */}
-      <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-800 p-1.5 rounded-2xl w-fit">
-        <button
-          type="button"
-          onClick={() => setSubAbaAtiva('financeiro')}
-          className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all cursor-pointer ${
-            subAbaAtiva === 'financeiro'
-              ? 'bg-amber-500 text-black shadow-md'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-850'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>1. Financeiro & Caixa</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSubAbaAtiva('delivery')}
-          className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all cursor-pointer ${
-            subAbaAtiva === 'delivery'
-              ? 'bg-amber-500 text-black shadow-md'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-850'
-          }`}
-        >
-          <Bike className="w-4 h-4" />
-          <span>2. Delivery & Acerto de Motoboys</span>
-        </button>
-      </div>
-
-      {/* RENDERIZAÇÃO DA SUB-ABA 2: DELIVERY & MOTONBOYS */}
-      {subAbaAtiva === 'delivery' && (
-        <DeliveryReports
-          pedidos={pedidos}
-          configuracoes={configuracoes}
-        />
-      )}
-
-      {/* RENDERIZAÇÃO DA SUB-ABA 1: FINANCEIRO & CAIXA */}
-      {subAbaAtiva === 'financeiro' && (
-        <>
-          {/* Header com Filtros de Período e Ações */}
-          <div className="bg-neutral-850 p-6 rounded-2xl border border-neutral-800 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-black uppercase text-amber-500 mb-1">
-                <FileText className="w-4 h-4 text-amber-500" />
-                <span>Módulo de Gestão Financeira & DRE</span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
-                Relatórios de Fechamento & Canais
-              </h2>
-              <p className="text-xs text-neutral-400 mt-0.5">
-                Demonstrativo auditado de receitas, faturamento por meio de pagamento, sangrias e canais de venda.
-              </p>
-            </div>
+      {/* Header com Filtros de Período e Ações */}
+      <div className="bg-neutral-850 p-6 rounded-2xl border border-neutral-800 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-black uppercase text-amber-500 mb-1">
+            <FileText className="w-4 h-4 text-amber-500" />
+            <span>Módulo de Gestão Financeira & DRE</span>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
+            Relatórios de Fechamento & Canais
+          </h2>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Demonstrativo auditado de receitas, faturamento por meio de pagamento, sangrias e canais de venda.
+          </p>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Seletor de Período */}
@@ -272,11 +230,11 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({
           </span>
         </div>
 
-        {/* 1. Balanço da Gaveta / Caixa Físico */}
+        {/* Balanço da Gaveta / Caixa Físico */}
         <div className="space-y-3">
           <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider flex items-center gap-2">
             <Banknote className="w-4 h-4 text-amber-500" />
-            <span>1. Balanço do Caixa Físico (Gaveta em Dinheiro)</span>
+            <span>Balanço do Caixa Físico (Gaveta em Dinheiro)</span>
           </h4>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800">
@@ -302,11 +260,11 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({
           </div>
         </div>
 
-        {/* 2. Faturamento por Meio de Pagamento */}
+        {/* Faturamento por Forma de Pagamento */}
         <div className="space-y-3">
           <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider flex items-center gap-2">
             <CreditCard className="w-4 h-4 text-amber-500" />
-            <span>2. Faturamento por Forma de Pagamento (Auditado)</span>
+            <span>Faturamento por Forma de Pagamento</span>
           </h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {[
@@ -325,11 +283,11 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({
           </div>
         </div>
 
-        {/* 3. Desempenho por Canal de Venda */}
+        {/* Desempenho por Canal de Venda */}
         <div className="space-y-3">
           <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-amber-500" />
-            <span>3. Distribuição por Canal de Atendimento</span>
+            <span>Distribuição por Canal de Venda</span>
           </h4>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="p-4 bg-neutral-900 rounded-xl border border-neutral-800 flex flex-col justify-between gap-2">
@@ -372,8 +330,6 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({
           </div>
         </div>
       </div>
-        </>
-      )}
     </div>
   );
 };

@@ -279,12 +279,12 @@ export const KitchenSalesReports: React.FC<KitchenSalesReportsProps> = ({
           </p>
         </div>
 
-        {/* 1. CURVA ABC DE PRODUTOS */}
+        {/* CURVA ABC DE PRODUTOS */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider flex items-center gap-2 font-mono">
               <Award className="w-4 h-4 text-amber-500" />
-              <span>1. Curva ABC dos Produtos Mais Vendidos ({itensCurvaABC.length} Itens)</span>
+              <span>Curva ABC dos Produtos Mais Vendidos ({itensCurvaABC.length} Itens)</span>
             </h4>
             <span className="text-xs font-mono text-neutral-400">
               Total Faturado em Itens: <strong className="text-white">{formatBRL(totalFaturadoGeral)}</strong>
@@ -350,13 +350,13 @@ export const KitchenSalesReports: React.FC<KitchenSalesReportsProps> = ({
           </div>
         </div>
 
-        {/* 2. RELATÓRIO DO SALÃO & 3. CRUZAMENTO DE ESTOQUE (2 COLUNAS) */}
+        {/* RELATÓRIO DO SALÃO & CRUZAMENTO DE ESTOQUE (2 COLUNAS) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
           {/* Coluna 1: Consumo do Salão / Mesas */}
           <div className="p-5 bg-neutral-900 rounded-2xl border border-neutral-800 space-y-4">
             <h4 className="text-xs font-black uppercase text-cyan-400 tracking-wider flex items-center gap-2 font-mono">
               <Utensils className="w-4 h-4 text-cyan-400" />
-              <span>2. Consumo & Permanência no Salão (20 Mesas)</span>
+              <span>Consumo & Permanência no Salão (20 Mesas)</span>
             </h4>
 
             <div className="grid grid-cols-2 gap-3 text-xs font-mono">
@@ -402,7 +402,7 @@ export const KitchenSalesReports: React.FC<KitchenSalesReportsProps> = ({
           <div className="p-5 bg-neutral-900 rounded-2xl border border-neutral-800 space-y-4">
             <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider flex items-center gap-2 font-mono">
               <Boxes className="w-4 h-4 text-amber-500" />
-              <span>3. Estimativa de Baixas de Insumos da Cozinha</span>
+              <span>Estimativa de Baixas de Insumos da Cozinha</span>
             </h4>
 
             <div className="grid grid-cols-2 gap-3 text-xs font-mono">

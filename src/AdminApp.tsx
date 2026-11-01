@@ -43,6 +43,7 @@ import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
 import { playAlertChime, isSalaoPedido } from './utils/formatters';
 import { THEMES } from './utils/theme';
+import { DollarSign, Bike, ChefHat, Briefcase } from 'lucide-react';
 
 // Configurações e dados estáticos essenciais
 import {
@@ -1982,48 +1983,59 @@ export default function AdminApp() {
 
         {/* Relatórios Financeiros & DRE */}
         {activeTab === 'relatorios' && (
-          <div className="flex flex-col gap-4">
-            {/* Sub-abas de Relatórios */}
-            <div className="flex items-center gap-2 border-b border-neutral-800 pb-2 overflow-x-auto">
+          <div className="flex flex-col gap-6">
+            {/* Barra Única e Profissional de Sub-abas de Relatórios */}
+            <div className="bg-neutral-900/90 p-1.5 rounded-2xl border border-neutral-800 shadow-sm flex items-center gap-1.5 overflow-x-auto">
               <button
+                type="button"
                 onClick={() => setSubAbaRelatorio('financeiro')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                   subAbaRelatorio === 'financeiro'
                     ? 'bg-amber-500 text-black font-black shadow-md'
-                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/60'
                 }`}
               >
-                1. Financeiro & Caixa
+                <DollarSign className="w-4 h-4 shrink-0" />
+                <span>Financeiro & Caixa</span>
               </button>
+
               <button
+                type="button"
                 onClick={() => setSubAbaRelatorio('delivery')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                   subAbaRelatorio === 'delivery'
                     ? 'bg-amber-500 text-black font-black shadow-md'
-                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/60'
                 }`}
               >
-                2. Delivery & Motoboys
+                <Bike className="w-4 h-4 shrink-0" />
+                <span>Delivery & Motoboys</span>
               </button>
+
               <button
+                type="button"
                 onClick={() => setSubAbaRelatorio('cozinha')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                   subAbaRelatorio === 'cozinha'
                     ? 'bg-amber-500 text-black font-black shadow-md'
-                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/60'
                 }`}
               >
-                3. Vendas & Cozinha (Curva ABC)
+                <ChefHat className="w-4 h-4 shrink-0" />
+                <span>Vendas & Cozinha (Curva ABC)</span>
               </button>
+
               <button
+                type="button"
                 onClick={() => setSubAbaRelatorio('mensalistas')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                   subAbaRelatorio === 'mensalistas'
                     ? 'bg-amber-500 text-black font-black shadow-md'
-                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/60'
                 }`}
               >
-                4. Clientes & Mensalistas
+                <Briefcase className="w-4 h-4 shrink-0" />
+                <span>Clientes & Mensalistas</span>
               </button>
             </div>
 
