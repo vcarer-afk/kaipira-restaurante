@@ -64,16 +64,21 @@ export const TODAS_PERMISSOES: ModuloPermissao[] = [
   'relatorios',
 ];
 
+export type PerfilUsuario = 'admin' | 'gerente' | 'operador' | 'kds';
+
 export interface UsuarioSistema {
-  id: string;
-  nome: string; // UPPERCASE
-  email: string; // único, formato livre
-  telefone: string; // com máscara (99) 9-9999-9999
-  cargo: TipoUsuario;
-  status: 'ativo' | 'inativo';
+  id: number | string;
+  nome: string;
+  email: string;
+  senha_hash?: string;
+  perfil?: PerfilUsuario;
+  ativo?: boolean;
+  criado_em?: string;
+  telefone?: string;
+  cargo?: TipoUsuario;
+  status?: 'ativo' | 'inativo';
   senha?: string;
   permissoes?: ModuloPermissao[];
-  criado_em: string;
   atualizado_em?: string;
 }
 

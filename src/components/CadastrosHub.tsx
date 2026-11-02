@@ -453,11 +453,11 @@ export const CadastrosHub: React.FC<CadastrosHubProps> = ({
 
   const openEditUserModal = (u: UsuarioSistema) => {
     setIsEditingUser(true);
-    setEditingUserId(u.id);
+    setEditingUserId(String(u.id));
     setFormUserNome(u.nome || '');
     setFormUserEmail(u.email || '');
     setFormUserTelefone(u.telefone || '');
-    setFormUserCargo(u.cargo);
+    setFormUserCargo(u.cargo || 'atendente');
     setFormUserSenha(u.senha || 'DNDIGQOL');
     setFormUserStatus(u.status || 'ativo');
     if (u.permissoes && Array.isArray(u.permissoes) && u.permissoes.length > 0) {
@@ -1750,7 +1750,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                   >
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        {renderCargoBadge(u.cargo)}
+                        {renderCargoBadge(u.cargo || 'atendente')}
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                             u.status === 'inativo'
@@ -1773,7 +1773,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Phone className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-                          <span>{formatPhone(u.telefone)}</span>
+                          <span>{formatPhone(u.telefone || '')}</span>
                         </div>
                       </div>
                     </div>
@@ -1822,9 +1822,9 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                     return (
                       <tr key={u.id} className="hover:bg-neutral-850/50">
                         <td className="px-4 py-3 font-bold text-neutral-100 uppercase">{u.nome}</td>
-                        <td className="px-4 py-3">{renderCargoBadge(u.cargo)}</td>
+                        <td className="px-4 py-3">{renderCargoBadge(u.cargo || 'atendente')}</td>
                         <td className="px-4 py-3 font-mono text-neutral-300">{u.email}</td>
-                        <td className="px-4 py-3 font-mono text-neutral-300">{formatPhone(u.telefone)}</td>
+                        <td className="px-4 py-3 font-mono text-neutral-300">{formatPhone(u.telefone || '')}</td>
                         <td className="px-4 py-3">
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${

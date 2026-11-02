@@ -22,6 +22,8 @@ import {
   Crown,
   Sparkles,
   FileText,
+  Shield,
+  Key,
 } from 'lucide-react';
 
 interface SlideMenuRightProps {
@@ -33,6 +35,7 @@ interface SlideMenuRightProps {
   currentPerfil?: Perfil;
   onChangeRole?: (role: TipoUsuario) => void;
   onOpenSupabaseModal?: () => void;
+  onOpenUsuariosSistema?: () => void;
   onLogout: () => void;
   pendingKdsCount: number;
   deliveryProntosCount?: number;
@@ -49,6 +52,7 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
   currentPerfil,
   onChangeRole,
   onOpenSupabaseModal,
+  onOpenUsuariosSistema,
   onLogout,
   pendingKdsCount,
   deliveryProntosCount = 0,
@@ -322,6 +326,36 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
             );
           })}
         </div>
+
+        {/* Acesso Exclusivo e Estrito: admin@kaipira.com */}
+        {currentPerfil?.email?.toLowerCase().trim() === 'admin@kaipira.com' && onOpenUsuariosSistema && (
+          <div className="p-3 border-t border-neutral-800 bg-neutral-900/60">
+            <button
+              type="button"
+              onClick={() => {
+                onOpenUsuariosSistema();
+                onClose();
+              }}
+              className="w-full p-3 rounded-xl bg-neutral-850 hover:bg-neutral-800 border border-amber-600/50 text-left flex items-center justify-between group transition-all cursor-pointer shadow-sm"
+              title="Gestão de Usuários e Chaves de Acesso (Exclusivo admin@kaipira.com)"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                  <Shield className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-xs font-black text-amber-300 uppercase block group-hover:text-amber-200 transition-colors">
+                    Gestão de Usuários
+                  </span>
+                  <span className="text-[10px] text-neutral-400 block font-mono">
+                    Logins & Chaves de Operadores
+                  </span>
+                </div>
+              </div>
+              <Key className="w-4 h-4 text-amber-400 shrink-0" />
+            </button>
+          </div>
+        )}
 
         {/* Drawer Bottom Footer with Logout */}
         <div className="p-4 border-t border-neutral-800 bg-neutral-850 space-y-2">

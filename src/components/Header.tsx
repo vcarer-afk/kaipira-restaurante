@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { Cloud, Menu, Clock, Users, ChefHat, Bike, FileText } from 'lucide-react';
+import { Cloud, Menu, Clock, Users, ChefHat, Bike, FileText, Shield, Key } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
@@ -29,6 +29,7 @@ interface HeaderProps {
   isLunchTime: boolean;
   onOpenSupabaseModal?: () => void;
   onOpenSlideMenu: () => void;
+  onOpenUsuariosSistema?: () => void;
   pendingKdsCount: number;
   deliveryProntosCount?: number;
   activeConnectionsCount?: number;
@@ -50,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   isLunchTime,
   onOpenSupabaseModal,
   onOpenSlideMenu,
+  onOpenUsuariosSistema,
   pendingKdsCount,
   deliveryProntosCount = 0,
   activeConnectionsCount = 1,
@@ -253,6 +255,20 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span className="hidden md:inline uppercase">Relatórios</span>
+            </button>
+          )}
+
+          {/* Acesso Exclusivo e Estrito: admin@kaipira.com */}
+          {currentPerfil?.email?.toLowerCase().trim() === 'admin@kaipira.com' && onOpenUsuariosSistema && (
+            <button
+              type="button"
+              onClick={onOpenUsuariosSistema}
+              className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 bg-neutral-850 hover:bg-neutral-800 text-amber-300 hover:text-white border border-amber-600/70 shadow-sm transition-all cursor-pointer shrink-0 active:scale-95"
+              title="Chaves de Acesso e Gestão de Usuários do Sistema (Exclusivo admin@kaipira.com)"
+            >
+              <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="hidden sm:inline uppercase">Gestão de Usuários</span>
+              <Key className="w-3 h-3 text-amber-500 shrink-0" />
             </button>
           )}
 

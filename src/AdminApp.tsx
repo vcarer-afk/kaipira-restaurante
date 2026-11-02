@@ -41,6 +41,7 @@ import { KitchenSalesReports } from './components/KitchenSalesReports';
 import { MonthlyCustomersReports } from './components/MonthlyCustomersReports';
 import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
+import { UsuariosSistemaModal } from './components/UsuariosSistemaModal';
 import { playAlertChime, isSalaoPedido } from './utils/formatters';
 import { THEMES } from './utils/theme';
 import { DollarSign, Bike, ChefHat, Briefcase } from 'lucide-react';
@@ -301,6 +302,10 @@ export default function AdminApp() {
   // Modals
   const [printReceiptPedido, setPrintReceiptPedido] = useState<Pedido | null>(null);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+  const [isUsuariosSistemaModalOpen, setIsUsuariosSistemaModalOpen] = useState(false);
+
+  // Acesso estrito e exclusivo para admin@kaipira.com
+  const isSuperAdminKaipira = (currentPerfil?.email || '').toLowerCase().trim() === 'admin@kaipira.com';
 
   // Lunch Hours evaluation (11:00 to 14:00, Monday to Saturday)
   const [isLunchTime, setIsLunchTime] = useState(true);
@@ -1717,7 +1722,15 @@ export default function AdminApp() {
 
   // IF NOT AUTHENTICATED -> SHOW LOGIN SCREEN FIRST
   if (!isAuthenticated) {
-    return <LoginScreen />;
+    return (
+      <LoginScreen
+        onLoginSuccess={(perfil) => {
+          setIsAuthenticated(true);
+          setCurrentPerfil(perfil);
+          setCurrentRole(perfil.cargo);
+        }}
+      />
+    );
   }
 
   const currentTheme = THEMES[configuracoes.padraoCor] || THEMES.ambar;
@@ -1735,6 +1748,7 @@ export default function AdminApp() {
         currentPerfil={currentPerfil}
         isLunchTime={isLunchTime}
         onOpenSlideMenu={() => setIsSlideMenuOpen(true)}
+        onOpenUsuariosSistema={() => setIsUsuariosSistemaModalOpen(true)}
         pendingKdsCount={pendingKdsCount}
         deliveryProntosCount={deliveryProntosCount}
         activeConnectionsCount={activeConnectionsCount}
@@ -2118,6 +2132,7 @@ export default function AdminApp() {
         }}
         currentRole={currentRole}
         currentPerfil={currentPerfil}
+        onOpenUsuariosSistema={() => setIsUsuariosSistemaModalOpen(true)}
         onLogout={handleLogout}
         pendingKdsCount={pendingKdsCount}
         deliveryProntosCount={deliveryProntosCount}
@@ -2139,6 +2154,15 @@ export default function AdminApp() {
         isOpen={isSupabaseModalOpen}
         onClose={() => setIsSupabaseModalOpen(false)}
       />
+
+      {/* Módulo de Gerenciamento de Usuários do Sistema (Chaves de Acesso) - 100% EXCLUSIVO PARA admin@kaipira.com */}
+      {isSuperAdminKaipira && (
+        <UsuariosSistemaModal
+          isOpen={isUsuariosSistemaModalOpen}
+          onClose={() => setIsUsuariosSistemaModalOpen(false)}
+          currentUserEmail={currentPerfil?.email}
+        />
+      )}
     </div>
   );
 }

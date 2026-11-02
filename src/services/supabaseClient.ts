@@ -2111,7 +2111,7 @@ export async function salvarUsuarioSupabase(
     atualizado_em: new Date().toISOString(),
   };
 
-  if (usuario.id && !usuario.id.startsWith('temp-') && !usuario.id.startsWith('usr-')) {
+  if (usuario.id && !String(usuario.id).startsWith('temp-') && !String(usuario.id).startsWith('usr-')) {
     payload.id = usuario.id;
   }
 
@@ -2175,7 +2175,7 @@ export async function salvarUsuarioSupabase(
  * Exclui um usuário do Supabase
  */
 export async function excluirUsuarioSupabase(
-  id: string,
+  id: number | string,
   email?: string
 ): Promise<{ success: boolean; error?: string }> {
   if (email === 'master@kaipira.com') {
@@ -2184,7 +2184,9 @@ export async function excluirUsuarioSupabase(
 
   try {
     const query = supabase.from('usuarios').delete();
-    const { error } = id ? await query.eq('id', id) : await query.eq('email', email!);
+    const { error } = (id !== undefined && id !== null && String(id).length > 0)
+      ? await query.eq('id', id)
+      : await query.eq('email', email!);
 
     if (error) {
       console.warn('Erro ao excluir usuário no Supabase:', error.message);
@@ -3447,4 +3449,200 @@ export const registrarAjusteManualEstoque = async (
     }, { onConflict: 'id' });
   } catch {}
 };
+
+// ============================================================================
+// GESTÃO DE USUÁRIOS DO SISTEMA (CHAVES DE ACESSO / LOGINS DE OPERADORES)
+// ============================================================================
+
+const salvarUsuarioSistemaConfiguracoesFallback = async (usuario: Partial<UsuarioSistema>) => {
+  try {
+    const { data: conf } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    const existingDados = conf?.dados || {};
+    let users: UsuarioSistema[] = Array.isArray(existingDados.usuarios_sistema) ? [...existingDados.usuarios_sistema] : [];
+
+    if (usuario.id) {
+      users = users.map((u) => (String(u.id) === String(usuario.id) ? { ...u, ...usuario } as UsuarioSistema : u));
+    } else {
+      const novoId = Date.now();
+      users.push({
+        id: novoId,
+        nome: usuario.nome || '',
+        email: usuario.email || '',
+        perfil: usuario.perfil || 'operador',
+        ativo: usuario.ativo ?? true,
+        criado_em: new Date().toISOString(),
+      });
+    }
+
+    await supabase.from('configuracoes').upsert({
+      id: 1,
+      dados: {
+        ...existingDados,
+        usuarios_sistema: users,
+      },
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('Erro ao salvar fallback usuarios_sistema:', err);
+  }
+};
+
+const excluirUsuarioSistemaConfiguracoesFallback = async (id: number | string) => {
+  try {
+    const { data: conf } = await supabase
+      .from('configuracoes')
+      .select('dados')
+      .eq('id', 1)
+      .maybeSingle();
+
+    const existingDados = conf?.dados || {};
+    let users: UsuarioSistema[] = Array.isArray(existingDados.usuarios_sistema) ? [...existingDados.usuarios_sistema] : [];
+    users = users.filter((u) => String(u.id) !== String(id));
+
+    await supabase.from('configuracoes').upsert({
+      id: 1,
+      dados: {
+        ...existingDados,
+        usuarios_sistema: users,
+      },
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('Erro ao excluir fallback usuarios_sistema:', err);
+  }
+};
+
+export const fetchUsuariosSistema = async (): Promise<UsuarioSistema[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('usuarios_sistema')
+      .select('id, nome, email, perfil, ativo, criado_em')
+      .order('id', { ascending: true });
+
+    if (error) {
+      console.warn('Aviso ao consultar usuarios_sistema no Supabase:', error.message);
+      // Fallback para configuracoes.dados.usuarios_sistema se a tabela não existir
+      const { data: cfg } = await supabase
+        .from('configuracoes')
+        .select('dados')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (cfg?.dados?.usuarios_sistema && Array.isArray(cfg.dados.usuarios_sistema) && cfg.dados.usuarios_sistema.length > 0) {
+        return cfg.dados.usuarios_sistema;
+      }
+
+      return [
+        {
+          id: 1,
+          nome: 'ADMINISTRADOR KAIPIRA',
+          email: 'admin@kaipira.com',
+          perfil: 'admin',
+          ativo: true,
+          criado_em: new Date().toISOString(),
+        },
+      ];
+    }
+
+    if (!data || data.length === 0) {
+      const defaultAdmin: UsuarioSistema = {
+        id: 1,
+        nome: 'ADMINISTRADOR KAIPIRA',
+        email: 'admin@kaipira.com',
+        perfil: 'admin',
+        ativo: true,
+        criado_em: new Date().toISOString(),
+      };
+      await salvarUsuarioSistema(defaultAdmin).catch(() => {});
+      return [defaultAdmin];
+    }
+
+    return (data as UsuarioSistema[]) || [];
+  } catch (err) {
+    console.warn('Erro ao buscar usuarios_sistema:', err);
+    return [
+      {
+        id: 1,
+        nome: 'ADMINISTRADOR KAIPIRA',
+        email: 'admin@kaipira.com',
+        perfil: 'admin',
+        ativo: true,
+        criado_em: new Date().toISOString(),
+      },
+    ];
+  }
+};
+
+export const salvarUsuarioSistema = async (usuario: Partial<UsuarioSistema>) => {
+  if (usuario.id) {
+    const payload: any = {
+      nome: (usuario.nome || '').toUpperCase().trim(),
+      email: (usuario.email || '').toLowerCase().trim(),
+      perfil: usuario.perfil,
+      ativo: usuario.ativo,
+      atualizado_em: new Date().toISOString(),
+    };
+    if (usuario.senha_hash) payload.senha_hash = usuario.senha_hash;
+
+    const { data, error } = await supabase
+      .from('usuarios_sistema')
+      .update(payload)
+      .eq('id', usuario.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Fallback update usuarios_sistema:', error.message);
+      await salvarUsuarioSistemaConfiguracoesFallback(usuario);
+      return usuario;
+    }
+    return data;
+  } else {
+    const { data, error } = await supabase
+      .from('usuarios_sistema')
+      .insert([{
+        nome: (usuario.nome || '').toUpperCase().trim(),
+        email: (usuario.email || '').toLowerCase().trim(),
+        senha_hash: usuario.senha_hash,
+        perfil: usuario.perfil || 'operador',
+        ativo: usuario.ativo ?? true,
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Fallback insert usuarios_sistema:', error.message);
+      const novoId = Date.now();
+      const novoUsuario = {
+        ...usuario,
+        id: novoId,
+        nome: (usuario.nome || '').toUpperCase().trim(),
+        email: (usuario.email || '').toLowerCase().trim(),
+        ativo: usuario.ativo ?? true,
+        criado_em: new Date().toISOString(),
+      };
+      await salvarUsuarioSistemaConfiguracoesFallback(novoUsuario);
+      return novoUsuario;
+    }
+    return data;
+  }
+};
+
+export const excluirUsuarioSistema = async (id: number | string) => {
+  const { error } = await supabase
+    .from('usuarios_sistema')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.warn('Fallback delete usuarios_sistema:', error.message);
+    await excluirUsuarioSistemaConfiguracoesFallback(id);
+  }
+};
+
 
