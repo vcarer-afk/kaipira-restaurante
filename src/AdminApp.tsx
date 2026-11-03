@@ -221,37 +221,15 @@ export default function AdminApp() {
   // Conexões ativas no sistema em tempo real
   const [activeConnectionsCount, setActiveConnectionsCount] = useState<number>(1);
 
-  // Navigation & Menu Settings com persistência em localStorage e blindagem contra reset em foco/mudança de aba
-  const [activeTab, setActiveTabState] = useState<ActiveTab>(() => {
-    const saved = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab;
-    return saved || 'dashboard';
-  });
+  // Navigation & Menu Settings (100% In-Memory / Cloud - ZERO localStorage)
+  const [activeTab, setActiveTabState] = useState<ActiveTab>('dashboard');
 
   // Sub-abas internas para Central de Relatórios
   const [subAbaRelatorio, setSubAbaRelatorio] = useState<'financeiro' | 'delivery' | 'cozinha' | 'mensalistas'>('financeiro');
 
   const setActiveTab = useCallback((newTab: ActiveTab) => {
     setActiveTabState(newTab);
-    localStorage.setItem('kaipira_admin_active_tab', newTab);
   }, []);
-
-  // Blindagem de rota: recuperar e manter a aba ativa ao alternar janelas ou recuperar foco
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (!document.hidden) {
-        const saved = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab;
-        if (saved && saved !== activeTab) {
-          setActiveTab(saved);
-        }
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('focus', handleVisibility);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('focus', handleVisibility);
-    };
-  }, [activeTab, setActiveTab]);
 
   // Proteção de rotas: redireciona automaticamente para a primeira aba permitida se a atual não for autorizada
   useEffect(() => {
@@ -609,10 +587,7 @@ export default function AdminApp() {
         setCurrentRole(cargoAferido);
         fetchCloudState();
 
-        const savedTab = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab | null;
-        if (savedTab) {
-          setActiveTab(savedTab);
-        } else if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
+        if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
           setActiveTab('dashboard');
         } else if (cargoAferido === 'cozinha') {
           setActiveTab('kds');
@@ -648,10 +623,7 @@ export default function AdminApp() {
         setCurrentRole(cargoAferido);
         fetchCloudState();
 
-        const savedTab = localStorage.getItem('kaipira_admin_active_tab') as ActiveTab | null;
-        if (savedTab) {
-          setActiveTab(savedTab);
-        } else if (event === 'SIGNED_IN') {
+        if (event === 'SIGNED_IN') {
           if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
             setActiveTab('dashboard');
           } else if (cargoAferido === 'cozinha') {
