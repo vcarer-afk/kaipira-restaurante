@@ -219,6 +219,7 @@ async function startServer() {
         ...state.configuracoes,
         ...updates,
       };
+      saveState(state);
       broadcast('SETTINGS_UPDATED', state.configuracoes);
       res.json(state.configuracoes);
     } catch (err: any) {

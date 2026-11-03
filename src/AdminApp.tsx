@@ -19,6 +19,7 @@ import {
   FormaPagamentoConfig,
   MovimentacaoCaixa,
   Pagamento,
+  PosicaoMenuTipo,
 } from './types';
 import { Header, ActiveTab } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
@@ -1737,15 +1738,19 @@ export default function AdminApp() {
 
   const currentTheme = THEMES[configuracoes.padraoCor] || THEMES.ambar;
 
+  // Sem fallback de localStorage. Lê diretamente da nuvem (Supabase / Backend / SSE):
+  const posicaoMenuAtiva: PosicaoMenuTipo = (configuracoes?.posicaoMenu as PosicaoMenuTipo) || 'direita';
+  const menuAutoOcultarAtivo: boolean = Boolean(configuracoes?.menuAutoOcultar);
+
   const isTaskbarMode =
-    configuracoes.posicaoMenu === 'acima' ||
-    configuracoes.posicaoMenu === 'abaixo' ||
-    (configuracoes.posicaoMenu as any) === 'topo';
-  const taskbarPosicao: 'acima' | 'abaixo' = configuracoes.posicaoMenu === 'abaixo' ? 'abaixo' : 'acima';
+    posicaoMenuAtiva === 'acima' ||
+    posicaoMenuAtiva === 'abaixo' ||
+    (posicaoMenuAtiva as any) === 'topo';
+  const taskbarPosicao: 'acima' | 'abaixo' = posicaoMenuAtiva === 'abaixo' ? 'abaixo' : 'acima';
 
   // Padding Dinâmico da Área de Conteúdo: Se posicaoMenu === 'abaixo' e !menuAutoOcultar (ou visível), adicione pb-24 ao container principal
   const bottomPaddingClass =
-    taskbarPosicao === 'abaixo' && (!configuracoes.menuAutoOcultar || isTaskbarBottomVisible)
+    taskbarPosicao === 'abaixo' && (!menuAutoOcultarAtivo || isTaskbarBottomVisible)
       ? 'pb-24 sm:pb-28'
       : 'pb-6';
 
@@ -1766,7 +1771,7 @@ export default function AdminApp() {
         pendingKdsCount={pendingKdsCount}
         deliveryProntosCount={deliveryProntosCount}
         activeConnectionsCount={activeConnectionsCount}
-        posicaoMenu={configuracoes.posicaoMenu}
+        posicaoMenu={posicaoMenuAtiva}
         padraoCor={configuracoes.padraoCor}
         configuracoes={configuracoes}
         isCloudConfigLoading={isCloudConfigLoading}
@@ -1786,7 +1791,7 @@ export default function AdminApp() {
           currentRole={currentPerfil?.cargo || currentRole}
           currentPerfil={currentPerfil}
           posicao={taskbarPosicao}
-          menuAutoOcultar={configuracoes.menuAutoOcultar}
+          menuAutoOcultar={menuAutoOcultarAtivo}
           onOpenUsuariosSistema={() => setIsUsuariosSistemaModalOpen(true)}
           pendingKdsCount={pendingKdsCount}
           deliveryProntosCount={deliveryProntosCount}
@@ -1795,6 +1800,12 @@ export default function AdminApp() {
             if (taskbarPosicao === 'abaixo') {
               setIsTaskbarBottomVisible(visivel);
             }
+          }}
+          onToggleAutoOcultar={(novoAutoOcultar) => {
+            handleSaveConfiguracoes({
+              ...configuracoes,
+              menuAutoOcultar: novoAutoOcultar,
+            });
           }}
         />
       )}
@@ -2174,7 +2185,7 @@ export default function AdminApp() {
         onLogout={handleLogout}
         pendingKdsCount={pendingKdsCount}
         deliveryProntosCount={deliveryProntosCount}
-        posicaoMenu={configuracoes.posicaoMenu}
+        posicaoMenu={posicaoMenuAtiva}
         padraoCor={configuracoes.padraoCor}
       />
 

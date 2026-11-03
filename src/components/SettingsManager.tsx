@@ -449,6 +449,47 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     setTimeout(() => setSavedSuccess(false), 2500);
   };
 
+  // 100% Cloud Persistence para Posição do Menu e Auto-Ocultar (zero localStorage)
+  const handleTrocarPosicaoMenuNuvem = async (novaPosicao: PosicaoMenu) => {
+    // 1. Atualização otimista no estado local para resposta instantânea na interface
+    const updated: ConfiguracoesSistema = {
+      ...formData,
+      posicaoMenu: novaPosicao,
+    };
+    setFormData(updated);
+
+    // 2. Persistência direta e imediata na nuvem (Supabase / Backend)
+    if (onSaveConfiguracoes) {
+      try {
+        await onSaveConfiguracoes(updated);
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 2000);
+      } catch (err) {
+        console.error('Falha ao salvar posição do menu na nuvem:', err);
+      }
+    }
+  };
+
+  const handleToggleAutoOcultarNuvem = async (novoAutoOcultar: boolean) => {
+    // 1. Atualização otimista no estado local
+    const updated: ConfiguracoesSistema = {
+      ...formData,
+      menuAutoOcultar: novoAutoOcultar,
+    };
+    setFormData(updated);
+
+    // 2. Persistência direta e imediata na nuvem (Supabase / Backend)
+    if (onSaveConfiguracoes) {
+      try {
+        await onSaveConfiguracoes(updated);
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 2000);
+      } catch (err) {
+        console.error('Falha ao salvar auto-ocultação na nuvem:', err);
+      }
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -1010,7 +1051,7 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                   <button
                     key={pos.id}
                     type="button"
-                    onClick={() => setFormData({ ...formData, posicaoMenu: pos.id })}
+                    onClick={() => handleTrocarPosicaoMenuNuvem(pos.id)}
                     className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 cursor-pointer ${
                       isSelected
                         ? 'border-amber-500 bg-neutral-900 ring-1 ring-amber-500 shadow-sm'
@@ -1060,9 +1101,7 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() =>
-                    setFormData({ ...formData, menuAutoOcultar: !formData.menuAutoOcultar })
-                  }
+                  onClick={() => handleToggleAutoOcultarNuvem(!formData.menuAutoOcultar)}
                   className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 shrink-0 ${
                     formData.menuAutoOcultar ? 'bg-amber-500 justify-end' : 'bg-neutral-700 justify-start'
                   }`}

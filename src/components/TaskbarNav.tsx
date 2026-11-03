@@ -33,6 +33,7 @@ interface TaskbarNavProps {
   deliveryProntosCount: number;
   padraoCor?: PadraoCor;
   onVisibilityChange?: (visivel: boolean) => void;
+  onToggleAutoOcultar?: (novoAutoOcultar: boolean) => void;
 }
 
 export const TaskbarNav: React.FC<TaskbarNavProps> = ({
@@ -47,6 +48,7 @@ export const TaskbarNav: React.FC<TaskbarNavProps> = ({
   deliveryProntosCount = 0,
   padraoCor = 'ambar',
   onVisibilityChange,
+  onToggleAutoOcultar,
 }) => {
   const theme = THEMES[padraoCor] || THEMES.ambar;
 
@@ -93,6 +95,7 @@ export const TaskbarNav: React.FC<TaskbarNavProps> = ({
       if (next) {
         setBarraVisivel(true);
       }
+      onToggleAutoOcultar?.(!next);
       return next;
     });
   };

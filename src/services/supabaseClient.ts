@@ -108,7 +108,15 @@ export async function fetchConfiguracoesFromSupabase(
       uf: data.uf || dadosObj.uf || INITIAL_CONFIGURACOES.uf,
       horarioFuncionamento:
         data.horario_funcionamento || dadosObj.horarioFuncionamento || INITIAL_CONFIGURACOES.horarioFuncionamento,
-      posicaoMenu: (data.posicao_menu || dadosObj.posicaoMenu || INITIAL_CONFIGURACOES.posicaoMenu) as any,
+      posicaoMenu: (data.posicao_menu || dadosObj.posicaoMenu || (dadosObj as any).posicao_menu || INITIAL_CONFIGURACOES.posicaoMenu) as any,
+      menuAutoOcultar:
+        data.menu_auto_ocultar !== undefined
+          ? Boolean(data.menu_auto_ocultar)
+          : dadosObj.menuAutoOcultar !== undefined
+          ? Boolean(dadosObj.menuAutoOcultar)
+          : (dadosObj as any).menu_auto_ocultar !== undefined
+          ? Boolean((dadosObj as any).menu_auto_ocultar)
+          : false,
       padraoCor: (data.padrao_cor || dadosObj.padraoCor || INITIAL_CONFIGURACOES.padraoCor) as any,
       modoOperacao: (data.modo_operacao || dadosObj.modoOperacao || 'producao') as any,
       ledCor: dadosObj.ledCor || (data as any).led_cor || 'vermelho',
@@ -164,6 +172,7 @@ export async function saveConfiguracoesToSupabase(
     uf: novas.uf,
     horario_funcionamento: novas.horarioFuncionamento,
     posicao_menu: novas.posicaoMenu,
+    menu_auto_ocultar: Boolean(novas.menuAutoOcultar),
     padrao_cor: novas.padraoCor,
     modo_operacao: novas.modoOperacao || 'producao',
     supabase_url: novas.supabaseUrl,
@@ -208,6 +217,16 @@ export async function saveConfiguracoesToSupabase(
       event: 'configuracoes_alteradas',
       payload: novas,
     });
+  } catch {}
+
+  try {
+    if (typeof window !== 'undefined') {
+      await fetch('/api/configuracoes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(novas),
+      }).catch(() => {});
+    }
   } catch {}
 
   return {
