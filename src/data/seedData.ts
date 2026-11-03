@@ -28,6 +28,7 @@ export const INITIAL_CONFIGURACOES: ConfiguracoesSistema = {
   uf: 'SP',
   horarioFuncionamento: 'SEGUNDA A SÁBADO, DAS 11H ÀS 14H',
   posicaoMenu: 'direita',
+  menuAutoOcultar: false,
   padraoCor: 'ambar',
   modoOperacao: 'producao',
   ledCor: 'vermelho',

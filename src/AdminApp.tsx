@@ -42,6 +42,7 @@ import { MonthlyCustomersReports } from './components/MonthlyCustomersReports';
 import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
 import { UsuariosSistemaModal } from './components/UsuariosSistemaModal';
+import { TaskbarNav } from './components/TaskbarNav';
 import { playAlertChime, isSalaoPedido } from './utils/formatters';
 import { THEMES } from './utils/theme';
 import { DollarSign, Bike, ChefHat, Briefcase } from 'lucide-react';
@@ -261,6 +262,7 @@ export default function AdminApp() {
 
   const [isSlideMenuOpen, setIsSlideMenuOpen] = useState<boolean>(false);
   const [selectedMesaNumber, setSelectedMesaNumber] = useState<number | undefined>(undefined);
+  const [isTaskbarBottomVisible, setIsTaskbarBottomVisible] = useState<boolean>(false);
 
   // Cloud Application State (100% Nuvem Supabase)
   const [configuracoes, setConfiguracoes] = useState<ConfiguracoesSistema>(INITIAL_CONFIGURACOES);
@@ -1735,6 +1737,18 @@ export default function AdminApp() {
 
   const currentTheme = THEMES[configuracoes.padraoCor] || THEMES.ambar;
 
+  const isTaskbarMode =
+    configuracoes.posicaoMenu === 'acima' ||
+    configuracoes.posicaoMenu === 'abaixo' ||
+    (configuracoes.posicaoMenu as any) === 'topo';
+  const taskbarPosicao: 'acima' | 'abaixo' = configuracoes.posicaoMenu === 'abaixo' ? 'abaixo' : 'acima';
+
+  // Padding Dinâmico da Área de Conteúdo: Se posicaoMenu === 'abaixo' e !menuAutoOcultar (ou visível), adicione pb-24 ao container principal
+  const bottomPaddingClass =
+    taskbarPosicao === 'abaixo' && (!configuracoes.menuAutoOcultar || isTaskbarBottomVisible)
+      ? 'pb-24 sm:pb-28'
+      : 'pb-6';
+
   return (
     <div className={`min-h-screen w-full max-w-full overflow-x-hidden ${currentTheme.bgTone || 'bg-neutral-900'} ${currentTheme.fontStyle || 'font-sans'} ${configuracoes.padraoCor === 'windows11' ? 'theme-windows11' : ''} text-neutral-100 flex flex-col transition-colors duration-200`}>
       {/* Top Bar Header with Configurable Menu Position and Theme */}
@@ -1761,8 +1775,32 @@ export default function AdminApp() {
         syncStatus={syncStatus}
       />
 
-      {/* Main Viewport Container */}
-      <main className="flex-1 max-w-7xl w-full max-w-full mx-auto p-4 sm:p-6 overflow-x-hidden">
+      {/* Barra de Tarefas Centralizada com Auto-Ocultar (Posições 'acima' ou 'abaixo') */}
+      {isTaskbarMode && (
+        <TaskbarNav
+          activeTab={activeTab}
+          onSelectTab={(tab) => {
+            setActiveTab(tab);
+            if (tab !== 'pdv') setSelectedMesaNumber(undefined);
+          }}
+          currentRole={currentPerfil?.cargo || currentRole}
+          currentPerfil={currentPerfil}
+          posicao={taskbarPosicao}
+          menuAutoOcultar={configuracoes.menuAutoOcultar}
+          onOpenUsuariosSistema={() => setIsUsuariosSistemaModalOpen(true)}
+          pendingKdsCount={pendingKdsCount}
+          deliveryProntosCount={deliveryProntosCount}
+          padraoCor={configuracoes.padraoCor}
+          onVisibilityChange={(visivel) => {
+            if (taskbarPosicao === 'abaixo') {
+              setIsTaskbarBottomVisible(visivel);
+            }
+          }}
+        />
+      )}
+
+      {/* Main Viewport Container com Padding Dinâmico */}
+      <main className={`flex-1 max-w-7xl w-full max-w-full mx-auto p-4 sm:p-6 overflow-x-hidden ${bottomPaddingClass}`}>
         {/* Admin Dashboard */}
         {activeTab === 'dashboard' && (
           <AdminDashboard

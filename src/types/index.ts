@@ -288,7 +288,8 @@ export interface BairroTaxa {
   taxa: number;
 }
 
-export type PosicaoMenu = 'direita' | 'esquerda' | 'topo';
+export type PosicaoMenuTipo = 'esquerda' | 'direita' | 'acima' | 'abaixo';
+export type PosicaoMenu = PosicaoMenuTipo | 'topo';
 export type PadraoCor =
   | 'ambar'
   | 'terracota'
@@ -324,6 +325,7 @@ export interface ConfiguracoesSistema {
   horarioFuncionamento: string;
   // Tela e Layout
   posicaoMenu: PosicaoMenu;
+  menuAutoOcultar?: boolean;
   padraoCor: PadraoCor;
   dashboard_layout?: DashboardLayoutTipo;
   // Personalização do Painel LED de Senhas

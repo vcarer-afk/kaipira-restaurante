@@ -64,6 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
   syncStatus = 'sincronizado',
 }) => {
   const theme = THEMES[padraoCor] || THEMES.ambar;
+  const isTaskbarMode = posicaoMenu === 'acima' || posicaoMenu === 'abaixo' || (posicaoMenu as any) === 'topo';
 
   // Relógio em tempo real no formato "00:00"
   const [currentTime, setCurrentTime] = useState<string>(() => {
@@ -185,91 +186,96 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
 
-          {/* Quick Nav: KDS COZINHA (Pisca em vermelho quando houver pedidos pendentes/em_preparacao) */}
-          {temPermissao('kds') && (
-            <button
-              type="button"
-              onClick={() => onSelectTab('kds')}
-              className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-                pendingKdsCount > 0
-                  ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
-                  : activeTab === 'kds'
-                  ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
-                  : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
-              }`}
-              title={
-                pendingKdsCount > 0
-                  ? `${pendingKdsCount} pedido(s) pendente(s) na cozinha!`
-                  : 'KDS Cozinha'
-              }
-            >
-              <ChefHat className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline uppercase">KDS</span>
-              {pendingKdsCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
-                  {pendingKdsCount}
-                </span>
+          {/* Quick Nav Buttons: Desacoplados quando posicaoMenu for 'acima' ou 'abaixo' (pois estão na Barra de Tarefas dedicada) */}
+          {!isTaskbarMode && (
+            <>
+              {/* Quick Nav: KDS COZINHA (Pisca em vermelho quando houver pedidos pendentes/em_preparacao) */}
+              {temPermissao('kds') && (
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('kds')}
+                  className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                    pendingKdsCount > 0
+                      ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
+                      : activeTab === 'kds'
+                      ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
+                      : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
+                  }`}
+                  title={
+                    pendingKdsCount > 0
+                      ? `${pendingKdsCount} pedido(s) pendente(s) na cozinha!`
+                      : 'KDS Cozinha'
+                  }
+                >
+                  <ChefHat className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline uppercase">KDS</span>
+                  {pendingKdsCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
+                      {pendingKdsCount}
+                    </span>
+                  )}
+                </button>
               )}
-            </button>
-          )}
 
-          {/* Quick Nav: EXPEDIÇÃO DELIVERY (Pisca em vermelho quando houver pedidos prontos aguardando entrega) */}
-          {temPermissao('expedicao') && (
-            <button
-              type="button"
-              onClick={() => onSelectTab('expedicao')}
-              className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-                deliveryProntosCount > 0
-                  ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
-                  : activeTab === 'expedicao'
-                  ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
-                  : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
-              }`}
-              title={
-                deliveryProntosCount > 0
-                  ? `${deliveryProntosCount} entrega(s) pronta(s) aguardando despacho!`
-                  : 'Expedição & Delivery'
-              }
-            >
-              <Bike className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline uppercase">Expedição</span>
-              {deliveryProntosCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
-                  {deliveryProntosCount}
-                </span>
+              {/* Quick Nav: EXPEDIÇÃO DELIVERY (Pisca em vermelho quando houver pedidos prontos aguardando entrega) */}
+              {temPermissao('expedicao') && (
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('expedicao')}
+                  className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                    deliveryProntosCount > 0
+                      ? 'bg-red-600 text-white animate-pulse border border-red-400 shadow-md shadow-red-950/60'
+                      : activeTab === 'expedicao'
+                      ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
+                      : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
+                  }`}
+                  title={
+                    deliveryProntosCount > 0
+                      ? `${deliveryProntosCount} entrega(s) pronta(s) aguardando despacho!`
+                      : 'Expedição & Delivery'
+                  }
+                >
+                  <Bike className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline uppercase">Expedição</span>
+                  {deliveryProntosCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-red-700 font-black tabular-nums">
+                      {deliveryProntosCount}
+                    </span>
+                  )}
+                </button>
               )}
-            </button>
-          )}
 
-          {/* Quick Nav: RELATÓRIOS (Visível se tiver permissão) */}
-          {temPermissao('relatorios') && (
-            <button
-              type="button"
-              onClick={() => onSelectTab('relatorios')}
-              className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-                activeTab === 'relatorios'
-                  ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
-                  : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
-              }`}
-              title="Central de Relatórios Financeiros e Gerenciais"
-            >
-              <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="hidden md:inline uppercase">Relatórios</span>
-            </button>
-          )}
+              {/* Quick Nav: RELATÓRIOS (Visível se tiver permissão) */}
+              {temPermissao('relatorios') && (
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('relatorios')}
+                  className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                    activeTab === 'relatorios'
+                      ? `${theme.primaryBg} text-white border border-amber-500/50 shadow-xs`
+                      : 'bg-neutral-850/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-750'
+                  }`}
+                  title="Central de Relatórios Financeiros e Gerenciais"
+                >
+                  <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="hidden md:inline uppercase">Relatórios</span>
+                </button>
+              )}
 
-          {/* Acesso Exclusivo e Estrito: admin@kaipira.com */}
-          {currentPerfil?.email?.toLowerCase().trim() === 'admin@kaipira.com' && onOpenUsuariosSistema && (
-            <button
-              type="button"
-              onClick={onOpenUsuariosSistema}
-              className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 bg-neutral-850 hover:bg-neutral-800 text-amber-300 hover:text-white border border-amber-600/70 shadow-sm transition-all cursor-pointer shrink-0 active:scale-95"
-              title="Chaves de Acesso e Gestão de Usuários do Sistema (Exclusivo admin@kaipira.com)"
-            >
-              <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="hidden sm:inline uppercase">Gestão de Usuários</span>
-              <Key className="w-3 h-3 text-amber-500 shrink-0" />
-            </button>
+              {/* Acesso Exclusivo e Estrito: admin@kaipira.com */}
+              {currentPerfil?.email?.toLowerCase().trim() === 'admin@kaipira.com' && onOpenUsuariosSistema && (
+                <button
+                  type="button"
+                  onClick={onOpenUsuariosSistema}
+                  className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 bg-neutral-850 hover:bg-neutral-800 text-amber-300 hover:text-white border border-amber-600/70 shadow-sm transition-all cursor-pointer shrink-0 active:scale-95"
+                  title="Chaves de Acesso e Gestão de Usuários do Sistema (Exclusivo admin@kaipira.com)"
+                >
+                  <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="hidden sm:inline uppercase">Gestão de Usuários</span>
+                  <Key className="w-3 h-3 text-amber-500 shrink-0" />
+                </button>
+              )}
+            </>
           )}
 
           {/* Somente na tela do Administrador/Master/Supervisor: Conexões Ativas "Conectados xx" (oculto em mobile < 640px) */}

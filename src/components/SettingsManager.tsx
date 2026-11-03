@@ -36,6 +36,8 @@ import {
   ShoppingCart,
   Coffee,
   Grid3X3,
+  EyeOff,
+  Maximize2,
 } from 'lucide-react';
 
 interface SettingsManagerProps {
@@ -981,28 +983,35 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
             <div className="grid grid-cols-1 gap-2.5">
               {[
                 {
-                  id: 'direita' as PosicaoMenu,
-                  label: 'À Direita (Slide Drawer)',
-                  desc: 'Gaveta animada deslizando à direita com visual amplo para o salão e KDS',
-                },
-                {
                   id: 'esquerda' as PosicaoMenu,
                   label: 'À Esquerda (Slide Drawer)',
                   desc: 'Gaveta deslizando à esquerda no padrão ocidental de dashboards',
                 },
                 {
-                  id: 'topo' as PosicaoMenu,
-                  label: 'Acima (Barra Horizontal Superior)',
-                  desc: 'Menu expandido fixo diretamente na barra superior para telas largas',
+                  id: 'direita' as PosicaoMenu,
+                  label: 'À Direita (Slide Drawer)',
+                  desc: 'Gaveta animada deslizando à direita com visual amplo para o salão e KDS',
+                },
+                {
+                  id: 'acima' as PosicaoMenu,
+                  label: 'Acima (Barra de Tarefas Superior)',
+                  desc: 'Régua horizontal centralizada fixada no topo, logo abaixo da barra de marca',
+                },
+                {
+                  id: 'abaixo' as PosicaoMenu,
+                  label: 'Abaixo (Barra de Tarefas Inferior / Dock)',
+                  desc: 'Barra fixada no rodapé estilo Windows 11 / macOS Dock centralizada',
                 },
               ].map((pos) => {
-                const isSelected = formData.posicaoMenu === pos.id;
+                const isSelected =
+                  formData.posicaoMenu === pos.id ||
+                  (pos.id === 'acima' && formData.posicaoMenu === 'topo');
                 return (
                   <button
                     key={pos.id}
                     type="button"
                     onClick={() => setFormData({ ...formData, posicaoMenu: pos.id })}
-                    className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
+                    className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 cursor-pointer ${
                       isSelected
                         ? 'border-amber-500 bg-neutral-900 ring-1 ring-amber-500 shadow-sm'
                         : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-700'
@@ -1025,6 +1034,44 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                 );
               })}
             </div>
+
+            {/* Auto-Ocultar Barra de Tarefas (Exibido para acima/abaixo) */}
+            {(formData.posicaoMenu === 'acima' ||
+              formData.posicaoMenu === 'abaixo' ||
+              formData.posicaoMenu === 'topo') && (
+              <div className="mt-2 p-3.5 bg-neutral-900 rounded-xl border border-neutral-750 flex items-center justify-between gap-4 animate-fade-in">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg bg-neutral-800 border border-neutral-700 text-amber-400 shrink-0 mt-0.5">
+                    <EyeOff className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-white uppercase">
+                        Auto-Ocultar Barra de Tarefas
+                      </span>
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800 uppercase">
+                        WINDOWS 11 / DOCK
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-neutral-400 mt-0.5 leading-snug">
+                      Oculta a barra automaticamente para maximizar a área útil de dados e KDS, exibindo-a suavemente ao aproximar o cursor do mouse.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({ ...formData, menuAutoOcultar: !formData.menuAutoOcultar })
+                  }
+                  className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 shrink-0 ${
+                    formData.menuAutoOcultar ? 'bg-amber-500 justify-end' : 'bg-neutral-700 justify-start'
+                  }`}
+                  title="Alternar auto-ocultação da barra de tarefas"
+                >
+                  <span className="bg-neutral-950 w-4 h-4 rounded-full shadow-md" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* PADRÕES DE CORES CONFIGURÁVEIS (12 PALETAS) */}
