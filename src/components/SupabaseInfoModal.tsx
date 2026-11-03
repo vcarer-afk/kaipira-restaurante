@@ -76,9 +76,9 @@ CREATE TABLE IF NOT EXISTS perfis (
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. CLIENTES & MENSALISTAS (PIRACICABA)
+-- 3. CLIENTES & MENSALISTAS (PIRACICABA - SUPORTE A VARCHAR(100))
 CREATE TABLE IF NOT EXISTS clientes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
     telefone VARCHAR(20) UNIQUE NOT NULL,
     cep VARCHAR(10) NOT NULL,
@@ -118,22 +118,50 @@ CREATE TABLE IF NOT EXISTS opcionais (
     preco_adicional DECIMAL(10,2) DEFAULT 0.00
 );
 
--- 5. ESTOQUE BÁSICO
+-- 5. ESTOQUE COM PRECISÃO DE 3 CASAS DECIMAIS (NUMERIC(10,3))
 CREATE TABLE IF NOT EXISTS estoque (
     id SERIAL PRIMARY KEY,
     item_nome VARCHAR(100) NOT NULL,
-    quantidade_atual DECIMAL(10,2) NOT NULL DEFAULT 0,
+    quantidade_atual NUMERIC(10,3) NOT NULL DEFAULT 0.000,
     unidade_medida VARCHAR(20) DEFAULT 'un',
-    estoque_minimo DECIMAL(10,2) DEFAULT 5.00,
+    estoque_minimo NUMERIC(10,3) DEFAULT 5.000,
     fornecedor_info TEXT,
     atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 6. MESAS & RESERVAS (20 MESAS)
+-- 6. FICHA TÉCNICA E COMPOSIÇÃO DE PRODUTOS
+CREATE TABLE IF NOT EXISTS produto_composicao (
+    id SERIAL PRIMARY KEY,
+    produto_id INT REFERENCES produtos(id) ON DELETE CASCADE,
+    insumo_id INT REFERENCES estoque(id) ON DELETE CASCADE,
+    quantidade NUMERIC(10,3) NOT NULL,
+    unidade_medida VARCHAR(30) NOT NULL,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 7. AUDITORIA E HISTÓRICO DE MOVIMENTAÇÕES DE ESTOQUE
+CREATE TABLE IF NOT EXISTS estoque_movimentacoes (
+    id SERIAL PRIMARY KEY,
+    item_id INT REFERENCES estoque(id) ON DELETE CASCADE,
+    item_nome VARCHAR(100),
+    tipo VARCHAR(30) NOT NULL, -- 'baixa_pedido', 'ajuste_manual', 'entrada_compra', 'perda'
+    quantidade NUMERIC(10,3) NOT NULL,
+    quantidade_anterior NUMERIC(10,3),
+    quantidade_nova NUMERIC(10,3),
+    unidade_medida VARCHAR(20),
+    motivo TEXT,
+    pedido_id INT,
+    responsavel VARCHAR(100),
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 8. MESAS & RESERVAS (20 MESAS)
 CREATE TABLE IF NOT EXISTS mesas (
     id SERIAL PRIMARY KEY,
     numero INT UNIQUE NOT NULL,
-    status VARCHAR(20) DEFAULT 'livre'
+    status VARCHAR(20) DEFAULT 'livre',
+    cliente_nome VARCHAR(100),
+    pessoas INT
 );
 
 CREATE TABLE IF NOT EXISTS reservas (
@@ -145,13 +173,13 @@ CREATE TABLE IF NOT EXISTS reservas (
     status VARCHAR(20) DEFAULT 'confirmada'
 );
 
--- 7. PEDIDOS & ITENS (COM CONFERÊNCIA DE DELIVERY PELO CAIXA)
+-- 9. PEDIDOS & ITENS (CLIENTE_ID VARCHAR(100))
 CREATE TABLE IF NOT EXISTS pedidos (
     id SERIAL PRIMARY KEY,
     codigo_senha SERIAL,
     tipo tipo_pedido NOT NULL,
     status status_pedido DEFAULT 'pendente',
-    cliente_id UUID REFERENCES clientes(id),
+    cliente_id VARCHAR(100) REFERENCES clientes(id),
     mesa_id INT REFERENCES mesas(id),
     precisa_troco BOOLEAN DEFAULT FALSE,
     troco_para DECIMAL(10,2),
@@ -162,15 +190,10 @@ CREATE TABLE IF NOT EXISTS pedidos (
     conferido_em TIMESTAMP WITH TIME ZONE DEFAULT NULL,
     valor_total DECIMAL(10,2) DEFAULT 0.00,
     taxa_entrega DECIMAL(10,2) DEFAULT 0.00,
+    estoque_baixado BOOLEAN DEFAULT FALSE,
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
--- Se a tabela pedidos já existe no seu Supabase sem essas colunas, execute no SQL Editor:
-ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS conferencia_entrega VARCHAR(20) DEFAULT NULL;
-ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS conferido_por VARCHAR(150) DEFAULT NULL;
-ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS conferido_em TIMESTAMP WITH TIME ZONE DEFAULT NULL;
-ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS entregador_nome VARCHAR(150) DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS itens_pedido (
     id SERIAL PRIMARY KEY,
@@ -182,7 +205,7 @@ CREATE TABLE IF NOT EXISTS itens_pedido (
     opcionais_selecionados JSONB
 );
 
--- 8. CAIXA & PAGAMENTOS
+-- 10. CAIXA & PAGAMENTOS
 CREATE TABLE IF NOT EXISTS pagamentos (
     id SERIAL PRIMARY KEY,
     pedido_id INT REFERENCES pedidos(id) ON DELETE CASCADE,
@@ -202,7 +225,26 @@ CREATE TABLE IF NOT EXISTS caixa_diario (
     fechado_em TIMESTAMP WITH TIME ZONE
 );
 
--- 9. CONFIGURAÇÕES GERAIS DO RESTAURANTE (100% NUVEM SUPABASE)
+-- 11. CONFIGURAÇÕES GERAIS COM POSIÇÃO DE MENU E AUTO-OCULTAR
+CREATE TABLE IF NOT EXISTS configuracoes_sistema (
+    id INT PRIMARY KEY DEFAULT 1,
+    nome_restaurante VARCHAR(100) DEFAULT 'RESTAURANTE KAIPIRA',
+    email VARCHAR(100) DEFAULT 'contato@restaurantekaipira.com.br',
+    telefone VARCHAR(30) DEFAULT '(19) 3-4221-1980',
+    cep VARCHAR(10) DEFAULT '13400-010',
+    endereco VARCHAR(200) DEFAULT 'RUA DO ROSÁRIO',
+    numero VARCHAR(20) DEFAULT '1240',
+    bairro VARCHAR(100) DEFAULT 'CENTRO',
+    cidade VARCHAR(100) DEFAULT 'PIRACICABA',
+    uf VARCHAR(2) DEFAULT 'SP',
+    horario_funcionamento VARCHAR(150) DEFAULT 'SEGUNDA A SÁBADO, DAS 11H ÀS 14H',
+    posicao_menu VARCHAR(20) DEFAULT 'direita',
+    menu_auto_ocultar BOOLEAN DEFAULT FALSE,
+    padrao_cor VARCHAR(20) DEFAULT 'ambar',
+    dados JSONB,
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS configuracoes (
     id INT PRIMARY KEY DEFAULT 1,
     nome_restaurante VARCHAR(100),
@@ -216,6 +258,7 @@ CREATE TABLE IF NOT EXISTS configuracoes (
     uf VARCHAR(2) DEFAULT 'SP',
     horario_funcionamento VARCHAR(150),
     posicao_menu VARCHAR(20) DEFAULT 'direita',
+    menu_auto_ocultar BOOLEAN DEFAULT FALSE,
     padrao_cor VARCHAR(20) DEFAULT 'ambar',
     supabase_url TEXT,
     supabase_anon_key TEXT,
@@ -224,18 +267,17 @@ CREATE TABLE IF NOT EXISTS configuracoes (
     atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Inserir registro inicial se não existir
-INSERT INTO configuracoes (id, nome_restaurante, email, telefone, cep, endereco, numero, bairro, cidade, uf, horario_funcionamento, posicao_menu, padrao_cor)
-VALUES (1, 'RESTAURANTE KAIPIRA', 'contato@restaurantekaipira.com.br', '(19) 3-4221-1980', '13400-010', 'RUA DO ROSÁRIO', '1240', 'CENTRO', 'PIRACICABA', 'SP', 'SEGUNDA A SÁBADO, DAS 11H ÀS 14H', 'direita', 'ambar')
-ON CONFLICT (id) DO NOTHING;
+ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS posicao_menu VARCHAR(20) DEFAULT 'direita';
+ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS menu_auto_ocultar BOOLEAN DEFAULT FALSE;
 
--- 10. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (MONTAGEM DO DIA)
--- Campos: data, produto_id, canal ('delivery_balcao' ou 'mesas')
+-- 12. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (CONTROLE DE ABERTURA E PUBLICAÇÃO)
 CREATE TABLE IF NOT EXISTS cardapio_diario (
     id SERIAL PRIMARY KEY,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
     produto_id INT NOT NULL,
     canal VARCHAR(30) NOT NULL, -- 'delivery_balcao' ou 'mesas'
+    status VARCHAR(30) DEFAULT 'publicado',
+    aberto_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT uk_cardapio_data_produto_canal UNIQUE (data, produto_id, canal)
 );
@@ -244,13 +286,15 @@ ALTER TABLE cardapio_diario ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Acesso publico cardapio_diario" ON cardapio_diario;
 CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING (true) WITH CHECK (true);
 
--- 11. ATIVAÇÃO DO SUPABASE REALTIME
+-- 13. ATIVAÇÃO DO SUPABASE REALTIME
+ALTER PUBLICATION supabase_realtime ADD TABLE configuracoes_sistema;
 ALTER PUBLICATION supabase_realtime ADD TABLE configuracoes;
 ALTER PUBLICATION supabase_realtime ADD TABLE usuarios;
 ALTER PUBLICATION supabase_realtime ADD TABLE cardapio_diario;
 ALTER PUBLICATION supabase_realtime ADD TABLE pedidos;
 ALTER PUBLICATION supabase_realtime ADD TABLE mesas;
 ALTER PUBLICATION supabase_realtime ADD TABLE estoque;
+ALTER PUBLICATION supabase_realtime ADD TABLE estoque_movimentacoes;
 ALTER PUBLICATION supabase_realtime ADD TABLE caixa_diario;
 `;
 

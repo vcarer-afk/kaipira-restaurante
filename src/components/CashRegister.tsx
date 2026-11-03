@@ -1,6 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import {
   CaixaDiario,
   FormaPagamento,
@@ -658,88 +656,9 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
     window.print();
   };
 
-  // Exportação nativa de PDF com jsPDF + html2canvas (Garante download de arquivo .pdf sem espaço em branco no topo)
-  const handleExportarPDF = async () => {
-    setIsExportingPDF(true);
-    try {
-      const reportElement = document.getElementById('relatorio-fechamento-caixa');
-      if (!reportElement) {
-        setIsExportingPDF(false);
-        return;
-      }
-
-      // 1. Guardar e resetar temporariamente a rolagem do modal pai
-      const modalContainer = reportElement.closest('.overflow-y-auto') as HTMLElement | null;
-      const prevScrollTop = modalContainer ? modalContainer.scrollTop : 0;
-      if (modalContainer) {
-        modalContainer.scrollTop = 0;
-      }
-
-      // 2. Captura limpa sem herança de scroll ou deslocamento de tela
-      const canvas = await html2canvas(reportElement, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        scrollY: 0,
-        scrollX: 0,
-        x: 0,
-        y: 0,
-        windowWidth: reportElement.scrollWidth,
-        windowHeight: reportElement.scrollHeight,
-        onclone: (clonedDoc) => {
-          // Garante que no documento clonado o relatório não tenha margens ou alinhamento vertical flex
-          const clonedElement = clonedDoc.getElementById('relatorio-fechamento-caixa');
-          if (clonedElement) {
-            clonedElement.style.margin = '0';
-            clonedElement.style.paddingTop = '10px';
-            clonedElement.style.transform = 'none';
-          }
-        },
-      });
-
-      // Restaurar a rolagem original do modal para o utilizador
-      if (modalContainer) {
-        modalContainer.scrollTop = prevScrollTop;
-      }
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      const pdfWidth = 210;
-      const pdfHeight = 297;
-      const margin = 8;
-      const contentWidth = pdfWidth - margin * 2;
-      const pageUsableHeight = pdfHeight - margin * 2;
-      const contentHeight = (canvas.height * contentWidth) / canvas.width;
-
-      let heightLeft = contentHeight;
-      let position = margin;
-
-      // Página 1: começa rigorosamente na margem superior (8mm do topo)
-      pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
-      heightLeft -= pageUsableHeight;
-
-      // Páginas seguintes (apenas se houver excedente real maior que 5mm)
-      while (heightLeft > 5) {
-        position -= pageUsableHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
-        heightLeft -= pageUsableHeight;
-      }
-
-      const dataHoje = caixa.data_caixa || new Date().toISOString().split('T')[0];
-      pdf.save(`Relatorio_Fechamento_Caixa_${dataHoje}.pdf`);
-    } catch (err) {
-      console.error('Erro ao gerar arquivo PDF:', err);
-      window.print();
-    } finally {
-      setIsExportingPDF(false);
-    }
+  // Exportação/impressão nativa de relatório e cupom para PDF sem dependências externas
+  const handleExportarPDF = () => {
+    window.print();
   };
 
   // Abertura do modal rápido de conferência e confirmação de pagamento

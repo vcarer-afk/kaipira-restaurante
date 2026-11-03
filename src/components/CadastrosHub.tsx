@@ -1318,9 +1318,9 @@ INSERT INTO usuarios (nome, email, telefone, cargo, status, senha)
 VALUES ('ADMINISTRADOR MASTER GERAL', 'master@kaipira.com', '(19) 9-9999-9999', 'master', 'ativo', 'DNDIGQOL')
 ON CONFLICT (email) DO UPDATE SET cargo = 'master', senha = 'DNDIGQOL', status = 'ativo', atualizado_em = NOW();
 
--- 2. TABELA DE CLIENTES
+-- 2. TABELA DE CLIENTES (SUPORTE A VARCHAR(100))
 CREATE TABLE IF NOT EXISTS clientes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY,
     nome VARCHAR(150) NOT NULL,
     telefone VARCHAR(25) UNIQUE NOT NULL,
     cep VARCHAR(10) NOT NULL DEFAULT '13400-010',
