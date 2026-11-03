@@ -315,9 +315,11 @@ async function startServer() {
         pagamentos = [],
       } = req.body;
 
-      const codigo_senha = state.proximoCodigoSenha++;
-
       const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+
+      // 1. Gera o ID único do pedido e código/senha ANTES de mapear itens e pagamentos
+      const novoPedidoId = generateNumericId();
+      const codigo_senha = state.proximoCodigoSenha++;
 
       // calculate total com arredondamento monetário seguro
       let valor_produtos = 0;
@@ -333,7 +335,7 @@ async function startServer() {
 
         return {
           id: generateNumericId(),
-          pedido_id: 0,
+          pedido_id: novoPedidoId,
           produto_id: it.produto_id,
           produto_nome: it.produto_nome,
           quantidade: it.quantidade || 1,
@@ -381,10 +383,10 @@ async function startServer() {
       const pagamentosList: any[] = [];
       if (req.body.pagamentos && req.body.pagamentos.length > 0) {
         req.body.pagamentos.forEach((pg: any) => {
-          // 1. Adiciona ao array de pagamentos do pedido
+          // 1. Adiciona ao array de pagamentos do pedido com o ID real do pedido
           pagamentosList.push({
             id: generateNumericId(),
-            pedido_id: 0, // Será vinculado dinamicamente pelo frontend local
+            pedido_id: novoPedidoId,
             forma: pg.forma,
             valor: Number(pg.valor),
             criado_em: new Date().toISOString()
@@ -417,7 +419,7 @@ async function startServer() {
       }
 
       const novoPedido: Pedido = {
-        id: generateNumericId(),
+        id: novoPedidoId,
         codigo_senha,
         tipo,
         status: 'pendente',

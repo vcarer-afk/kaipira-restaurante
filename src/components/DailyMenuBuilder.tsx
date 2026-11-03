@@ -380,7 +380,7 @@ export const DailyMenuBuilder: React.FC<DailyMenuBuilderProps> = ({
                 {dataFormatada}
               </span>
 
-              {statusAbertura === 'aberto' ? (
+              {['aberto', 'publicado', 'confirmado'].includes(statusAbertura) ? (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase bg-emerald-950/90 text-emerald-300 border border-emerald-700 shadow-xs">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
                   CARDÁPIO ATIVO (DIA ABERTO)

@@ -46,6 +46,23 @@ export function getSupabaseClient(): SupabaseClient {
 }
 
 /**
+ * Detecta se a aplicação está rodando em ambiente de hospedagem estática
+ * (GitHub Pages, Cloudflare Pages, Netlify, Vercel ou protocolo file://)
+ * onde não há servidor Node/Express local para rotas /api/*.
+ */
+export function isStaticHosting(): boolean {
+  if (typeof window === 'undefined') return false;
+  const hostname = window.location.hostname;
+  return (
+    hostname.includes('github.io') ||
+    hostname.includes('pages.dev') ||
+    hostname.includes('netlify.app') ||
+    hostname.includes('vercel.app') ||
+    window.location.protocol === 'file:'
+  );
+}
+
+/**
  * Funções reais de Auth do Supabase
  */
 export async function loginWithSupabase(loginInfo: string, senhaInfo: string) {
@@ -220,7 +237,7 @@ export async function saveConfiguracoesToSupabase(
   } catch {}
 
   try {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !isStaticHosting()) {
       await fetch('/api/configuracoes', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -557,12 +574,20 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     return {
       ...origIt,
       ...(insIt || {}),
+      pedido_id: pedidoIdGerado,
       produto_nome: origIt.produto_nome || (insIt as any)?.produto_nome,
       preco_unitario: Number(origIt.preco_unitario) || Number(insIt?.preco_unitario) || 0,
       quantidade: Number(origIt.quantidade) || Number(insIt?.quantidade) || 1,
       opcionais_selecionados: cleanOps,
     };
   });
+
+  const finalPagamentos: Pagamento[] = (
+    pagamentosFormatados.length > 0 ? pagamentosFormatados : (pedido.pagamentos || [])
+  ).map((pg: any) => ({
+    ...pg,
+    pedido_id: pedidoIdGerado,
+  }));
 
   const novoPedidoCompleto: Pedido = {
     id: pedidoIdGerado,
@@ -580,8 +605,8 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     valor_total: Number(pedido.valor_total) || 0,
     taxa_entrega: Number(pedido.taxa_entrega) || 0,
     itens: cleanItensRetorno,
-    pagamentos: pagamentosFormatados.length > 0 ? pagamentosFormatados : (pedido.pagamentos || []),
-    forma_pagamento: formaPagamentoFinal || pedido.forma_pagamento || (pagamentosFormatados.length > 0 ? pagamentosFormatados[0].forma : undefined),
+    pagamentos: finalPagamentos,
+    forma_pagamento: formaPagamentoFinal || pedido.forma_pagamento || (finalPagamentos.length > 0 ? finalPagamentos[0].forma : undefined),
     pagamento_confirmado: !!pedido.pagamento_confirmado,
     criado_em: pedidoPayload.criado_em,
     atualizado_em: now,
@@ -3134,15 +3159,17 @@ export async function fetchFormasPagamentoSupabase(): Promise<FormaPagamentoConf
     console.warn('Erro ao buscar formas_pagamento de configuracoes:', err);
   }
 
-  // 3. Fallback: carregar da rota do backend local (/api/formas-pagamento)
-  try {
-    const res = await fetch('/api/formas-pagamento');
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) return data;
+  // 3. Fallback: carregar da rota do backend local (/api/formas-pagamento) se não for hospedagem estática
+  if (!isStaticHosting()) {
+    try {
+      const res = await fetch('/api/formas-pagamento');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) return data;
+      }
+    } catch {
+      // offline
     }
-  } catch {
-    // offline
   }
 
   return INITIAL_FORMAS_PAGAMENTO;
@@ -3204,14 +3231,16 @@ export async function salvarFormaPagamentoSupabase(
     console.warn('Erro ao salvar formas_pagamento em configuracoes:', err);
   }
 
-  // C. Notifica backend /api/formas-pagamento
-  try {
-    fetch('/api/formas-pagamento', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formatted),
-    }).catch(() => {});
-  } catch {}
+  // C. Notifica backend /api/formas-pagamento se não for hospedagem estática
+  if (!isStaticHosting()) {
+    try {
+      fetch('/api/formas-pagamento', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formatted),
+      }).catch(() => {});
+    } catch {}
+  }
 
   return updatedList;
 }
@@ -3250,12 +3279,14 @@ export async function excluirFormaPagamentoSupabase(
     console.warn('Erro ao atualizar formas_pagamento após exclusão:', err);
   }
 
-  // C. Notifica backend /api/formas-pagamento/:id
-  try {
-    fetch(`/api/formas-pagamento/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    }).catch(() => {});
-  } catch {}
+  // C. Notifica backend /api/formas-pagamento/:id se não for hospedagem estática
+  if (!isStaticHosting()) {
+    try {
+      fetch(`/api/formas-pagamento/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }).catch(() => {});
+    } catch {}
+  }
 
   return updatedList;
 }

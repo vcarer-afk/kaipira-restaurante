@@ -97,6 +97,7 @@ import {
   subscribeActiveConnections,
   zerarFinanceiroDiaSupabase,
   logoutSupabase,
+  isStaticHosting,
 } from './services/supabaseClient';
 
 // Helper para enriquecer a descrição/nome completo do produto usando estritamente os produtos cadastrados na nuvem
@@ -678,6 +679,21 @@ export default function AdminApp() {
     fetchCloudState();
 
     let channel: any = null;
+    let eventSource: EventSource | null = null;
+
+    if (typeof window !== 'undefined' && !isStaticHosting()) {
+      try {
+        eventSource = new EventSource('/api/realtime/stream');
+        eventSource.onerror = () => {
+          // Silencia o erro para não poluir console quando em produção ou sem dev server
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+          }
+        };
+      } catch {}
+    }
+
     try {
       // Connect to Supabase Realtime channel (works in static hosting like GitHub Pages)
       channel = supabase
@@ -895,6 +911,9 @@ export default function AdminApp() {
     return () => {
       if (channel) {
         supabase.removeChannel(channel);
+      }
+      if (eventSource) {
+        eventSource.close();
       }
     };
   }, [fetchCloudConfiguracoes, fetchCloudState]);
@@ -1246,9 +1265,9 @@ export default function AdminApp() {
       }
     }
 
-    // Sincroniza também com a rota do servidor caso esteja ativo
+    // Sincroniza também com a rota do servidor caso esteja ativo e não seja hospedagem estática
     try {
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && !isStaticHosting()) {
         await fetch(`/api/mesas/${numero}/fechar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
