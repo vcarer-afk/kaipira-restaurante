@@ -172,3 +172,32 @@ export function isSalaoPedido(p: { tipo?: string; mesa_id?: number | string | nu
   const t = (p.tipo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return t.includes('sal');
 }
+
+/**
+ * Formatação de quantidade de estoque com suporte a até 3 casas decimais
+ * Para kg, l, litro, g, ml: exibe até 3 casas decimais quando houver fração (ex: 0.125 kg)
+ * Para un, pct, cx: exibe número inteiro ou até 2 casas
+ */
+export function formatQuantidadeEstoque(
+  qtd: number | string | undefined | null,
+  unidade: string = 'un'
+): string {
+  if (qtd === undefined || qtd === null || qtd === '') return '0';
+  const num = typeof qtd === 'number' ? qtd : parseFloat(String(qtd).replace(',', '.'));
+  if (isNaN(num)) return '0';
+
+  const u = (unidade || '').toLowerCase().trim();
+  const isPesoOuVolume = ['kg', 'l', 'litro', 'litros', 'quilo', 'quilos', 'g', 'ml'].includes(u);
+
+  if (isPesoOuVolume) {
+    if (num % 1 !== 0) {
+      return num.toFixed(3).replace(/\.?0+$/, '');
+    }
+    return String(num);
+  }
+
+  if (num % 1 !== 0) {
+    return num.toFixed(2).replace(/\.?0+$/, '');
+  }
+  return String(num);
+}

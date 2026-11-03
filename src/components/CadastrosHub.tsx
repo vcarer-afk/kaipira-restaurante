@@ -16,7 +16,7 @@ import {
   IngredienteComposicao,
 } from '../types';
 import { StockManager } from './StockManager';
-import { formatPhone, formatBRL } from '../utils/formatters';
+import { formatPhone, formatBRL, formatQuantidadeEstoque } from '../utils/formatters';
 import { UpperInput, UpperTextarea } from './UpperInput';
 import { converterParaUnidadeBaseEstoque } from '../utils/stockDeduction';
 import {
@@ -3926,7 +3926,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                     <option value="">-- SELECIONE O INSUMO DO ESTOQUE --</option>
                     {estoque.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.item_nome} (Saldo Atual: {item.quantidade_atual} {item.unidade_medida || 'un'} | Custo: {formatBRL(item.custo_unitario || 0)})
+                        {item.item_nome} (Saldo Atual: {formatQuantidadeEstoque(item.quantidade_atual, item.unidade_medida)} {item.unidade_medida || 'un'} | Custo: {formatBRL(item.custo_unitario || 0)})
                       </option>
                     ))}
                   </select>
@@ -3999,7 +3999,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                         </label>
                         <input
                           type="number"
-                          step="any"
+                          step="0.001"
                           min="0.001"
                           placeholder="Qtd"
                           value={novoIngredienteQtd}
@@ -4075,7 +4075,7 @@ CREATE TABLE IF NOT EXISTS formas_pagamento (
                                 </td>
                                 <td className="px-2 py-2 text-center">
                                   <div className="flex flex-col items-center">
-                                    <span className="text-white font-bold">{item.quantidade}</span>
+                                    <span className="text-white font-bold">{formatQuantidadeEstoque(item.quantidade, item.unidade_medida)}</span>
                                     {impacto && (
                                       <span className="text-[10px] text-amber-400 font-mono font-semibold">
                                         {impacto}

@@ -10,7 +10,7 @@ import {
   CardapioDiarioConfig,
   DashboardLayoutTipo,
 } from '../types';
-import { formatBRL, formatTime, isSalaoPedido } from '../utils/formatters';
+import { formatBRL, formatTime, isSalaoPedido, formatQuantidadeEstoque } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
 import { ActiveTab } from './Header';
 import {
@@ -420,10 +420,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleExcluirAlerta = (item: ItemEstoque) => {
+    // Oculta o alerta apenas visualmente na sessão atual, preservando o estoque_minimo intacto no Supabase!
     setDismissedStockAlerts((prev) => [...prev, item.id]);
-    if (onUpdateStockItem) {
-      onUpdateStockItem(item.id, { estoque_minimo: 0 });
-    }
   };
 
   // Mensalistas
@@ -1309,7 +1307,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           {it.item_nome}
                         </span>
                         <span className="text-[11px] text-red-300 font-mono">
-                          Atual: <strong>{it.quantidade_atual} {it.unidade_medida}</strong> (Mín: {it.estoque_minimo})
+                          Atual: <strong>{formatQuantidadeEstoque(it.quantidade_atual, it.unidade_medida)} {it.unidade_medida}</strong> (Mín: {formatQuantidadeEstoque(it.estoque_minimo, it.unidade_medida)})
                         </span>
                       </div>
                     </div>
@@ -2654,7 +2652,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {adjustingStockItem.item_nome}
               </span>
               <span className="text-[11px] text-neutral-400 block font-mono">
-                Unidade: {adjustingStockItem.unidade_medida.toUpperCase()} · Mínimo Cadastrado: {adjustingStockItem.estoque_minimo} {adjustingStockItem.unidade_medida}
+                Unidade: {adjustingStockItem.unidade_medida.toUpperCase()} · Mínimo Cadastrado: {formatQuantidadeEstoque(adjustingStockItem.estoque_minimo, adjustingStockItem.unidade_medida)} {adjustingStockItem.unidade_medida}
               </span>
             </div>
 
@@ -2665,7 +2663,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   required
                   value={newStockQty}
                   onChange={(e) => setNewStockQty(e.target.value)}
@@ -2679,7 +2677,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   required
                   value={newStockMin}
                   onChange={(e) => setNewStockMin(e.target.value)}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { ItemEstoque, MovimentacaoEstoque } from '../types';
 import { fetchMovimentacoesItemEstoque, registrarAjusteManualEstoque } from '../services/supabaseClient';
+import { formatQuantidadeEstoque } from '../utils/formatters';
 import { UpperInput } from './UpperInput';
 import {
   Boxes,
@@ -47,6 +48,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
   const [filtroRapido, setFiltroRapido] = useState<'todos' | 'minimo' | 'negativo'>('todos');
   const [sortMode, setSortMode] = useState<EstoqueSortMode>('nome');
   const [cloudNotification, setCloudNotification] = useState<string | null>(null);
+  const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
 
   // Modal 1: Ajuste / Inventário com Auditoria
   const [inventarioItem, setInventarioItem] = useState<ItemEstoque | null>(null);
@@ -159,7 +161,16 @@ export const StockManager: React.FC<StockManagerProps> = ({
     [items]
   );
 
-  const alertItemsCount = totalAbaixoMinimo;
+  const alertItemsCount = useMemo(
+    () =>
+      items.filter(
+        (it) =>
+          it.estoque_minimo > 0 &&
+          it.quantidade_atual <= it.estoque_minimo &&
+          !dismissedAlerts.includes(it.id)
+      ).length,
+    [items, dismissedAlerts]
+  );
 
   // Filtered & Sorted items
   const filteredAndSortedEstoque = useMemo(() => {
@@ -419,43 +430,18 @@ export const StockManager: React.FC<StockManagerProps> = ({
   };
 
   /**
-   * 5. Excluir alerta (define estoque_minimo = 0 no Supabase) - 100% Nuvem
+   * 5. Ocultar alerta temporariamente na sessão atual, preservando o estoque_minimo intacto no Supabase!
    */
-  const handleExcluirAlerta = async (it: ItemEstoque) => {
-    try {
-      const updatePayload = {
-        estoque_minimo: 0,
-        atualizado_em: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('estoque')
-        .update(updatePayload)
-        .eq('id', it.id);
-
-      if (error) {
-        console.warn('Erro ao excluir alerta no Supabase:', error.message);
-        showNotification(`Erro ao excluir alerta na nuvem: ${error.message}`);
-        return;
-      }
-
-      setItems((prev) =>
-        prev.map((item) => (item.id === it.id ? { ...item, estoque_minimo: 0 } : item))
-      );
-      onUpdateItem?.(it.id, updatePayload);
-
-      showNotification(`Alerta de "${it.item_nome}" excluído na nuvem.`);
-    } catch (err: any) {
-      console.error('Erro ao excluir alerta:', err);
-      showNotification(`Erro de conexão com o Supabase: ${err?.message || 'Falha de rede'}`);
-    }
+  const handleExcluirAlerta = (it: ItemEstoque) => {
+    setDismissedAlerts((prev) => [...prev, it.id]);
+    showNotification(`Alerta de "${it.item_nome}" dispensado temporariamente.`);
   };
 
   /**
-   * 6. Ajuste rápido +/- direto no Supabase - 100% Nuvem
+   * 6. Ajuste rápido +/- direto no Supabase - 100% Nuvem (precisão de até 3 decimais)
    */
   const handleQuickDelta = async (it: ItemEstoque, delta: number) => {
-    const nextVal = Math.max(0, Number((it.quantidade_atual + delta).toFixed(2)));
+    const nextVal = Math.max(0, Number((it.quantidade_atual + delta).toFixed(3)));
 
     try {
       const { error } = await supabase
@@ -621,7 +607,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {items
-              .filter((it) => it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo)
+              .filter((it) => it.estoque_minimo > 0 && it.quantidade_atual <= it.estoque_minimo && !dismissedAlerts.includes(it.id))
               .map((it) => (
                 <div
                   key={it.id}
@@ -632,7 +618,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                       {it.item_nome}
                     </span>
                     <span className="text-[11px] text-red-300 font-mono">
-                      Atual: <strong>{it.quantidade_atual} {it.unidade_medida.toUpperCase()}</strong> (Mín: {it.estoque_minimo} {it.unidade_medida.toUpperCase()})
+                      Atual: <strong>{formatQuantidadeEstoque(it.quantidade_atual, it.unidade_medida)} {it.unidade_medida.toUpperCase()}</strong> (Mín: {formatQuantidadeEstoque(it.estoque_minimo, it.unidade_medida)} {it.unidade_medida.toUpperCase()})
                     </span>
                     {it.fornecedor_info && (
                       <span className="text-[10px] text-neutral-400 block truncate uppercase">
@@ -654,10 +640,10 @@ export const StockManager: React.FC<StockManagerProps> = ({
                       type="button"
                       onClick={() => handleExcluirAlerta(it)}
                       className="px-2.5 py-1.5 bg-neutral-800 hover:bg-red-900/60 text-neutral-300 hover:text-red-200 border border-neutral-700 rounded-lg text-[11px] font-bold uppercase flex items-center gap-1 transition-colors cursor-pointer"
-                      title="Excluir alerta deste insumo (define estoque mínimo como zero no Supabase)"
+                      title="Dispensar alerta deste insumo temporariamente"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                      <span>Excluir Alerta</span>
+                      <span>Dispensar</span>
                     </button>
                   </div>
                 </div>
@@ -832,14 +818,14 @@ export const StockManager: React.FC<StockManagerProps> = ({
                     <div>
                       <span className="text-[10px] text-neutral-400 uppercase block font-bold">Qtd Atual</span>
                       <span className={`text-sm font-black font-mono ${isNegativo ? 'text-red-400' : isAbaixoMinimo ? 'text-amber-400' : 'text-white'}`}>
-                        {it.quantidade_atual} {it.unidade_medida.toUpperCase()}
+                        {formatQuantidadeEstoque(it.quantidade_atual, it.unidade_medida)} {it.unidade_medida.toUpperCase()}
                       </span>
                     </div>
 
                     <div className="text-right">
                       <span className="text-[10px] text-neutral-400 uppercase block font-bold">Estoque Mínimo</span>
                       <span className="text-xs font-bold font-mono text-neutral-300">
-                        {it.estoque_minimo} {it.unidade_medida.toUpperCase()}
+                        {formatQuantidadeEstoque(it.estoque_minimo, it.unidade_medida)} {it.unidade_medida.toUpperCase()}
                       </span>
                     </div>
                   </div>
@@ -962,14 +948,14 @@ export const StockManager: React.FC<StockManagerProps> = ({
                         {/* Current Quantity */}
                         <td className="p-3.5 text-right tabular-nums">
                           <span className={`text-sm font-black font-mono ${isNegativo ? 'text-red-400 font-extrabold' : isAbaixoMinimo ? 'text-amber-400' : 'text-white'}`}>
-                            {it.quantidade_atual} {it.unidade_medida.toUpperCase()}
+                            {formatQuantidadeEstoque(it.quantidade_atual, it.unidade_medida)} {it.unidade_medida.toUpperCase()}
                           </span>
                         </td>
 
                         {/* Min threshold */}
                         <td className="p-3.5 text-right tabular-nums text-neutral-400 font-mono">
                           <span>
-                            {it.estoque_minimo} {it.unidade_medida.toUpperCase()}
+                            {formatQuantidadeEstoque(it.estoque_minimo, it.unidade_medida)} {it.unidade_medida.toUpperCase()}
                           </span>
                         </td>
 
@@ -1122,7 +1108,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   required
                   value={novaQty}
                   onChange={(e) => setNovaQty(e.target.value)}
@@ -1157,7 +1143,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   required
                   value={novoMinimo}
                   onChange={(e) => setNovoMinimo(e.target.value)}
@@ -1251,7 +1237,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   required
                   value={editQty}
                   onChange={(e) => setEditQty(e.target.value)}
@@ -1286,7 +1272,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   required
                   value={editMin}
                   onChange={(e) => setEditMin(e.target.value)}
@@ -1352,7 +1338,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 {deletingItem.item_nome}
               </span>
               <span className="text-[11px] text-neutral-400 font-mono block">
-                Saldo atual: {deletingItem.quantidade_atual} {deletingItem.unidade_medida.toUpperCase()} · Mínimo: {deletingItem.estoque_minimo} {deletingItem.unidade_medida.toUpperCase()}
+                Saldo atual: {formatQuantidadeEstoque(deletingItem.quantidade_atual, deletingItem.unidade_medida)} {deletingItem.unidade_medida.toUpperCase()} · Mínimo: {formatQuantidadeEstoque(deletingItem.estoque_minimo, deletingItem.unidade_medida)} {deletingItem.unidade_medida.toUpperCase()}
               </span>
             </div>
 
@@ -1421,7 +1407,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   required
                   value={adjustQty}
                   onChange={(e) => setAdjustQty(e.target.value)}
@@ -1435,7 +1421,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   required
                   value={adjustMin}
                   onChange={(e) => setAdjustMin(e.target.value)}
@@ -1456,7 +1442,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                     type="button"
                     onClick={() => {
                       const cur = parseFloat(adjustQty.replace(',', '.')) || adjustingItem.quantidade_atual;
-                      setAdjustQty(String(Number((cur + delta).toFixed(2))));
+                      setAdjustQty(String(Number((cur + delta).toFixed(3))));
                     }}
                     className="flex-1 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 rounded-lg text-xs font-bold font-mono transition-colors border border-neutral-700 cursor-pointer active:scale-95"
                   >
@@ -1522,7 +1508,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                     {inventarioItem.item_nome}
                   </span>
                   <span className="text-[11px] text-neutral-400 font-mono mt-0.5 block">
-                    Estoque Mínimo: {inventarioItem.estoque_minimo} {inventarioItem.unidade_medida.toUpperCase()}
+                    Estoque Mínimo: {formatQuantidadeEstoque(inventarioItem.estoque_minimo, inventarioItem.unidade_medida)} {inventarioItem.unidade_medida.toUpperCase()}
                   </span>
                 </div>
                 <div className="text-right">
@@ -1530,7 +1516,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                   <span className={`text-base font-black font-mono ${
                     inventarioItem.quantidade_atual < 0 ? 'text-red-400 animate-pulse' : 'text-white'
                   }`}>
-                    {inventarioItem.quantidade_atual} {inventarioItem.unidade_medida.toUpperCase()}
+                    {formatQuantidadeEstoque(inventarioItem.quantidade_atual, inventarioItem.unidade_medida)} {inventarioItem.unidade_medida.toUpperCase()}
                   </span>
                 </div>
               </div>
@@ -1549,7 +1535,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
               </label>
               <input
                 type="number"
-                step="0.01"
+                step="0.001"
                 required
                 autoFocus
                 value={inventarioNovoSaldo}
@@ -1567,7 +1553,7 @@ export const StockManager: React.FC<StockManagerProps> = ({
                       : 'text-red-400'
                   }`}>
                     {(parseFloat(inventarioNovoSaldo.replace(',', '.')) - inventarioItem.quantidade_atual) >= 0 ? '+' : ''}
-                    {(parseFloat(inventarioNovoSaldo.replace(',', '.')) - inventarioItem.quantidade_atual).toFixed(2)} {inventarioItem.unidade_medida.toUpperCase()}
+                    {formatQuantidadeEstoque(parseFloat(inventarioNovoSaldo.replace(',', '.')) - inventarioItem.quantidade_atual, inventarioItem.unidade_medida)} {inventarioItem.unidade_medida.toUpperCase()}
                   </span>
                 </div>
               )}

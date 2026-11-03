@@ -346,11 +346,11 @@ async function startServer() {
       const valor_total = round2(valor_produtos + round2(Number(taxa_entrega || 0)));
 
       // Handle cliente if provided
-      let cliente_id = cliente?.id;
+      let cliente_id = cliente?.id ? String(cliente.id) : undefined;
       if (cliente && !cliente_id) {
         cliente_id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'c-' + Date.now();
         const novoCliente: Cliente = {
-          id: cliente_id,
+          id: String(cliente_id),
           nome: (cliente.nome || '').toUpperCase(),
           telefone: cliente.telefone || '',
           cep: cliente.cep || '',
@@ -365,11 +365,12 @@ async function startServer() {
         state.clientes.push(novoCliente);
       } else if (cliente && cliente_id) {
         // update existing
-        const existingIdx = state.clientes.findIndex((c) => c.id === cliente_id);
+        const existingIdx = state.clientes.findIndex((c) => String(c.id) === String(cliente_id));
         if (existingIdx !== -1) {
           state.clientes[existingIdx] = {
             ...state.clientes[existingIdx],
             ...cliente,
+            id: String(state.clientes[existingIdx].id),
             nome: (cliente.nome || state.clientes[existingIdx].nome).toUpperCase(),
             endereco: (cliente.endereco || state.clientes[existingIdx].endereco).toUpperCase(),
             bairro: (cliente.bairro || state.clientes[existingIdx].bairro).toUpperCase(),
@@ -391,7 +392,7 @@ async function startServer() {
 
           // 2. Se for mensalista, abate no saldo
           if (pg.forma === 'mensalista' && cliente_id) {
-            const cli = state.clientes.find((c) => c.id === cliente_id);
+            const cli = state.clientes.find((c) => String(c.id) === String(cliente_id));
             if (cli) {
               cli.eh_mensalista = true;
               cli.saldo_devedor = (cli.saldo_devedor || 0) + Number(pg.valor);
@@ -421,7 +422,7 @@ async function startServer() {
         tipo,
         status: 'pendente',
         cliente_id,
-        cliente: state.clientes.find((c) => c.id === cliente_id),
+        cliente: state.clientes.find((c) => String(c.id) === String(cliente_id)),
         mesa_id: mesa_id ? Number(mesa_id) : undefined,
         precisa_troco: Boolean(precisa_troco),
         troco_para: troco_para ? Number(troco_para) : undefined,
@@ -507,7 +508,7 @@ async function startServer() {
 
     // Se mensalista, adiciona ao saldo devedor
     if (forma === 'mensalista' && pedido.cliente_id) {
-      const cli = state.clientes.find((c) => c.id === pedido.cliente_id);
+      const cli = state.clientes.find((c) => String(c.id) === String(pedido.cliente_id));
       if (cli) {
         cli.eh_mensalista = true;
         cli.saldo_devedor = (cli.saldo_devedor || 0) + valorPago;
@@ -720,7 +721,7 @@ async function startServer() {
     const { id } = req.params;
     const { valor_pago, forma = 'pix' } = req.body;
 
-    const cliente = state.clientes.find((c) => c.id === id);
+    const cliente = state.clientes.find((c) => String(c.id) === String(id));
     if (!cliente) {
       return res.status(404).json({ erro: true, mensagem: 'Cliente não encontrado' });
     }

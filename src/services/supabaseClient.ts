@@ -1888,25 +1888,26 @@ export async function criarReservaSupabase(
  * Mensalistas operations via Supabase
  */
 export async function abaterSaldoMensalistaSupabase(
-  clienteId: string,
+  clienteId: string | number,
   valor: number,
   clienteObj?: Cliente
 ): Promise<void> {
   try {
+    const rawCid = clienteId !== undefined && clienteId !== null ? String(clienteId) : '';
     let clienteEncontradoId: string | null = null;
     let saldoAtual = 0;
 
     // 1. Se clienteId for UUID válido, busca direto por ID
-    if (isUUID(clienteId)) {
+    if (isUUID(rawCid)) {
       try {
         const { data: dbCli } = await supabase
           .from('clientes')
           .select('id, saldo_devedor, telefone, nome')
-          .eq('id', clienteId)
+          .eq('id', rawCid)
           .maybeSingle();
 
         if (dbCli) {
-          clienteEncontradoId = dbCli.id;
+          clienteEncontradoId = String(dbCli.id);
           saldoAtual = Number(dbCli.saldo_devedor || 0);
         }
       } catch {}
@@ -1924,12 +1925,13 @@ export async function abaterSaldoMensalistaSupabase(
       if (clis && clis.length > 0) {
         const match = clis.find(
           (c) =>
+            (rawCid && String(c.id) === rawCid) ||
             (tel && c.telefone === tel) ||
             (telDigits && c.telefone && c.telefone.replace(/\D/g, '') === telDigits) ||
             (clienteObj?.nome && c.nome?.toUpperCase().trim() === clienteObj.nome.toUpperCase().trim())
         );
         if (match) {
-          clienteEncontradoId = match.id;
+          clienteEncontradoId = String(match.id);
           saldoAtual = Number(match.saldo_devedor || 0);
         }
       }
@@ -2447,14 +2449,15 @@ export async function fetchCardapioDiarioSupabase(
  * CRUD COMPLETO: CLIENTES & MENSALISTAS NO SUPABASE
  * =========================================================================
  */
-const isUUID = (str?: string) =>
-  !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+const isUUID = (str?: any): boolean =>
+  !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
 
 export async function salvarClienteSupabase(
   cliente: Partial<Cliente>
 ): Promise<{ success: boolean; data?: Cliente; error?: string }> {
   try {
     // 1. Sanitização e preenchimento garantido de todos os campos obrigatórios em UPPERCASE
+    const rawId = cliente.id !== undefined && cliente.id !== null ? String(cliente.id) : undefined;
     const nomeLimpo = (cliente.nome || 'CLIENTE').toUpperCase().trim();
     const telefoneLimpo = (cliente.telefone || '(19) 99999-9999').trim();
     const cepLimpo = (cliente.cep || '13400-010').trim();
@@ -2476,13 +2479,13 @@ export async function salvarClienteSupabase(
     };
 
     // 2. Se cliente.id for um UUID válido real do PostgreSQL, inclui para atualização
-    const hasValidUuid = isUUID(cliente.id);
-    if (hasValidUuid) {
-      payload.id = cliente.id;
+    const hasValidUuid = isUUID(rawId);
+    if (hasValidUuid && rawId) {
+      payload.id = rawId;
     }
 
     // 3. Caso tenha UUID válido, realiza upsert ou update por ID
-    if (hasValidUuid) {
+    if (hasValidUuid && rawId) {
       const { data, error } = await supabase
         .from('clientes')
         .upsert(payload, { onConflict: 'id' })
@@ -2490,7 +2493,7 @@ export async function salvarClienteSupabase(
         .maybeSingle();
 
       if (!error && data) {
-        return { success: true, data: data as Cliente };
+        return { success: true, data: { ...data, id: String(data.id) } as Cliente };
       }
       console.warn('Upsert por UUID falhou, tentando insert/update por telefone:', error?.message);
     }
@@ -2504,7 +2507,7 @@ export async function salvarClienteSupabase(
       .maybeSingle();
 
     if (!insertError && insertData) {
-      return { success: true, data: insertData as Cliente };
+      return { success: true, data: { ...insertData, id: String(insertData.id) } as Cliente };
     }
 
     // 5. Caso o telefone já exista (conflito de chave única), atualiza os dados do cliente por telefone
@@ -2521,9 +2524,13 @@ export async function salvarClienteSupabase(
       return { success: false, error: updateError.message };
     }
 
+    const finalClient = updateData || payload;
     return {
       success: true,
-      data: (updateData as Cliente) || (payload as Cliente),
+      data: {
+        ...finalClient,
+        id: String(finalClient.id || rawId || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'c-' + Date.now())),
+      } as Cliente,
     };
   } catch (err: any) {
     console.warn('Erro ao salvar cliente no Supabase:', err);
@@ -2532,18 +2539,19 @@ export async function salvarClienteSupabase(
 }
 
 export async function excluirClienteSupabase(
-  id: string
+  id: string | number
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    if (isUUID(id)) {
-      const { error } = await supabase.from('clientes').delete().eq('id', id);
+    const rawId = String(id || '');
+    if (isUUID(rawId)) {
+      const { error } = await supabase.from('clientes').delete().eq('id', rawId);
       if (error) {
         console.warn('Aviso ao excluir cliente do Supabase:', error.message);
         return { success: false, error: error.message };
       }
       return { success: true };
     }
-    const { error } = await supabase.from('clientes').delete().eq('telefone', id);
+    const { error } = await supabase.from('clientes').delete().eq('telefone', rawId);
     if (error) {
       return { success: false, error: error.message };
     }
