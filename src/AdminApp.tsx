@@ -1216,28 +1216,50 @@ export default function AdminApp() {
     }
 
     // Se houver débito em conta de mensalista, atualiza saldo devedor
-    if (clienteMensalistaId && pagamentos) {
+    const targetClienteId =
+      clienteMensalistaId ||
+      pedidos.find((p) => pedidosIds?.includes(p.id) && p.cliente_id)?.cliente_id;
+
+    if (targetClienteId && pagamentos && pagamentos.length > 0) {
       const valorMensalista = pagamentos
-        .filter((pg) => pg.forma === 'mensalista')
-        .reduce((acc, pg) => acc + pg.valor, 0);
+        .filter((pg) => String(pg.forma || '').toLowerCase() === 'mensalista')
+        .reduce((acc, pg) => acc + (Number(pg.valor) || 0), 0);
 
       if (valorMensalista > 0) {
+        const cliAtual = clientes.find((c) => String(c.id) === String(targetClienteId));
+        const novoSaldo = Math.round(((cliAtual?.saldo_devedor || 0) + valorMensalista) * 100) / 100;
+
         setClientes((prev) =>
           prev.map((c) =>
-            c.id === clienteMensalistaId
-              ? { ...c, saldo_devedor: (c.saldo_devedor || 0) + valorMensalista }
+            String(c.id) === String(targetClienteId)
+              ? { ...c, eh_mensalista: true, saldo_devedor: novoSaldo }
               : c
           )
         );
-        const cli = clientes.find((c) => c.id === clienteMensalistaId);
-        if (cli) {
-          await salvarClienteSupabase({
-            id: cli.id,
-            saldo_devedor: (cli.saldo_devedor || 0) + valorMensalista,
-          });
-        }
+
+        // Atualização imediata na coluna saldo_devedor do Supabase
+        await salvarClienteSupabase({
+          id: String(targetClienteId),
+          eh_mensalista: true,
+          saldo_devedor: novoSaldo,
+        });
       }
     }
+
+    // Sincroniza também com a rota do servidor caso esteja ativo
+    try {
+      if (typeof window !== 'undefined') {
+        await fetch(`/api/mesas/${numero}/fechar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pagamentos,
+            cliente_id: targetClienteId,
+            pedidosIds,
+          }),
+        }).catch(() => {});
+      }
+    } catch {}
 
     // 3. TERCEIRO E ÚLTIMO: Libera a mesa no banco Supabase e atualiza o estado local setMesas
     await fecharMesaSupabase(numero);

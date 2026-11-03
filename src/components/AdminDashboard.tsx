@@ -256,7 +256,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         cartao_credito: { label: 'CRÉDITO', color: '#f59e0b', darkColor: '#b45309' },
         cartao_debito: { label: 'DÉBITO', color: '#3b82f6', darkColor: '#1d4ed8' },
         vale_refeicao: { label: 'VALE REFEIÇÃO', color: '#8b5cf6', darkColor: '#6d28d9' },
-        mensalista: { label: 'MENSALISTA', color: '#ec4899', darkColor: '#be185d' },
+        mensalista: { label: 'MENSALISTA (A PRAZO)', color: '#ec4899', darkColor: '#be185d' },
+        quitacao_mensalista: { label: 'QUITAÇÃO MENSALISTA', color: '#14b8a6', darkColor: '#0f766e' },
         outro: { label: 'OUTROS', color: '#64748b', darkColor: '#334155' },
       };
 
@@ -292,17 +293,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       });
 
-      // Se houver movimentações de recebimento de mensalista no caixa hoje, inclui nas fatias de pagamento
+      // Se houver movimentações de quitação de faturas de mensalistas no caixa hoje, inclui separadamente
       if (caixa && Array.isArray(caixa.movimentacoes)) {
         caixa.movimentacoes.forEach((m: any) => {
-          if (m && m.tipo === 'suprimento' && m.descricao && m.descricao.toUpperCase().includes('MENSALISTA') && Number(m.valor) > 0) {
-            const raw = (m.forma || 'pix').toLowerCase();
-            let key = 'pix';
-            if (raw.includes('dinheiro')) key = 'dinheiro';
-            else if (raw.includes('credito') || raw.includes('crédito')) key = 'cartao_credito';
-            else if (raw.includes('debito') || raw.includes('débito')) key = 'cartao_debito';
-            else if (raw.includes('vale') || raw.includes('refeicao')) key = 'vale_refeicao';
-            totals[key] = (totals[key] || 0) + Number(m.valor);
+          const desc = (m?.descricao || '').toUpperCase();
+          if (
+            (m?.tipo === 'suprimento' || m?.tipo === 'entrada_pedido') &&
+            (desc.includes('RECEBIMENTO MENSALISTA') || desc.includes('QUITAÇÃO MENSALISTA') || desc.includes('QUITACAO MENSALISTA')) &&
+            Number(m?.valor) > 0
+          ) {
+            totals['quitacao_mensalista'] = (totals['quitacao_mensalista'] || 0) + Number(m.valor);
           }
         });
       }
@@ -430,13 +430,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const mensalistas = safeClientes.filter((c) => c && (c.eh_mensalista || (c.saldo_devedor && c.saldo_devedor > 0)));
   const totalDevedorMensalistas = mensalistas.reduce((acc, c) => acc + (Number(c.saldo_devedor) || 0), 0);
 
-  // Cash in drawer
+  // Cash in drawer - Blindado contra duplicidade de abertura e vendas em dinheiro
   let dinheiroGaveta = Number(caixa?.valor_abertura) || 0;
   if (caixa && Array.isArray(caixa.movimentacoes)) {
     caixa.movimentacoes.forEach((m: any) => {
       if (m && typeof m.valor === 'number' && !isNaN(m.valor)) {
         const rawForma = (m.forma || 'dinheiro').toLowerCase();
-        if (rawForma.includes('dinheiro') || !m.forma) {
+        const desc = (m.descricao || '').toUpperCase();
+
+        // Ignora o lançamento automático de abertura (já somado em valor_abertura)
+        const isFundoInicial =
+          desc.includes('FUNDO DE TROCO INICIAL') ||
+          desc.includes('ABERTURA DE CAIXA');
+
+        // Ignora lançamentos de pedidos que já serão somados no loop de pedidosConfirmados
+        const isPagamentoPedidoAutomatico =
+          m.tipo === 'entrada_pedido' ||
+          desc.includes('PAGTO PEDIDO #') ||
+          desc.includes('FECHAMENTO MESA');
+
+        if ((rawForma.includes('dinheiro') || !m.forma) && !isFundoInicial && !isPagamentoPedidoAutomatico) {
           if (m.tipo === 'suprimento') dinheiroGaveta += m.valor;
           if (m.tipo === 'sangria') dinheiroGaveta -= m.valor;
         }
@@ -447,7 +460,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   if (Array.isArray(pedidosConfirmados)) {
     pedidosConfirmados.forEach((p) => {
       if (!p) return;
-      if (Array.isArray(p.pagamentos)) {
+      if (Array.isArray(p.pagamentos) && p.pagamentos.length > 0) {
         p.pagamentos.forEach((pg) => {
           if (pg && typeof pg.valor === 'number' && !isNaN(pg.valor)) {
             const raw = (pg.forma || '').toLowerCase();

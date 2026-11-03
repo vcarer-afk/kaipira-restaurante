@@ -522,7 +522,7 @@ async function startServer() {
       }
       state.caixa.movimentacoes.push({
         id: generateNumericId(),
-        tipo: 'suprimento',
+        tipo: 'entrada_pedido',
         forma: 'dinheiro',
         valor: valorPago,
         descricao: `PAGTO PEDIDO #${pedido.codigo_senha || pedidoId} (DINHEIRO)`,
@@ -530,6 +530,7 @@ async function startServer() {
       });
     }
 
+    saveState(state);
     broadcast('PAYMENT_RECORDED', { pedido, pagamento: novoPagamento, caixa: state.caixa });
     res.json(pedido);
   });
@@ -617,7 +618,23 @@ async function startServer() {
       });
     }
 
-    broadcast('TABLE_CLOSED', { mesa, pedidos: state.pedidos, caixa: state.caixa });
+    // Atualização obrigatória de saldo devedor quando houver pagamento na modalidade mensalista
+    pagamentosRecebidos.forEach((pg: any) => {
+      if (String(pg.forma || '').toLowerCase() === 'mensalista') {
+        // Procura o cliente associado a qualquer um dos pedidos da mesa ou enviado no body
+        const targetClienteId = req.body.cliente_id || pedidosMesa.find((p) => p.cliente_id)?.cliente_id;
+        if (targetClienteId) {
+          const cli = state.clientes.find((c) => String(c.id) === String(targetClienteId));
+          if (cli) {
+            cli.eh_mensalista = true;
+            cli.saldo_devedor = Math.round(((cli.saldo_devedor || 0) + Number(pg.valor || 0)) * 100) / 100;
+          }
+        }
+      }
+    });
+
+    saveState(state);
+    broadcast('TABLE_CLOSED', { mesa, pedidos: state.pedidos, caixa: state.caixa, clientes: state.clientes });
     res.json(mesa);
   });
 
