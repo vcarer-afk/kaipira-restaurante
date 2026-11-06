@@ -44,6 +44,7 @@ import { MonthlyCustomersReports } from './components/MonthlyCustomersReports';
 import { ThermalReceipt } from './components/ThermalReceipt';
 import { SupabaseInfoModal } from './components/SupabaseInfoModal';
 import { UsuariosSistemaModal } from './components/UsuariosSistemaModal';
+import { MasterSaaSAdmin } from './components/MasterSaaSAdmin';
 import { TaskbarNav } from './components/TaskbarNav';
 import { playAlertChime, isSalaoPedido } from './utils/formatters';
 import { THEMES } from './utils/theme';
@@ -102,6 +103,7 @@ import {
   setActiveRestauranteId,
   getActiveRestauranteId,
   fetchRestauranteAtualSupabase,
+  applyTenantFilter,
 } from './services/supabaseClient';
 
 // Helper para enriquecer a descrição/nome completo do produto usando estritamente os produtos cadastrados na nuvem
@@ -183,6 +185,14 @@ export function mergePedidosPreservingClient(
 
 
 export function temPermissaoAba(aba: ActiveTab, perfil?: Perfil, role?: TipoUsuario): boolean {
+  if (aba === 'master-saas') {
+    return (
+      perfil?.email?.toLowerCase().trim() === 'admin@kaipira.com' ||
+      perfil?.email?.toLowerCase().trim() === 'master@kaipira.com' ||
+      role === 'master' ||
+      perfil?.cargo === 'master'
+    );
+  }
   const cargo = perfil?.cargo || role || 'admin';
   if (cargo === 'master' || cargo === 'admin') {
     return true;
@@ -214,6 +224,7 @@ const TAB_ORDER: ActiveTab[] = [
   'mensalistas',
   'cadastros',
   'configuracoes',
+  'master-saas',
 ];
 
 export default function AdminApp() {
@@ -357,14 +368,14 @@ export default function AdminApp() {
       setSyncStatus('sincronizado');
       await fetchCloudConfiguracoes();
 
-      // Query Supabase tables directly (100% cloud, no static /api 405 error)
+      // Query Supabase tables directly (100% cloud, tenant-filtered)
       const [pedidosData, mesasRes, estoqueRes, caixaRes, reservasRes, clientesRes] = await Promise.allSettled([
         fetchPedidosSupabase(),
-        supabase.from('mesas').select('*'),
-        supabase.from('estoque').select('*').order('id', { ascending: true }),
-        supabase.from('caixa_diario').select('*').order('id', { ascending: false }).limit(1),
-        supabase.from('reservas').select('*').order('id', { ascending: false }),
-        supabase.from('clientes').select('*').order('nome', { ascending: true }),
+        applyTenantFilter(supabase.from('mesas').select('*')),
+        applyTenantFilter(supabase.from('estoque').select('*')).order('id', { ascending: true }),
+        applyTenantFilter(supabase.from('caixa_diario').select('*')).order('id', { ascending: false }).limit(1),
+        applyTenantFilter(supabase.from('reservas').select('*')).order('id', { ascending: false }),
+        applyTenantFilter(supabase.from('clientes').select('*')).order('nome', { ascending: true }),
       ]);
 
       const rawCloudPeds = pedidosData.status === 'fulfilled' && pedidosData.value ? pedidosData.value : [];
@@ -566,6 +577,17 @@ export default function AdminApp() {
     }
   }, [fetchCloudConfiguracoes]);
 
+  // Context switch do Super Administrador SaaS (Impersonate / Auditar outra empresa)
+  const handleSwitchTenant = useCallback((tenantId: string) => {
+    setActiveRestauranteId(tenantId);
+    fetchCloudState();
+  }, [fetchCloudState]);
+
+  const handleBackToMatriz = useCallback(() => {
+    setActiveRestauranteId(DEFAULT_RESTAURANTE_ID);
+    fetchCloudState();
+  }, [fetchCloudState]);
+
   // Gerenciamento de Sessão de Autenticação Real do Supabase (RLS Ativo e Multi-Tenant)
   useEffect(() => {
     const processSession = async (session: any, event?: string) => {
@@ -759,6 +781,11 @@ export default function AdminApp() {
           { event: 'INSERT', schema: 'public', table: 'pedidos' },
           (payload: any) => {
             if (payload.new) {
+              const currentTenant = getActiveRestauranteId();
+              const itemTenant = payload.new.restaurante_id;
+              if (itemTenant && itemTenant !== currentTenant && currentTenant !== DEFAULT_RESTAURANTE_ID) {
+                return;
+              }
               const novoPedido: Pedido = payload.new;
               setPedidos((prev) => [novoPedido, ...prev.filter((p) => p.id !== novoPedido.id)]);
               playAlertChime('order');
@@ -770,6 +797,11 @@ export default function AdminApp() {
           { event: 'UPDATE', schema: 'public', table: 'pedidos' },
           (payload: any) => {
             if (payload.new) {
+              const currentTenant = getActiveRestauranteId();
+              const itemTenant = payload.new.restaurante_id;
+              if (itemTenant && itemTenant !== currentTenant && currentTenant !== DEFAULT_RESTAURANTE_ID) {
+                return;
+              }
               const updated: Pedido = payload.new;
               setPedidos((prev) =>
                 prev.map((p) => {
@@ -804,6 +836,11 @@ export default function AdminApp() {
           { event: 'novo_pedido' },
           (payload: any) => {
             if (payload.payload) {
+              const currentTenant = getActiveRestauranteId();
+              const itemTenant = payload.payload.restaurante_id;
+              if (itemTenant && itemTenant !== currentTenant && currentTenant !== DEFAULT_RESTAURANTE_ID) {
+                return;
+              }
               const novoPedido: Pedido = payload.payload;
               setPedidos((prev) => [novoPedido, ...prev.filter((p) => p.id !== novoPedido.id)]);
               playAlertChime('order');
@@ -1962,6 +1999,15 @@ export default function AdminApp() {
             onReloadCloudConfig={fetchCloudConfiguracoes}
             isCloudConfigLoading={isCloudConfigLoading}
             cloudConfigSyncedAt={cloudConfigSyncedAt}
+          />
+        )}
+
+        {/* Painel Master / Super Administrador SaaS Global */}
+        {activeTab === 'master-saas' && (
+          <MasterSaaSAdmin
+            currentTenantId={getActiveRestauranteId()}
+            onSwitchTenant={handleSwitchTenant}
+            onBackToMatriz={handleBackToMatriz}
           />
         )}
 

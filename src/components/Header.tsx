@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TipoUsuario, Perfil, PosicaoMenu, PadraoCor, ConfiguracoesSistema } from '../types';
 import { THEMES } from '../utils/theme';
-import { Cloud, Menu, Clock, Users, ChefHat, Bike, FileText, Shield, Key } from 'lucide-react';
+import { Cloud, Menu, Clock, Users, ChefHat, Bike, FileText, Shield, Key, Globe } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
@@ -18,7 +18,8 @@ export type ActiveTab =
   | 'estoque'
   | 'caixa'
   | 'relatorios'
-  | 'supabase';
+  | 'supabase'
+  | 'master-saas';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -273,6 +274,26 @@ export const Header: React.FC<HeaderProps> = ({
                   <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                   <span className="hidden sm:inline uppercase">Gestão de Usuários</span>
                   <Key className="w-3 h-3 text-amber-500 shrink-0" />
+                </button>
+              )}
+
+              {/* Painel Master SaaS Global (Restrito ao Super Admin: admin@kaipira.com ou cargo master) */}
+              {(currentPerfil?.email?.toLowerCase().trim() === 'admin@kaipira.com' ||
+                currentPerfil?.email?.toLowerCase().trim() === 'master@kaipira.com' ||
+                currentRole === 'master' ||
+                currentPerfil?.cargo === 'master') && (
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('master-saas')}
+                  className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                    activeTab === 'master-saas'
+                      ? 'bg-purple-600 text-white border border-purple-400 shadow-md shadow-purple-950/60'
+                      : 'bg-neutral-850 hover:bg-neutral-800 text-purple-300 hover:text-white border border-purple-800/80 shadow-xs'
+                  }`}
+                  title="Painel Master / Super Administrador SaaS Global"
+                >
+                  <Globe className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span className="hidden sm:inline uppercase">SaaS Global</span>
                 </button>
               )}
             </>

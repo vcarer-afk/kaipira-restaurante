@@ -19,6 +19,7 @@ import {
   Key,
   Pin,
   PinOff,
+  Globe,
 } from 'lucide-react';
 
 interface TaskbarNavProps {
@@ -100,7 +101,16 @@ export const TaskbarNav: React.FC<TaskbarNavProps> = ({
     });
   };
 
+  const isSuperAdminKaipira =
+    (currentPerfil?.email || '').toLowerCase().trim() === 'admin@kaipira.com' ||
+    (currentPerfil?.email || '').toLowerCase().trim() === 'master@kaipira.com' ||
+    currentRole === 'master' ||
+    currentPerfil?.cargo === 'master';
+
   const temPermissao = (aba: ActiveTab): boolean => {
+    if (aba === 'master-saas') {
+      return isSuperAdminKaipira;
+    }
     if (
       currentRole === 'master' ||
       currentRole === 'admin' ||
@@ -125,9 +135,6 @@ export const TaskbarNav: React.FC<TaskbarNavProps> = ({
     if (currentRole === 'supervisor') return aba !== 'configuracoes';
     return true;
   };
-
-  const isSuperAdminKaipira =
-    (currentPerfil?.email || '').toLowerCase().trim() === 'admin@kaipira.com';
 
   const navItems: Array<{
     id: ActiveTab;
@@ -162,6 +169,7 @@ export const TaskbarNav: React.FC<TaskbarNavProps> = ({
     { id: 'cadastros', label: 'Cadastros', icon: Users },
     { id: 'led', label: 'Painel LED', icon: BellRing },
     { id: 'configuracoes', label: 'Ajustes', icon: Settings },
+    { id: 'master-saas', label: 'SaaS Global', icon: Globe },
   ];
 
   const visibleItems = navItems.filter((item) => temPermissao(item.id));

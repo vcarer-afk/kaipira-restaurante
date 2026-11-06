@@ -101,6 +101,166 @@ export const fetchRestaurantePorSlugSupabase = async (slug: string): Promise<Res
   }
 };
 
+export const MATRIZ_KAIPIRA_TENANT: RestauranteTenant = {
+  id: DEFAULT_RESTAURANTE_ID,
+  slug: 'kaipira',
+  nome_fantasia: 'RESTAURANTE KAIPIRA',
+  razao_social: 'RESTAURANTE KAIPIRA DE PIRACICABA LTDA',
+  segmento: 'restaurante',
+  telefone: '(19) 3-4221-1980',
+  email_contato: 'contato@restaurantekaipira.com.br',
+  cidade: 'PIRACICABA',
+  uf: 'SP',
+  plano: 'enterprise',
+  status_assinatura: 'ativo',
+  ativo: true,
+  criado_em: '2024-01-01T00:00:00.000Z',
+};
+
+export const fetchTodosRestaurantesSupabase = async (): Promise<RestauranteTenant[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('restaurantes')
+      .select('*')
+      .order('criado_em', { ascending: false });
+
+    if (error) {
+      console.warn('Aviso ao consultar lista de restaurantes no Supabase:', error.message);
+      return [MATRIZ_KAIPIRA_TENANT];
+    }
+
+    if (!data || data.length === 0) {
+      try {
+        await supabase.from('restaurantes').insert([MATRIZ_KAIPIRA_TENANT]);
+      } catch {}
+      return [MATRIZ_KAIPIRA_TENANT];
+    }
+
+    const hasKaipira = data.some((r: any) => r.id === DEFAULT_RESTAURANTE_ID || r.slug === 'kaipira');
+    if (!hasKaipira) {
+      return [MATRIZ_KAIPIRA_TENANT, ...(data as RestauranteTenant[])];
+    }
+
+    return data as RestauranteTenant[];
+  } catch (err) {
+    console.warn('Erro ao consultar lista de restaurantes:', err);
+    return [MATRIZ_KAIPIRA_TENANT];
+  }
+};
+
+export const cadastrarNovoRestauranteSupabase = async (
+  restaurante: Partial<RestauranteTenant>
+): Promise<{ success: boolean; data?: RestauranteTenant; error?: string }> => {
+  const nome = (restaurante.nome_fantasia || '').trim().toUpperCase();
+  if (!nome) {
+    return { success: false, error: 'O Nome Fantasia do estabelecimento é obrigatório.' };
+  }
+
+  let slug = (restaurante.slug || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  if (!slug) {
+    slug = nome.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+  }
+
+  const newId = restaurante.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'rest_' + Date.now());
+
+  const newTenant: RestauranteTenant = {
+    id: newId,
+    slug,
+    nome_fantasia: nome,
+    razao_social: restaurante.razao_social ? restaurante.razao_social.trim().toUpperCase() : undefined,
+    cnpj: restaurante.cnpj ? restaurante.cnpj.trim() : undefined,
+    segmento: restaurante.segmento || 'restaurante',
+    telefone: restaurante.telefone ? restaurante.telefone.trim() : undefined,
+    email_contato: restaurante.email_contato ? restaurante.email_contato.trim().toLowerCase() : undefined,
+    cidade: restaurante.cidade ? restaurante.cidade.trim().toUpperCase() : 'PIRACICABA',
+    uf: restaurante.uf ? restaurante.uf.trim().toUpperCase() : 'SP',
+    plano: restaurante.plano || 'profissional',
+    status_assinatura: restaurante.status_assinatura || 'ativo',
+    ativo: restaurante.ativo !== undefined ? restaurante.ativo : true,
+    criado_em: new Date().toISOString(),
+    atualizado_em: new Date().toISOString(),
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from('restaurantes')
+      .insert([newTenant])
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Erro ao inserir novo restaurante no Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    // Provisiona configurações iniciais
+    try {
+      await supabase.from('configuracoes').insert({
+        restaurante_id: newId,
+        nome_restaurante: nome,
+        segmento: newTenant.segmento,
+        telefone: newTenant.telefone || '',
+        cidade: newTenant.cidade,
+        uf: newTenant.uf,
+        posicao_menu: 'direita',
+        padrao_cor: 'ambar',
+        dados: {
+          nomeRestaurante: nome,
+          segmento: newTenant.segmento,
+          cidade: newTenant.cidade,
+          uf: newTenant.uf,
+          telefone: newTenant.telefone,
+          restaurante_id: newId,
+          posicaoMenu: 'direita',
+          padraoCor: 'ambar',
+        },
+        atualizado_em: new Date().toISOString(),
+      });
+    } catch {}
+
+    return { success: true, data: (data as RestauranteTenant) || newTenant };
+  } catch (err: any) {
+    console.error('Falha ao cadastrar novo restaurante:', err);
+    return { success: false, error: err?.message || 'Erro de conexão' };
+  }
+};
+
+export const atualizarStatusRestauranteSupabase = async (
+  id: string,
+  updates: Partial<RestauranteTenant>
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const payload: any = {
+      ...updates,
+      atualizado_em: new Date().toISOString(),
+    };
+    const { error } = await supabase
+      .from('restaurantes')
+      .update(payload)
+      .eq('id', id);
+
+    if (error) {
+      console.warn('Erro ao atualizar status do restaurante:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Falha de comunicação' };
+  }
+};
+
+/**
+ * Injeta o filtro da empresa ativa (Multi-Tenant) em consultas Supabase
+ * Para a matriz padrão (DEFAULT_RESTAURANTE_ID), inclui registros legados onde restaurante_id é NULL
+ */
+export function applyTenantFilter(query: any, customTenantId?: string): any {
+  const tenantId = customTenantId || getActiveRestauranteId();
+  if (tenantId === DEFAULT_RESTAURANTE_ID) {
+    return query.or(`restaurante_id.eq.${tenantId},restaurante_id.is.null`);
+  }
+  return query.eq('restaurante_id', tenantId);
+}
+
 /**
  * Detecta se a aplicação está rodando em ambiente de hospedagem estática
  * (GitHub Pages, Cloudflare Pages, Netlify, Vercel ou protocolo file://)
@@ -149,12 +309,26 @@ export async function fetchConfiguracoesFromSupabase(
   client: SupabaseClient = supabase
 ): Promise<ConfiguracoesSistema | null> {
   try {
-    const { data, error } = await client
-      .from('configuracoes')
-      .select('*')
+    const currentTenantId = getActiveRestauranteId();
+    let query = client.from('configuracoes').select('*');
+    query = applyTenantFilter(query, currentTenantId);
+    let { data, error } = await query
       .order('id', { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    if (error && error.message?.includes('restaurante_id')) {
+      const retry = await client
+        .from('configuracoes')
+        .select('*')
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!retry.error) {
+        data = retry.data;
+        error = null;
+      }
+    }
 
     if (error) {
       console.warn('Aviso ao consultar supabase.from("configuracoes"):', error.message);
@@ -167,6 +341,8 @@ export async function fetchConfiguracoesFromSupabase(
     const dadosObj: Partial<ConfiguracoesSistema> = data.dados || {};
 
     return {
+      restaurante_id: data.restaurante_id || dadosObj.restaurante_id || currentTenantId,
+      segmento: (data.segmento || dadosObj.segmento || 'restaurante') as any,
       supabaseUrl: data.supabase_url || dadosObj.supabaseUrl || INITIAL_CONFIGURACOES.supabaseUrl,
       supabaseAnonKey: data.supabase_anon_key || dadosObj.supabaseAnonKey || INITIAL_CONFIGURACOES.supabaseAnonKey,
       bancoStatus: 'conectado',
@@ -232,8 +408,22 @@ export async function saveConfiguracoesToSupabase(
   novas: ConfiguracoesSistema,
   client: SupabaseClient = supabase
 ): Promise<ConfiguracoesSistema> {
-  const payload = {
-    id: 1,
+  const currentTenantId = getActiveRestauranteId();
+
+  // Localiza se já existe um registro de configuração para este tenant
+  let existingId: number | undefined;
+  try {
+    const { data: existingRow } = await applyTenantFilter(
+      client.from('configuracoes').select('id'),
+      currentTenantId
+    ).limit(1).maybeSingle();
+    if (existingRow && existingRow.id) {
+      existingId = Number(existingRow.id);
+    }
+  } catch {}
+
+  const payload: any = {
+    restaurante_id: currentTenantId,
     nome_restaurante: novas.nomeRestaurante,
     email: novas.email,
     telefone: novas.telefone,
@@ -244,6 +434,7 @@ export async function saveConfiguracoesToSupabase(
     cidade: novas.cidade,
     uf: novas.uf,
     horario_funcionamento: novas.horarioFuncionamento,
+    segmento: novas.segmento || 'restaurante',
     posicao_menu: novas.posicaoMenu,
     menu_auto_ocultar: Boolean(novas.menuAutoOcultar),
     padrao_cor: novas.padraoCor,
@@ -253,26 +444,44 @@ export async function saveConfiguracoesToSupabase(
     delivery_site_ativo: novas.delivery_site_ativo,
     delivery_interno_ativo: novas.delivery_interno_ativo,
     banco_status: 'conectado',
-    dados: novas,
+    dados: { ...novas, restaurante_id: currentTenantId, segmento: novas.segmento || 'restaurante' },
     atualizado_em: new Date().toISOString(),
   };
 
+  if (existingId) {
+    payload.id = existingId;
+  } else if (currentTenantId === DEFAULT_RESTAURANTE_ID) {
+    payload.id = 1;
+  }
+
   // Perform direct upsert via Supabase client
-  const { error } = await client
+  let { error } = await client
     .from('configuracoes')
-    .upsert(payload, { onConflict: 'id' });
+    .upsert(payload, payload.id ? { onConflict: 'id' } : undefined);
+
+  if (error && error.message?.includes('restaurante_id')) {
+    delete payload.restaurante_id;
+    const retryRes = await client.from('configuracoes').upsert(payload, payload.id ? { onConflict: 'id' } : undefined);
+    error = retryRes.error;
+  }
 
   if (error) {
     console.warn('Tentando upsert simplificado de configuracoes no Supabase:', error.message);
     // Fallback: minimal columns in case table has simpler schema
-    const fallbackPayload = {
-      id: 1,
-      dados: novas,
+    const fallbackPayload: any = {
+      ...(payload.id ? { id: payload.id } : {}),
+      restaurante_id: currentTenantId,
+      dados: { ...novas, restaurante_id: currentTenantId, segmento: novas.segmento || 'restaurante' },
       atualizado_em: new Date().toISOString(),
     };
-    const fallbackRes = await client
+    let fallbackRes = await client
       .from('configuracoes')
-      .upsert(fallbackPayload, { onConflict: 'id' });
+      .upsert(fallbackPayload, fallbackPayload.id ? { onConflict: 'id' } : undefined);
+
+    if (fallbackRes.error && fallbackRes.error.message?.includes('restaurante_id')) {
+      delete fallbackPayload.restaurante_id;
+      fallbackRes = await client.from('configuracoes').upsert(fallbackPayload, fallbackPayload.id ? { onConflict: 'id' } : undefined);
+    }
 
     if (fallbackRes.error) {
       const finalErr: any = new Error(
@@ -282,6 +491,19 @@ export async function saveConfiguracoesToSupabase(
       throw finalErr;
     }
   }
+
+  // Sincroniza a tabela 'restaurantes' se ela existir para manter coerência completa
+  try {
+    const restPayload: any = {
+      nome_fantasia: novas.nomeRestaurante,
+      telefone: novas.telefone,
+      cidade: novas.cidade,
+      uf: novas.uf,
+      segmento: novas.segmento || 'restaurante',
+      atualizado_em: new Date().toISOString(),
+    };
+    await client.from('restaurantes').update(restPayload).eq('id', currentTenantId);
+  } catch {}
 
   try {
     const syncChannel = supabase.channel('restaurante_kaipira_cloud_sync');
@@ -366,10 +588,11 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
   let clienteIdVal = isValidUUID(pedido.cliente_id) ? pedido.cliente_id : null;
 
   // Sincronização e resolução persistente do cliente para pedidos de Delivery
+  const currentTenantId = getActiveRestauranteId();
   if (pedido.tipo === 'delivery' && pedido.cliente) {
     try {
       const cleanPhone = String(pedido.cliente.telefone || '').replace(/\D/g, '');
-      const { data: existingClients } = await supabase.from('clientes').select('*');
+      const { data: existingClients } = await applyTenantFilter(supabase.from('clientes').select('*'));
       const found = existingClients?.find((c: any) =>
         (pedido.cliente_id && c.id === pedido.cliente_id) ||
         (cleanPhone.length >= 8 && String(c.telefone || '').replace(/\D/g, '') === cleanPhone)
@@ -400,6 +623,7 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
           cep: pedido.cliente.cep || '13400-000',
           eh_mensalista: !!pedido.cliente.eh_mensalista,
           saldo_devedor: 0,
+          restaurante_id: currentTenantId,
           criado_em: now,
         };
         if (novoUuid) newClientPayload.id = novoUuid;
@@ -430,6 +654,7 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     motoboy_tipo: pedido.motoboy_tipo || null,
     valor_total: Number(pedido.valor_total) || 0,
     taxa_entrega: Number(pedido.taxa_entrega) || 0,
+    restaurante_id: currentTenantId,
     criado_em: pedido.criado_em || now,
     atualizado_em: now,
   };
@@ -453,9 +678,9 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
   let proximoCodigoSenha = 1;
   try {
     // 1. Busca o caixa mais recente para saber o início do turno
-    const { data: caixaAtual } = await supabase
-      .from('caixa_diario')
-      .select('aberto_em, data_caixa, status')
+    const { data: caixaAtual } = await applyTenantFilter(
+      supabase.from('caixa_diario').select('aberto_em, data_caixa, status')
+    )
       .order('id', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -463,7 +688,9 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
     // 2. Busca também em configurações caso aberto_em não esteja na tabela caixa_diario
     let confAbertoEm: string | undefined = undefined;
     try {
-      const { data: cfgRow } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+      const { data: cfgRow } = await applyTenantFilter(
+        supabase.from('configuracoes').select('dados')
+      ).limit(1).maybeSingle();
       confAbertoEm = cfgRow?.dados?.caixa_aberto_em;
     } catch {}
 
@@ -473,9 +700,9 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
         : (confAbertoEm || caixaAtual?.aberto_em || `${new Date().toLocaleDateString('en-CA')}T00:00:00.000Z`);
 
     // 3. Busca a maior senha já criada após o início do turno
-    const { data: pedidosTurno } = await supabase
-      .from('pedidos')
-      .select('codigo_senha')
+    const { data: pedidosTurno } = await applyTenantFilter(
+      supabase.from('pedidos').select('codigo_senha')
+    )
       .gte('criado_em', inicioTurno)
       .order('codigo_senha', { ascending: false })
       .limit(1);
@@ -508,6 +735,9 @@ export async function criarPedidoSupabase(pedido: any): Promise<Pedido> {
 
     if (error) {
       console.warn('Tentativa 1 de insert na tabela pedidos falhou:', error.message);
+      if (error.message?.includes('restaurante_id')) {
+        delete pedidoPayload.restaurante_id;
+      }
       if (error.message?.includes('endereco_entrega')) {
         delete pedidoPayload.endereco_entrega;
       }
@@ -787,7 +1017,7 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
     // Carrega clientes para mapeamento retroativo cliente_id -> cliente
     const cliMap = new Map<string, any>();
     try {
-      const { data: clis } = await supabase.from('clientes').select('*');
+      const { data: clis } = await applyTenantFilter(supabase.from('clientes').select('*'));
       if (clis && clis.length > 0) {
         clis.forEach((c: any) => {
           if (c.id) cliMap.set(String(c.id), c);
@@ -796,10 +1026,9 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
     } catch {}
 
     // 1. Tenta carregar pedidos com relacionamento dos itens e pagamentos
-    const { data: pedidosData, error } = await supabase
-      .from('pedidos')
-      .select('*, itens:itens_pedido(*), pagamentos:pagamentos(*)')
-      .order('criado_em', { ascending: false });
+    const { data: pedidosData, error } = await applyTenantFilter(
+      supabase.from('pedidos').select('*, itens:itens_pedido(*), pagamentos:pagamentos(*)')
+    ).order('criado_em', { ascending: false });
 
     if (!error && pedidosData && pedidosData.length > 0) {
       if (!pedidosColumnsChecked && pedidosData[0]) {
@@ -872,10 +1101,9 @@ export async function fetchPedidosSupabase(): Promise<Pedido[]> {
     }
 
     // 2. Fallback: buscar pedidos e itens_pedido separadamente
-    const { data: simplePeds, error: simpleError } = await supabase
-      .from('pedidos')
-      .select('*')
-      .order('criado_em', { ascending: false });
+    const { data: simplePeds, error: simpleError } = await applyTenantFilter(
+      supabase.from('pedidos').select('*')
+    ).order('criado_em', { ascending: false });
 
     if (!simpleError && simplePeds && simplePeds.length > 0) {
       if (!pedidosColumnsChecked && simplePeds[0]) {
@@ -1255,12 +1483,21 @@ export async function atualizarMesaSupabase(
 
       // Se a mesa ainda não existe na tabela remota (0 linhas afetadas), cria com upsert seguro
       if (error) {
-        const payload: Record<string, any> = { id: num, status };
+        const payload: Record<string, any> = {
+          id: num,
+          status,
+          restaurante_id: getActiveRestauranteId(),
+        };
         if (mesasHasNumero) payload.numero = num;
 
-        const upsertRes = await supabase
+        let upsertRes = await supabase
           .from('mesas')
           .upsert(payload, { onConflict: 'id' });
+
+        if (upsertRes.error && upsertRes.error.message?.includes('restaurante_id')) {
+          delete payload.restaurante_id;
+          upsertRes = await supabase.from('mesas').upsert(payload, { onConflict: 'id' });
+        }
 
         if (upsertRes.error && mesasHasNumero && upsertRes.error.message?.includes('numero')) {
           mesasHasNumero = false;
@@ -1295,9 +1532,17 @@ export async function fecharMesaSupabase(numero: number): Promise<void> {
       }
 
       if (error) {
-        const payload: Record<string, any> = { id: num, status: 'livre' };
+        const payload: Record<string, any> = {
+          id: num,
+          status: 'livre',
+          restaurante_id: getActiveRestauranteId(),
+        };
         if (mesasHasNumero) payload.numero = num;
-        await supabase.from('mesas').upsert(payload, { onConflict: 'id' });
+        let upsertRes = await supabase.from('mesas').upsert(payload, { onConflict: 'id' });
+        if (upsertRes.error && upsertRes.error.message?.includes('restaurante_id')) {
+          delete payload.restaurante_id;
+          await supabase.from('mesas').upsert(payload, { onConflict: 'id' });
+        }
       }
     }
   } catch (err) {
@@ -1310,10 +1555,9 @@ export async function fecharMesaSupabase(numero: number): Promise<void> {
  */
 export async function fetchEstoqueSupabase(): Promise<ItemEstoque[]> {
   try {
-    const { data, error } = await supabase
-      .from('estoque')
-      .select('*')
-      .order('id', { ascending: true });
+    const { data, error } = await applyTenantFilter(
+      supabase.from('estoque').select('*')
+    ).order('id', { ascending: true });
 
     if (error) {
       console.warn('Aviso ao consultar estoque no Supabase:', error.message);
@@ -1385,15 +1629,23 @@ export async function adicionarItemEstoqueSupabase(
     unidade_medida: (data.unidade_medida || 'un').toLowerCase().trim(),
     estoque_minimo: Number(data.estoque_minimo) || 0,
     fornecedor_info: data.fornecedor_info ? data.fornecedor_info.toUpperCase().trim() : null,
+    restaurante_id: getActiveRestauranteId(),
     atualizado_em: new Date().toISOString(),
   };
 
   try {
-    const { data: inserted, error } = await supabase
+    let { data: inserted, error } = await supabase
       .from('estoque')
       .insert(payload)
       .select()
       .single();
+
+    if (error && error.message?.includes('restaurante_id')) {
+      delete payload.restaurante_id;
+      const retry = await supabase.from('estoque').insert(payload).select().single();
+      inserted = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       console.warn('Aviso insert estoque Supabase:', error.message);
@@ -1467,9 +1719,9 @@ async function checkCaixaSchema() {
  */
 export async function fetchCaixaDiarioSupabase(): Promise<CaixaDiario | null> {
   try {
-    const { data: rows, error } = await supabase
-      .from('caixa_diario')
-      .select('*')
+    const { data: rows, error } = await applyTenantFilter(
+      supabase.from('caixa_diario').select('*')
+    )
       .order('id', { ascending: false })
       .limit(1);
 
@@ -1505,6 +1757,7 @@ export async function abrirCaixaSupabase(
   observacoes?: string
 ): Promise<CaixaDiario> {
   await checkCaixaSchema();
+  const currentTenantId = getActiveRestauranteId();
   const dataHoje = new Date().toLocaleDateString('en-CA');
   const now = new Date().toISOString();
   const novoCaixa: CaixaDiario = {
@@ -1518,10 +1771,10 @@ export async function abrirCaixaSupabase(
   };
 
   try {
-    // 1. Tenta obter o registro existente mais recente do banco real
-    const { data: rows } = await supabase
-      .from('caixa_diario')
-      .select('*')
+    // 1. Tenta obter o registro existente mais recente do banco real para o tenant ativo
+    const { data: rows } = await applyTenantFilter(
+      supabase.from('caixa_diario').select('*')
+    )
       .order('id', { ascending: false })
       .limit(1);
 
@@ -1535,6 +1788,7 @@ export async function abrirCaixaSupabase(
       status: 'aberto',
       observacoes: observacoes ? observacoes.toUpperCase().trim() : null,
       aberto_em: now,
+      restaurante_id: currentTenantId,
     };
 
     if (existingRow && existingRow.id) {
@@ -1547,6 +1801,17 @@ export async function abrirCaixaSupabase(
       .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
       .select()
       .maybeSingle();
+
+    if (upsertError && upsertError.message?.includes('restaurante_id')) {
+      delete payload.restaurante_id;
+      const retryTenant = await supabase
+        .from('caixa_diario')
+        .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
+        .select()
+        .maybeSingle();
+      upsertData = retryTenant.data;
+      upsertError = retryTenant.error;
+    }
 
     if (upsertError) {
       if (upsertError.message?.includes('aberto_em')) {
@@ -1591,7 +1856,9 @@ export async function abrirCaixaSupabase(
 
     // Persiste também o marcador do início do turno nas configurações para sincronizar painéis e senhas
     try {
-      const { data: cfgRow } = await supabase.from('configuracoes').select('dados').eq('id', 1).maybeSingle();
+      const { data: cfgRow } = await applyTenantFilter(
+        supabase.from('configuracoes').select('dados')
+      ).limit(1).maybeSingle();
       const dados = (cfgRow?.dados || {}) as Record<string, any>;
       dados.caixa_aberto_em = now;
       dados.ultimo_codigo_senha = 0;
@@ -1612,6 +1879,7 @@ export async function fecharCaixaSupabase(
   observacoes?: string
 ): Promise<CaixaDiario> {
   await checkCaixaSchema();
+  const currentTenantId = getActiveRestauranteId();
   const dataHoje = caixaAtual.data_caixa || new Date().toLocaleDateString('en-CA');
   const now = new Date().toISOString();
   const fechado: CaixaDiario = {
@@ -1623,10 +1891,10 @@ export async function fecharCaixaSupabase(
   };
 
   try {
-    // 1. Tenta obter o ID real do caixa ativo do banco de dados para evitar PATCH em ID fixo inexistente
-    const { data: rows } = await supabase
-      .from('caixa_diario')
-      .select('id, data_caixa')
+    // 1. Tenta obter o ID real do caixa ativo do banco de dados para o tenant atual
+    const { data: rows } = await applyTenantFilter(
+      supabase.from('caixa_diario').select('id, data_caixa')
+    )
       .order('id', { ascending: false })
       .limit(1);
 
@@ -1638,6 +1906,7 @@ export async function fecharCaixaSupabase(
       valor_fechamento: Number(valor_fechamento) || 0,
       status: 'fechado',
       observacoes: observacoes ? observacoes.toUpperCase().trim() : (caixaAtual.observacoes || null),
+      restaurante_id: currentTenantId,
     };
 
     if (existingRow && existingRow.id) {
@@ -1652,6 +1921,17 @@ export async function fecharCaixaSupabase(
       .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
       .select()
       .maybeSingle();
+
+    if (upsertError && upsertError.message?.includes('restaurante_id')) {
+      delete payload.restaurante_id;
+      const retryTenant = await supabase
+        .from('caixa_diario')
+        .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
+        .select()
+        .maybeSingle();
+      upsertData = retryTenant.data;
+      upsertError = retryTenant.error;
+    }
 
     if (upsertError) {
       console.warn('Upsert de fechamento com id falhou, tentando upsert por data_caixa ou insert:', upsertError.message);
@@ -1788,9 +2068,10 @@ export async function zerarFinanceiroDiaSupabase(
       }).neq('id', 0);
     } catch {}
 
-    const { data: rows } = await supabase
-      .from('caixa_diario')
-      .select('id, data_caixa')
+    const currentTenantId = getActiveRestauranteId();
+    const { data: rows } = await applyTenantFilter(
+      supabase.from('caixa_diario').select('id, data_caixa')
+    )
       .order('id', { ascending: false })
       .limit(1);
 
@@ -1802,6 +2083,7 @@ export async function zerarFinanceiroDiaSupabase(
       valor_fechamento: 0.00,
       status: 'fechado',
       observacoes: 'FINANCEIRO DO DIA ZERADO PELO ADMINISTRADOR',
+      restaurante_id: currentTenantId,
     };
     if (caixaAberturaCol !== 'valor_abertura') {
       payload[caixaAberturaCol] = 0.00;
@@ -1818,6 +2100,17 @@ export async function zerarFinanceiroDiaSupabase(
       .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
       .select()
       .maybeSingle();
+
+    if (upsertError && upsertError.message?.includes('restaurante_id')) {
+      delete payload.restaurante_id;
+      const retryTenant = await supabase
+        .from('caixa_diario')
+        .upsert(payload, payload.id ? { onConflict: 'id' } : undefined)
+        .select()
+        .maybeSingle();
+      upsertData = retryTenant.data;
+      upsertError = retryTenant.error;
+    }
 
     if (upsertError) {
       delete payload.id;
@@ -1851,6 +2144,7 @@ export async function registrarMultiplasMovimentacoesCaixaSupabase(
 ): Promise<CaixaDiario> {
   if (!movsNovas || movsNovas.length === 0) return caixaAtual;
 
+  const currentTenantId = getActiveRestauranteId();
   const baseTimestamp = Date.now();
   const horaAtual = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
@@ -1869,9 +2163,9 @@ export async function registrarMultiplasMovimentacoesCaixaSupabase(
   };
 
   try {
-    const { data: rows } = await supabase
-      .from('caixa_diario')
-      .select('id, observacoes, data_caixa')
+    const { data: rows } = await applyTenantFilter(
+      supabase.from('caixa_diario').select('id, observacoes, data_caixa')
+    )
       .order('id', { ascending: false })
       .limit(1);
 
@@ -1886,6 +2180,7 @@ export async function registrarMultiplasMovimentacoesCaixaSupabase(
       data_caixa: existingRow?.data_caixa || caixaAtual.data_caixa || new Date().toLocaleDateString('en-CA'),
       status: caixaAtual.status || 'aberto',
       observacoes: obsAtualizada,
+      restaurante_id: currentTenantId,
     };
 
     if (existingRow && existingRow.id) {
@@ -1894,9 +2189,14 @@ export async function registrarMultiplasMovimentacoesCaixaSupabase(
       payload.id = caixaAtual.id;
     }
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from('caixa_diario')
       .upsert(payload, payload.id ? { onConflict: 'id' } : undefined);
+
+    if (error && error.message?.includes('restaurante_id')) {
+      delete payload.restaurante_id;
+      error = (await supabase.from('caixa_diario').upsert(payload, payload.id ? { onConflict: 'id' } : undefined)).error;
+    }
 
     if (error) {
       delete payload.id;
@@ -1943,9 +2243,26 @@ export async function registrarPagamentosMesaSupabase(
 /**
  * Reservas operations via Supabase
  */
+export async function fetchReservasSupabase(): Promise<Reserva[]> {
+  try {
+    const { data, error } = await applyTenantFilter(
+      supabase.from('reservas').select('*')
+    ).order('id', { ascending: false });
+
+    if (!error && Array.isArray(data)) {
+      return data as Reserva[];
+    }
+    return [];
+  } catch (err) {
+    console.warn('Erro ao buscar reservas no Supabase:', err);
+    return [];
+  }
+}
+
 export async function criarReservaSupabase(
   resData: Partial<Reserva>
 ): Promise<Reserva> {
+  const currentTenantId = getActiveRestauranteId();
   const nova: Reserva = {
     id: Date.now(),
     cliente_nome: (resData.cliente_nome || '').toUpperCase(),
@@ -1954,10 +2271,15 @@ export async function criarReservaSupabase(
     data_hora: resData.data_hora || new Date().toISOString(),
     status: 'confirmada',
     observacoes: resData.observacoes,
+    restaurante_id: currentTenantId,
   };
 
   try {
-    await supabase.from('reservas').insert(nova);
+    let { error } = await supabase.from('reservas').insert(nova);
+    if (error && error.message?.includes('restaurante_id')) {
+      const { restaurante_id, ...fallbackNova } = nova as any;
+      await supabase.from('reservas').insert(fallbackNova);
+    }
   } catch (err) {
     console.warn('Erro ao salvar reserva no Supabase:', err);
   }
@@ -1994,18 +2316,17 @@ export async function abaterSaldoMensalistaSupabase(
       } catch {}
     }
 
-    // 2. Se não achou por ID, busca por telefone ou nome na nuvem
+    // 2. Se não achou por ID, busca por telefone ou nome na nuvem no tenant ativo
     const tel = clienteObj?.telefone || '';
     if (!clienteEncontradoId) {
       const telDigits = tel.replace(/\D/g, '');
-      const { data: clis } = await supabase
-        .from('clientes')
-        .select('id, saldo_devedor, telefone, nome')
-        .limit(200);
+      const { data: clis } = await applyTenantFilter(
+        supabase.from('clientes').select('id, saldo_devedor, telefone, nome')
+      ).limit(200);
 
       if (clis && clis.length > 0) {
         const match = clis.find(
-          (c) =>
+          (c: any) =>
             (rawCid && String(c.id) === rawCid) ||
             (tel && c.telefone === tel) ||
             (telDigits && c.telefone && c.telefone.replace(/\D/g, '') === telDigits) ||
@@ -2334,13 +2655,20 @@ export async function salvarCardapioDiarioSupabase(
 ): Promise<{ success: boolean; data?: CardapioDiarioConfig; error?: string }> {
   try {
     const hoje = cardapio.data || new Date().toLocaleDateString('en-CA');
+    const currentTenantId = getActiveRestauranteId();
 
-    // 1. Tabela 'cardapio_diario' (data, produto_id, canal)
+    // 1. Tabela 'cardapio_diario' (data, produto_id, canal, restaurante_id)
     try {
-      // Remove registros anteriores do dia para salvar a nova seleção completa
-      await supabase.from('cardapio_diario').delete().eq('data', hoje);
+      // Remove registros anteriores do dia para salvar a nova seleção completa do tenant
+      let delQuery = supabase.from('cardapio_diario').delete().eq('data', hoje);
+      if (currentTenantId === DEFAULT_RESTAURANTE_ID) {
+        delQuery = delQuery.or(`restaurante_id.eq.${currentTenantId},restaurante_id.is.null`);
+      } else {
+        delQuery = delQuery.eq('restaurante_id', currentTenantId);
+      }
+      await delQuery;
 
-      const rowsToInsert: { data: string; produto_id: number; canal: string }[] = [];
+      const rowsToInsert: any[] = [];
 
       for (const it of cardapio.itens) {
         if (it.disponivel_delivery) {
@@ -2348,6 +2676,7 @@ export async function salvarCardapioDiarioSupabase(
             data: hoje,
             produto_id: it.produto_id,
             canal: 'delivery_balcao',
+            restaurante_id: currentTenantId,
           });
         }
         if (it.disponivel_salao) {
@@ -2355,14 +2684,20 @@ export async function salvarCardapioDiarioSupabase(
             data: hoje,
             produto_id: it.produto_id,
             canal: 'mesas',
+            restaurante_id: currentTenantId,
           });
         }
       }
 
       if (rowsToInsert.length > 0) {
-        const { error: insertError } = await supabase
+        let { error: insertError } = await supabase
           .from('cardapio_diario')
           .insert(rowsToInsert);
+
+        if (insertError && insertError.message?.includes('restaurante_id')) {
+          const fallbackRows = rowsToInsert.map(({ restaurante_id, ...rest }) => rest);
+          insertError = (await supabase.from('cardapio_diario').insert(fallbackRows)).error;
+        }
 
         if (insertError) {
           console.warn('Aviso ao inserir em cardapio_diario no Supabase:', insertError.message);
@@ -2379,15 +2714,14 @@ export async function salvarCardapioDiarioSupabase(
       confirmado_em: cardapio.confirmado_em || new Date().toISOString(),
       confirmado_por: cardapio.confirmado_por || 'GERENTE / ATENDIMENTO',
       itens: cardapio.itens,
+      restaurante_id: currentTenantId,
       atualizado_em: new Date().toISOString(),
     };
 
     try {
-      const { data: confRow } = await supabase
-        .from('configuracoes')
-        .select('*')
-        .eq('id', 1)
-        .maybeSingle();
+      const { data: confRow } = await applyTenantFilter(
+        supabase.from('configuracoes').select('*')
+      ).limit(1).maybeSingle();
 
       const existingDados = confRow?.dados || {};
       await supabase
@@ -2395,6 +2729,7 @@ export async function salvarCardapioDiarioSupabase(
         .upsert(
           {
             id: 1,
+            restaurante_id: currentTenantId,
             dados: {
               ...existingDados,
               cardapio_diario_atual: payloadMeta,
@@ -2426,11 +2761,10 @@ export async function fetchCardapioDiarioSupabase(
   const hoje = dataStr || new Date().toLocaleDateString('en-CA');
 
   try {
-    // 1. Tenta buscar em 'cardapio_diario' (data, produto_id, canal)
-    const { data: rows, error } = await supabase
-      .from('cardapio_diario')
-      .select('*')
-      .eq('data', hoje);
+    // 1. Tenta buscar em 'cardapio_diario' (data, produto_id, canal) com filtro de tenant
+    const { data: rows, error } = await applyTenantFilter(
+      supabase.from('cardapio_diario').select('*').eq('data', hoje)
+    );
 
     if (!error && rows && Array.isArray(rows)) {
       const itemMap = new Map<number, ItemCardapioDiario>();
@@ -2550,10 +2884,27 @@ export async function fetchCardapioDiarioSupabase(
 const isUUID = (str?: any): boolean =>
   !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
 
+export async function fetchClientesSupabase(): Promise<Cliente[]> {
+  try {
+    const { data, error } = await applyTenantFilter(
+      supabase.from('clientes').select('*')
+    ).order('nome', { ascending: true });
+
+    if (!error && Array.isArray(data)) {
+      return data as Cliente[];
+    }
+    return [];
+  } catch (err) {
+    console.warn('Erro ao buscar clientes no Supabase:', err);
+    return [];
+  }
+}
+
 export async function salvarClienteSupabase(
   cliente: Partial<Cliente>
 ): Promise<{ success: boolean; data?: Cliente; error?: string }> {
   try {
+    const currentTenantId = cliente.restaurante_id || getActiveRestauranteId();
     // 1. Sanitização e preenchimento garantido de todos os campos obrigatórios em UPPERCASE
     const rawId = cliente.id !== undefined && cliente.id !== null ? String(cliente.id) : undefined;
     const nomeLimpo = (cliente.nome || 'CLIENTE').toUpperCase().trim();
@@ -2574,6 +2925,7 @@ export async function salvarClienteSupabase(
       complemento: complementoLimpo,
       eh_mensalista: Boolean(cliente.eh_mensalista),
       saldo_devedor: Number(cliente.saldo_devedor) || 0.0,
+      restaurante_id: currentTenantId,
     };
 
     // 2. Se cliente.id for um UUID válido real do PostgreSQL, inclui para atualização
@@ -2584,11 +2936,22 @@ export async function salvarClienteSupabase(
 
     // 3. Caso tenha UUID válido, realiza upsert ou update por ID
     if (hasValidUuid && rawId) {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('clientes')
         .upsert(payload, { onConflict: 'id' })
         .select()
         .maybeSingle();
+
+      if (error && error.message?.includes('restaurante_id')) {
+        delete payload.restaurante_id;
+        const retry = await supabase
+          .from('clientes')
+          .upsert(payload, { onConflict: 'id' })
+          .select()
+          .maybeSingle();
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (!error && data) {
         return { success: true, data: { ...data, id: String(data.id) } as Cliente };
@@ -2598,11 +2961,22 @@ export async function salvarClienteSupabase(
 
     // 4. Para novos clientes (sem UUID pré-existente ou ID temporário local):
     // Utiliza .insert() para permitir que o PostgreSQL gere o UUID automaticamente via gen_random_uuid()
-    const { data: insertData, error: insertError } = await supabase
+    let { data: insertData, error: insertError } = await supabase
       .from('clientes')
       .insert(payload)
       .select()
       .maybeSingle();
+
+    if (insertError && insertError.message?.includes('restaurante_id')) {
+      delete payload.restaurante_id;
+      const retryIns = await supabase
+        .from('clientes')
+        .insert(payload)
+        .select()
+        .maybeSingle();
+      insertData = retryIns.data;
+      insertError = retryIns.error;
+    }
 
     if (!insertError && insertData) {
       return { success: true, data: { ...insertData, id: String(insertData.id) } as Cliente };
@@ -2696,6 +3070,7 @@ export async function salvarProdutoSupabase(
   produto: Partial<Produto>
 ): Promise<{ success: boolean; data?: Produto; error?: string }> {
   try {
+    const currentTenantId = produto.restaurante_id || getActiveRestauranteId();
     const payload: any = {
       nome: (produto.nome || '').toUpperCase().trim(),
       descricao: (produto.descricao || '').toUpperCase().trim(),
@@ -2707,6 +3082,7 @@ export async function salvarProdutoSupabase(
       tipo_produto: produto.tipo_produto || 'preparado',
       item_estoque_id: produto.item_estoque_id ? (Number(produto.item_estoque_id) || produto.item_estoque_id) : null,
       custo_estimado: produto.custo_estimado !== undefined ? Number(produto.custo_estimado) : 0,
+      restaurante_id: currentTenantId,
     };
 
     if (produto.url_imagem !== undefined) {
@@ -2722,6 +3098,13 @@ export async function salvarProdutoSupabase(
       .upsert(payload)
       .select()
       .maybeSingle();
+
+    if (error && error.message?.includes('restaurante_id')) {
+      delete payload.restaurante_id;
+      const retryTenant = await supabase.from('produtos').upsert(payload).select().maybeSingle();
+      data = retryTenant.data;
+      error = retryTenant.error;
+    }
 
     if (error) {
       console.warn('Aviso salvar produto Supabase (tentando fallback sem novas colunas):', error.message);
@@ -2838,28 +3221,56 @@ export async function excluirProdutoSupabase(
  * CRUD COMPLETO: MESAS DO SALÃO NO SUPABASE
  * =========================================================================
  */
+export async function fetchMesasSupabase(): Promise<any[]> {
+  try {
+    const { data, error } = await applyTenantFilter(
+      supabase.from('mesas').select('*')
+    );
+    if (!error && Array.isArray(data)) {
+      return data;
+    }
+    return [];
+  } catch (err) {
+    console.warn('Erro ao consultar mesas no Supabase:', err);
+    return [];
+  }
+}
+
 export async function salvarMesaSupabase(
   mesa: Partial<Mesa>
 ): Promise<{ success: boolean; data?: Mesa; error?: string }> {
   try {
     await checkMesasSchema();
+    const currentTenantId = mesa.restaurante_id || getActiveRestauranteId();
     const num = Number(mesa.numero);
     const mesaId = mesa.id || num;
 
     const payload: Record<string, any> = {
       id: mesaId,
       status: mesa.status || 'livre',
+      restaurante_id: currentTenantId,
     };
 
     if (mesasHasNumero) {
       payload.numero = num;
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('mesas')
       .upsert(payload, { onConflict: 'id' })
       .select()
       .maybeSingle();
+
+    if (error && error.message?.includes('restaurante_id')) {
+      delete payload.restaurante_id;
+      const retryTenant = await supabase
+        .from('mesas')
+        .upsert(payload, { onConflict: 'id' })
+        .select()
+        .maybeSingle();
+      data = retryTenant.data;
+      error = retryTenant.error;
+    }
 
     if (error) {
       console.warn('Aviso salvar mesa Supabase:', error.message);
@@ -2977,10 +3388,9 @@ export async function resetarMesasVaziasSupabase(
  */
 export async function fetchCategoriasSupabase(): Promise<Categoria[]> {
   try {
-    const { data, error } = await supabase
-      .from('categorias')
-      .select('*')
-      .order('ordem', { ascending: true });
+    const { data, error } = await applyTenantFilter(
+      supabase.from('categorias').select('*')
+    ).order('ordem', { ascending: true });
 
     if (!error && Array.isArray(data)) {
       return data as Categoria[];
@@ -2997,20 +3407,29 @@ export async function salvarCategoriaSupabase(
   catData: Partial<Categoria>
 ): Promise<{ success: boolean; data?: Categoria; error?: string }> {
   try {
+    const currentTenantId = catData.restaurante_id || getActiveRestauranteId();
     const nomeLimpo = (catData.nome || 'NOVA CATEGORIA').toUpperCase().trim();
     const payload: any = {
       nome: nomeLimpo,
       ordem: catData.ordem || 0,
+      restaurante_id: currentTenantId,
     };
     if (catData.id) {
       payload.id = catData.id;
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('categorias')
       .upsert(payload)
       .select()
       .maybeSingle();
+
+    if (error && error.message?.includes('restaurante_id')) {
+      delete payload.restaurante_id;
+      const retryTenant = await supabase.from('categorias').upsert(payload).select().maybeSingle();
+      data = retryTenant.data;
+      error = retryTenant.error;
+    }
 
     if (error) {
       console.warn('Erro ao salvar categoria no Supabase:', error.message);
@@ -3046,19 +3465,17 @@ export async function fetchProdutosSupabase(): Promise<Produto[]> {
   try {
     // 1. Tenta carregar produtos com opcionais vinculados
     let prods: any[] = [];
-    const { data: dataWithOpcionais, error: errOpcionais } = await supabase
-      .from('produtos')
-      .select('*, opcionais(*)')
-      .order('id', { ascending: true });
+    const { data: dataWithOpcionais, error: errOpcionais } = await applyTenantFilter(
+      supabase.from('produtos').select('*, opcionais(*)')
+    ).order('id', { ascending: true });
 
     if (!errOpcionais && Array.isArray(dataWithOpcionais)) {
       prods = dataWithOpcionais;
     } else {
       // Fallback para select simples se a tabela opcionais não estiver configurada
-      const { data: dataSimple, error: errSimple } = await supabase
-        .from('produtos')
-        .select('*')
-        .order('id', { ascending: true });
+      const { data: dataSimple, error: errSimple } = await applyTenantFilter(
+        supabase.from('produtos').select('*')
+      ).order('id', { ascending: true });
 
       if (!errSimple && Array.isArray(dataSimple)) {
         prods = dataSimple;
@@ -3205,10 +3622,9 @@ export async function salvarBairrosSupabase(
 export async function fetchFormasPagamentoSupabase(): Promise<FormaPagamentoConfig[]> {
   // 1. Tenta carregar da tabela dedicada 'formas_pagamento' no Supabase
   try {
-    const { data, error } = await supabase
-      .from('formas_pagamento')
-      .select('*')
-      .order('ordem', { ascending: true });
+    const { data, error } = await applyTenantFilter(
+      supabase.from('formas_pagamento').select('*')
+    ).order('ordem', { ascending: true });
 
     if (!error && data && data.length > 0) {
       return data as FormaPagamentoConfig[];
@@ -3254,8 +3670,9 @@ export async function salvarFormaPagamentoSupabase(
 ): Promise<FormaPagamentoConfig[]> {
   const id = item.id || 'fp_' + Date.now();
   const nome = (item.nome || '').toUpperCase().trim();
+  const currentTenantId = getActiveRestauranteId();
 
-  const formatted: FormaPagamentoConfig = {
+  const formatted: FormaPagamentoConfig & { restaurante_id?: string } = {
     id,
     nome,
     tipo: item.tipo || 'outro',
@@ -3265,6 +3682,7 @@ export async function salvarFormaPagamentoSupabase(
     ordem: item.ordem !== undefined ? Number(item.ordem) : currentList.length + 1,
     descricao: item.descricao ? item.descricao.toUpperCase().trim() : '',
     criado_em: item.criado_em || new Date().toISOString(),
+    restaurante_id: currentTenantId,
   };
 
   const existingIndex = currentList.findIndex((fp) => fp.id === id);
@@ -3278,7 +3696,12 @@ export async function salvarFormaPagamentoSupabase(
 
   // A. Salva na tabela 'formas_pagamento' se existir
   try {
-    await supabase.from('formas_pagamento').upsert(formatted, { onConflict: 'id' });
+    const payloadFP: any = { ...formatted };
+    let { error: upsertErr } = await supabase.from('formas_pagamento').upsert(payloadFP, { onConflict: 'id' });
+    if (upsertErr && upsertErr.message?.includes('restaurante_id')) {
+      delete payloadFP.restaurante_id;
+      await supabase.from('formas_pagamento').upsert(payloadFP, { onConflict: 'id' });
+    }
   } catch (err) {
     console.warn('Aviso: upsert na tabela formas_pagamento falhou, salvando em configuracoes:', err);
   }
@@ -3407,7 +3830,8 @@ export const processarBaixaEstoquePedido = async (
 
     // Registra na tabela estoque_movimentacoes se disponível
     try {
-      await supabase.from('estoque_movimentacoes').insert({
+      const currentTenantId = getActiveRestauranteId();
+      const movPayload: any = {
         item_estoque_id: d.item_estoque_id,
         pedido_id: pedidoId,
         tipo_movimentacao: 'saida_kds',
@@ -3415,7 +3839,13 @@ export const processarBaixaEstoquePedido = async (
         saldo_anterior: saldoAnterior,
         saldo_posterior: novoSaldo,
         motivo: `Baixa automática KDS - Pedido #${pedidoId}`,
-      });
+        restaurante_id: currentTenantId,
+      };
+      let { error: movErr } = await supabase.from('estoque_movimentacoes').insert(movPayload);
+      if (movErr && movErr.message?.includes('restaurante_id')) {
+        delete movPayload.restaurante_id;
+        await supabase.from('estoque_movimentacoes').insert(movPayload);
+      }
     } catch (err) {
       // Falha silenciosa em caso de ausência da tabela
     }
@@ -3463,9 +3893,9 @@ export const processarBaixaEstoquePedido = async (
  */
 export const fetchMovimentacoesItemEstoque = async (itemEstoqueId: number | string): Promise<MovimentacaoEstoque[]> => {
   try {
-    const { data, error } = await supabase
-      .from('estoque_movimentacoes')
-      .select('*')
+    const { data, error } = await applyTenantFilter(
+      supabase.from('estoque_movimentacoes').select('*')
+    )
       .eq('item_estoque_id', itemEstoqueId)
       .order('criado_em', { ascending: false })
       .limit(30);
@@ -3546,16 +3976,21 @@ export const registrarAjusteManualEstoque = async (
 
   // 3. Gravar histórico na tabela estoque_movimentacoes
   try {
-    await supabase
-      .from('estoque_movimentacoes')
-      .insert({
-        item_estoque_id: itemEstoqueId,
-        tipo_movimentacao: 'ajuste_manual',
-        quantidade_movimentada: diferenca,
-        saldo_anterior: saldoAnterior,
-        saldo_posterior: novoSaldo,
-        motivo: motivo || 'Ajuste manual de inventário',
-      });
+    const currentTenantId = getActiveRestauranteId();
+    const movPayload: any = {
+      item_estoque_id: itemEstoqueId,
+      tipo_movimentacao: 'ajuste_manual',
+      quantidade_movimentada: diferenca,
+      saldo_anterior: saldoAnterior,
+      saldo_posterior: novoSaldo,
+      motivo: motivo || 'Ajuste manual de inventário',
+      restaurante_id: currentTenantId,
+    };
+    let { error: movErr } = await supabase.from('estoque_movimentacoes').insert(movPayload);
+    if (movErr && movErr.message?.includes('restaurante_id')) {
+      delete movPayload.restaurante_id;
+      await supabase.from('estoque_movimentacoes').insert(movPayload);
+    }
   } catch (err) {
     console.warn('[Supabase] Tabela estoque_movimentacoes indisponível para insert:', err);
   }

@@ -14,6 +14,8 @@ import {
 } from '../types';
 
 export const INITIAL_CONFIGURACOES: ConfiguracoesSistema = {
+  restaurante_id: '00000000-0000-0000-0000-000000000001',
+  segmento: 'restaurante',
   supabaseUrl: '',
   supabaseAnonKey: '',
   bancoStatus: 'conectado',

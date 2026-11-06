@@ -346,6 +346,7 @@ export type DashboardLayoutTipo = 'stripe' | 'command' | 'shopify' | 'minimalist
 
 export interface ConfiguracoesSistema {
   restaurante_id?: string;
+  segmento?: SegmentoEmpresa;
   // Banco de Dados
   supabaseUrl: string;
   supabaseAnonKey: string;

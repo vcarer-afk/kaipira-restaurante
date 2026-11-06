@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { ConfiguracoesSistema, PosicaoMenu, PadraoCor, DashboardLayoutTipo } from '../types';
+import {
+  ConfiguracoesSistema,
+  PosicaoMenu,
+  PadraoCor,
+  DashboardLayoutTipo,
+  SegmentoEmpresa,
+} from '../types';
 import { THEMES } from '../utils/theme';
 import { UpperInput } from './UpperInput';
 import { consultarViaCep, cleanDigits } from '../utils/formatters';
@@ -72,6 +78,49 @@ EXCEPTION WHEN duplicate_object THEN null; END $$;
 DO $$ BEGIN
     CREATE TYPE forma_pagamento AS ENUM ('dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'mensalista');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- 1.5 TABELA DE EMPRESAS & RESTAURANTES (MULTI-TENANT SAAS GLOBAL)
+CREATE TABLE IF NOT EXISTS restaurantes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    nome_fantasia VARCHAR(150) NOT NULL,
+    razao_social VARCHAR(200),
+    cnpj VARCHAR(25),
+    segmento VARCHAR(50) NOT NULL DEFAULT 'restaurante',
+    telefone VARCHAR(30),
+    email_contato VARCHAR(150),
+    cidade VARCHAR(100) DEFAULT 'PIRACICABA',
+    uf VARCHAR(2) DEFAULT 'SP',
+    plano VARCHAR(50) DEFAULT 'profissional',
+    status_assinatura VARCHAR(30) DEFAULT 'ativo',
+    ativo BOOLEAN DEFAULT TRUE,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+INSERT INTO restaurantes (id, slug, nome_fantasia, razao_social, segmento, telefone, email_contato, cidade, uf, plano, status_assinatura, ativo)
+VALUES (
+    '00000000-0000-0000-0000-000000000001',
+    'kaipira',
+    'RESTAURANTE KAIPIRA',
+    'RESTAURANTE KAIPIRA DE PIRACICABA LTDA',
+    'restaurante',
+    '(19) 3-4221-1980',
+    'contato@restaurantekaipira.com.br',
+    'PIRACICABA',
+    'SP',
+    'enterprise',
+    'ativo',
+    true
+)
+ON CONFLICT (id) DO UPDATE
+SET nome_fantasia = EXCLUDED.nome_fantasia,
+    slug = EXCLUDED.slug,
+    atualizado_em = NOW();
+
+ALTER TABLE restaurantes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acesso publico restaurantes" ON restaurantes;
+CREATE POLICY "Acesso publico restaurantes" ON restaurantes FOR ALL USING (true) WITH CHECK (true);
 
 -- 2. TABELA DE USUÁRIOS & FUNCIONÁRIOS (COM USUÁRIO MASTER INICIAL)
 CREATE TABLE IF NOT EXISTS usuarios (
@@ -299,6 +348,8 @@ CREATE TABLE IF NOT EXISTS configuracoes (
 
 ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS posicao_menu VARCHAR(20) DEFAULT 'direita';
 ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS menu_auto_ocultar BOOLEAN DEFAULT FALSE;
+ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS restaurante_id UUID;
+ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS segmento VARCHAR(50) DEFAULT 'restaurante';
 
 -- 12. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (MONTAGEM DO DIA)
 CREATE TABLE IF NOT EXISTS cardapio_diario (
@@ -745,12 +796,47 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                   Dados do Restaurante & Endereço Completo
                 </h3>
               </div>
-              <span className="text-[10px] text-neutral-400 uppercase">
-                Piracicaba - SP
+              <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
+                {formData.cidade && formData.uf ? `${formData.cidade} - ${formData.uf}` : 'PIRACICABA - SP'}
               </span>
             </div>
 
             <div className="space-y-3">
+              {/* Segmento do Estabelecimento */}
+              <div className="p-3.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                <label className="text-xs font-semibold tracking-wider text-neutral-300 block mb-2 uppercase">
+                  Segmento do Estabelecimento: *
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: 'restaurante', label: 'Restaurante', icon: '🍽️' },
+                    { id: 'pizzaria', label: 'Pizzaria', icon: '🍕' },
+                    { id: 'lanchonete', label: 'Lanchonete', icon: '🍔' },
+                    { id: 'marmitaria', label: 'Marmitaria', icon: '🍱' },
+                  ].map((seg) => {
+                    const isSelected = (formData.segmento || 'restaurante') === seg.id;
+                    return (
+                      <button
+                        key={seg.id}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, segmento: seg.id as SegmentoEmpresa })}
+                        className={`px-3 py-2.5 rounded-xl border text-xs font-black flex items-center justify-center gap-2 transition-all uppercase cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-950/90 border-amber-500 text-amber-300 shadow-sm ring-1 ring-amber-500/50'
+                            : 'bg-neutral-800 hover:bg-neutral-750 border-neutral-700 text-neutral-300 hover:text-white'
+                        }`}
+                      >
+                        <span className="text-base">{seg.icon}</span>
+                        <span>{seg.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-neutral-400 mt-2">
+                  Define a identidade e tipo de atividade do estabelecimento no sistema multi-empresas.
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <UpperInput
                   label="NOME FANTASIA DO ESTABELECIMENTO: *"

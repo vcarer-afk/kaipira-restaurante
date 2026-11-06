@@ -24,6 +24,7 @@ import {
   FileText,
   Shield,
   Key,
+  Globe,
 } from 'lucide-react';
 
 interface SlideMenuRightProps {
@@ -148,9 +149,24 @@ export const SlideMenuRight: React.FC<SlideMenuRightProps> = ({
       icon: Lock,
       roles: ['admin'],
     },
+    {
+      id: 'master-saas' as ActiveTab,
+      label: 'SAAS GLOBAL (MASTER)',
+      desc: 'Gestão multi-empresas, instâncias e assinaturas',
+      icon: Globe,
+      roles: ['master'],
+    },
   ];
 
   const temPermissao = (aba: ActiveTab): boolean => {
+    if (aba === 'master-saas') {
+      return (
+        currentPerfil?.email?.toLowerCase().trim() === 'admin@kaipira.com' ||
+        currentPerfil?.email?.toLowerCase().trim() === 'master@kaipira.com' ||
+        currentRole === 'master' ||
+        currentPerfil?.cargo === 'master'
+      );
+    }
     if (currentRole === 'master' || currentRole === 'admin' || currentPerfil?.cargo === 'master' || currentPerfil?.cargo === 'admin') {
       return true;
     }
