@@ -24,6 +24,8 @@ import {
   Pagamento,
   IngredienteComposicao,
   MovimentacaoEstoque,
+  DEFAULT_RESTAURANTE_ID,
+  RestauranteTenant,
 } from '../types';
 import {
   INITIAL_CONFIGURACOES,
@@ -44,6 +46,60 @@ export { supabase };
 export function getSupabaseClient(): SupabaseClient {
   return supabase;
 }
+
+// ==========================================
+// GERENCIADOR DO TENANT ATIVO EM MEMÓRIA (MULTI-TENANT CORE)
+// 100% em memória / nuvem - ZERO localStorage
+// ==========================================
+let activeRestauranteId: string = DEFAULT_RESTAURANTE_ID;
+
+export const getActiveRestauranteId = (): string => {
+  return activeRestauranteId || DEFAULT_RESTAURANTE_ID;
+};
+
+export const setActiveRestauranteId = (id?: string | null) => {
+  activeRestauranteId = id && id.trim() ? id.trim() : DEFAULT_RESTAURANTE_ID;
+};
+
+export const fetchRestauranteAtualSupabase = async (restauranteId?: string): Promise<RestauranteTenant | null> => {
+  const targetId = restauranteId || getActiveRestauranteId();
+  try {
+    const { data, error } = await supabase
+      .from('restaurantes')
+      .select('*')
+      .eq('id', targetId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Aviso ao consultar restaurante atual:', error.message);
+      return null;
+    }
+    return (data as RestauranteTenant) || null;
+  } catch (err) {
+    console.warn('Erro ao consultar restaurante atual:', err);
+    return null;
+  }
+};
+
+export const fetchRestaurantePorSlugSupabase = async (slug: string): Promise<RestauranteTenant | null> => {
+  try {
+    const cleanSlug = (slug || '').trim().toLowerCase();
+    const { data, error } = await supabase
+      .from('restaurantes')
+      .select('*')
+      .eq('slug', cleanSlug)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Aviso ao consultar restaurante por slug:', error.message);
+      return null;
+    }
+    return (data as RestauranteTenant) || null;
+  } catch (err) {
+    console.warn('Erro ao consultar restaurante por slug:', err);
+    return null;
+  }
+};
 
 /**
  * Detecta se a aplicação está rodando em ambiente de hospedagem estática
@@ -2052,10 +2108,23 @@ export async function garantirMasterSupabase(): Promise<UsuarioSistema | null> {
  */
 export async function fetchUsuariosSupabase(): Promise<UsuarioSistema[]> {
   try {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select('*')
-      .order('nome', { ascending: true });
+    const currentTenantId = getActiveRestauranteId();
+    let query = supabase.from('usuarios').select('*');
+    if (currentTenantId === DEFAULT_RESTAURANTE_ID) {
+      query = query.or(`restaurante_id.eq.${currentTenantId},restaurante_id.is.null`);
+    } else {
+      query = query.eq('restaurante_id', currentTenantId);
+    }
+
+    let { data, error } = await query.order('nome', { ascending: true });
+
+    if (error && error.message?.includes('restaurante_id')) {
+      const retry = await supabase.from('usuarios').select('*').order('nome', { ascending: true });
+      if (!retry.error) {
+        data = retry.data;
+        error = null;
+      }
+    }
 
     if (error) {
       console.warn('Tabela usuarios no Supabase ainda não inicializada ou inacessível:', error.message);
@@ -2132,6 +2201,7 @@ export async function fetchUsuariosSupabase(): Promise<UsuarioSistema[]> {
  * - Email único, formato livre
  * - Cargo: master, admin, atendente, cozinha, garcom, entregador
  * - Permissões granulares de acesso por módulo
+ * - Vínculo com restaurante_id (Multi-Tenant)
  */
 export async function salvarUsuarioSupabase(
   usuario: Partial<UsuarioSistema>
@@ -2146,6 +2216,7 @@ export async function salvarUsuarioSupabase(
     return { success: false, error: 'O Telefone é obrigatório.' };
   }
 
+  const currentTenantId = usuario.restaurante_id || getActiveRestauranteId();
   const payload: any = {
     nome: usuario.nome.trim().toUpperCase(),
     email: usuario.email.trim().toLowerCase(),
@@ -2153,6 +2224,7 @@ export async function salvarUsuarioSupabase(
     cargo: usuario.cargo || 'atendente',
     status: usuario.status || 'ativo',
     senha: usuario.senha?.trim() || '1234',
+    restaurante_id: currentTenantId,
     permissoes: usuario.permissoes || undefined,
     atualizado_em: new Date().toISOString(),
   };
@@ -2168,8 +2240,9 @@ export async function salvarUsuarioSupabase(
       .select()
       .single();
 
-    if (error && (error.message?.includes('permissoes') || (error as any).code === 'PGRST204')) {
-      delete payload.permissoes;
+    if (error && (error.message?.includes('permissoes') || error.message?.includes('restaurante_id') || (error as any).code === 'PGRST204')) {
+      if (error.message?.includes('permissoes')) delete payload.permissoes;
+      if (error.message?.includes('restaurante_id')) delete payload.restaurante_id;
       const retry = await supabase
         .from('usuarios')
         .upsert(payload, { onConflict: 'email' })
@@ -3577,10 +3650,29 @@ const excluirUsuarioSistemaConfiguracoesFallback = async (id: number | string) =
 
 export const fetchUsuariosSistema = async (): Promise<UsuarioSistema[]> => {
   try {
-    const { data, error } = await supabase
+    const currentTenantId = getActiveRestauranteId();
+    let query = supabase
       .from('usuarios_sistema')
-      .select('id, nome, email, perfil, ativo, criado_em')
-      .order('id', { ascending: true });
+      .select('id, nome, email, perfil, ativo, permissoes, restaurante_id, criado_em');
+
+    if (currentTenantId === DEFAULT_RESTAURANTE_ID) {
+      query = query.or(`restaurante_id.eq.${currentTenantId},restaurante_id.is.null`);
+    } else {
+      query = query.eq('restaurante_id', currentTenantId);
+    }
+
+    let { data, error } = await query.order('id', { ascending: true });
+
+    if (error && (error.message?.includes('restaurante_id') || error.message?.includes('permissoes'))) {
+      const retry = await supabase
+        .from('usuarios_sistema')
+        .select('id, nome, email, perfil, ativo, criado_em')
+        .order('id', { ascending: true });
+      if (!retry.error) {
+        data = retry.data as any;
+        error = null;
+      }
+    }
 
     if (error) {
       console.warn('Aviso ao consultar usuarios_sistema no Supabase:', error.message);
@@ -3602,6 +3694,7 @@ export const fetchUsuariosSistema = async (): Promise<UsuarioSistema[]> => {
           email: 'admin@kaipira.com',
           perfil: 'admin',
           ativo: true,
+          restaurante_id: currentTenantId,
           criado_em: new Date().toISOString(),
         },
       ];
@@ -3614,6 +3707,7 @@ export const fetchUsuariosSistema = async (): Promise<UsuarioSistema[]> => {
         email: 'admin@kaipira.com',
         perfil: 'admin',
         ativo: true,
+        restaurante_id: currentTenantId,
         criado_em: new Date().toISOString(),
       };
       await salvarUsuarioSistema(defaultAdmin).catch(() => {});
@@ -3630,6 +3724,7 @@ export const fetchUsuariosSistema = async (): Promise<UsuarioSistema[]> => {
         email: 'admin@kaipira.com',
         perfil: 'admin',
         ativo: true,
+        restaurante_id: DEFAULT_RESTAURANTE_ID,
         criado_em: new Date().toISOString(),
       },
     ];
@@ -3637,41 +3732,73 @@ export const fetchUsuariosSistema = async (): Promise<UsuarioSistema[]> => {
 };
 
 export const salvarUsuarioSistema = async (usuario: Partial<UsuarioSistema>) => {
+  const currentTenantId = usuario.restaurante_id || getActiveRestauranteId();
   if (usuario.id) {
     const payload: any = {
       nome: (usuario.nome || '').toUpperCase().trim(),
       email: (usuario.email || '').toLowerCase().trim(),
       perfil: usuario.perfil,
       ativo: usuario.ativo,
+      restaurante_id: currentTenantId,
       atualizado_em: new Date().toISOString(),
     };
+    if (usuario.permissoes !== undefined) payload.permissoes = usuario.permissoes;
     if (usuario.senha_hash) payload.senha_hash = usuario.senha_hash;
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('usuarios_sistema')
       .update(payload)
       .eq('id', usuario.id)
       .select()
       .single();
 
+    if (error && (error.message?.includes('restaurante_id') || error.message?.includes('permissoes'))) {
+      if (error.message?.includes('restaurante_id')) delete payload.restaurante_id;
+      if (error.message?.includes('permissoes')) delete payload.permissoes;
+      const retry = await supabase
+        .from('usuarios_sistema')
+        .update(payload)
+        .eq('id', usuario.id)
+        .select()
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
+
     if (error) {
       console.warn('Fallback update usuarios_sistema:', error.message);
-      await salvarUsuarioSistemaConfiguracoesFallback(usuario);
+      await salvarUsuarioSistemaConfiguracoesFallback({ ...usuario, restaurante_id: currentTenantId });
       return usuario;
     }
     return data;
   } else {
-    const { data, error } = await supabase
+    const insertPayload: any = {
+      nome: (usuario.nome || '').toUpperCase().trim(),
+      email: (usuario.email || '').toLowerCase().trim(),
+      senha_hash: usuario.senha_hash,
+      perfil: usuario.perfil || 'operador',
+      ativo: usuario.ativo ?? true,
+      restaurante_id: currentTenantId,
+    };
+    if (usuario.permissoes !== undefined) insertPayload.permissoes = usuario.permissoes;
+
+    let { data, error } = await supabase
       .from('usuarios_sistema')
-      .insert([{
-        nome: (usuario.nome || '').toUpperCase().trim(),
-        email: (usuario.email || '').toLowerCase().trim(),
-        senha_hash: usuario.senha_hash,
-        perfil: usuario.perfil || 'operador',
-        ativo: usuario.ativo ?? true,
-      }])
+      .insert([insertPayload])
       .select()
       .single();
+
+    if (error && (error.message?.includes('restaurante_id') || error.message?.includes('permissoes'))) {
+      if (error.message?.includes('restaurante_id')) delete insertPayload.restaurante_id;
+      if (error.message?.includes('permissoes')) delete insertPayload.permissoes;
+      const retry = await supabase
+        .from('usuarios_sistema')
+        .insert([insertPayload])
+        .select()
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       console.warn('Fallback insert usuarios_sistema:', error.message);
@@ -3682,6 +3809,7 @@ export const salvarUsuarioSistema = async (usuario: Partial<UsuarioSistema>) => 
         nome: (usuario.nome || '').toUpperCase().trim(),
         email: (usuario.email || '').toLowerCase().trim(),
         ativo: usuario.ativo ?? true,
+        restaurante_id: currentTenantId,
         criado_em: new Date().toISOString(),
       };
       await salvarUsuarioSistemaConfiguracoesFallback(novoUsuario);

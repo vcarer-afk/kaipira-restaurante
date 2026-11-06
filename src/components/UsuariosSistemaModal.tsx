@@ -4,6 +4,7 @@ import {
   fetchUsuariosSistema,
   salvarUsuarioSistema,
   excluirUsuarioSistema,
+  getActiveRestauranteId,
 } from '../services/supabaseClient';
 import {
   Shield,
@@ -158,6 +159,7 @@ export const UsuariosSistemaModal: React.FC<UsuariosSistemaModalProps> = ({
         email: emailLimpo,
         perfil: perfilFinal,
         ativo: ativoFinal,
+        restaurante_id: getActiveRestauranteId(),
       };
 
       if (formSenha.trim()) {

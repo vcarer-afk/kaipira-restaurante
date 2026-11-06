@@ -20,6 +20,7 @@ import {
   MovimentacaoCaixa,
   Pagamento,
   PosicaoMenuTipo,
+  DEFAULT_RESTAURANTE_ID,
 } from './types';
 import { Header, ActiveTab } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
@@ -98,6 +99,9 @@ import {
   zerarFinanceiroDiaSupabase,
   logoutSupabase,
   isStaticHosting,
+  setActiveRestauranteId,
+  getActiveRestauranteId,
+  fetchRestauranteAtualSupabase,
 } from './services/supabaseClient';
 
 // Helper para enriquecer a descrição/nome completo do produto usando estritamente os produtos cadastrados na nuvem
@@ -562,31 +566,95 @@ export default function AdminApp() {
     }
   }, [fetchCloudConfiguracoes]);
 
-  // Gerenciamento de Sessão de Autenticação Real do Supabase (RLS Ativo)
+  // Gerenciamento de Sessão de Autenticação Real do Supabase (RLS Ativo e Multi-Tenant)
   useEffect(() => {
-    // Verifica se já existe uma sessão ativa ao carregar a página
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setIsAuthenticated(true);
-        // Extrair o nome/cargo baseando-se no email do usuário
-        const email = session.user.email || '';
-        let cargoAferido: any = 'atendente';
+    const processSession = async (session: any, event?: string) => {
+      if (!session) {
+        setIsAuthenticated(false);
+        setPedidos([]); 
+        setMesas([]); 
+        setCurrentPerfil(undefined);
+        return;
+      }
+
+      const email = (session.user.email || '').toLowerCase();
+      let cargoAferido: any = 'atendente';
+      let nomeUsuario = email.split('@')[0].toUpperCase();
+      let userRestauranteId: string = DEFAULT_RESTAURANTE_ID;
+
+      try {
+        const { data: usrSis } = await supabase
+          .from('usuarios_sistema')
+          .select('id, nome, email, perfil, restaurante_id, ativo')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (usrSis) {
+          if (usrSis.restaurante_id) userRestauranteId = usrSis.restaurante_id;
+          if (usrSis.nome) nomeUsuario = usrSis.nome.toUpperCase();
+          if (usrSis.perfil === 'admin') cargoAferido = 'admin';
+          else if (usrSis.perfil === 'supervisor') cargoAferido = 'supervisor';
+          else if (usrSis.perfil === 'cozinha') cargoAferido = 'cozinha';
+          else if (usrSis.perfil === 'garcom') cargoAferido = 'garcom';
+          else if (usrSis.perfil === 'entregador') cargoAferido = 'entregador';
+        } else {
+          const { data: usrTab } = await supabase
+            .from('usuarios')
+            .select('id, nome, email, cargo, restaurante_id, status')
+            .eq('email', email)
+            .maybeSingle();
+
+          if (usrTab) {
+            if (usrTab.restaurante_id) userRestauranteId = usrTab.restaurante_id;
+            if (usrTab.nome) nomeUsuario = usrTab.nome.toUpperCase();
+            if (usrTab.cargo) cargoAferido = usrTab.cargo as TipoUsuario;
+          }
+        }
+      } catch (findErr) {
+        console.warn('Aviso ao consultar tenant do usuário autenticado:', findErr);
+      }
+
+      if (cargoAferido === 'atendente') {
         if (email.startsWith('admin') || email.startsWith('master')) cargoAferido = 'admin';
         else if (email.startsWith('supervisor') || email.startsWith('vlademir')) cargoAferido = 'supervisor';
         else if (email.startsWith('cozinha')) cargoAferido = 'cozinha';
         else if (email.startsWith('garcom')) cargoAferido = 'garcom';
         else if (email.startsWith('entregador')) cargoAferido = 'entregador';
+      }
 
-        setCurrentPerfil({
-          id: session.user.id,
-          nome: email.split('@')[0].toUpperCase(),
-          email,
-          cargo: cargoAferido,
-          criado_em: session.user.created_at || new Date().toISOString(),
-        });
-        setCurrentRole(cargoAferido);
-        fetchCloudState();
+      const isSuperAdmin =
+        email === 'admin@kaipira.com' ||
+        email === 'master@kaipira.com' ||
+        cargoAferido === 'master';
 
+      // Validação de bloqueio/inatividade do restaurante/tenant
+      if (!isSuperAdmin) {
+        const tenant = await fetchRestauranteAtualSupabase(userRestauranteId);
+        if (tenant && (tenant.ativo === false || tenant.status_assinatura === 'bloqueado')) {
+          await supabase.auth.signOut().catch(() => {});
+          setIsAuthenticated(false);
+          setCurrentPerfil(undefined);
+          alert('O acesso desta empresa encontra-se temporariamente suspenso. Entre em contato com o suporte administrativo.');
+          return;
+        }
+      }
+
+      // Seta o tenant ativo em memória imediatamente
+      setActiveRestauranteId(userRestauranteId);
+
+      setIsAuthenticated(true);
+      setCurrentPerfil({
+        id: session.user.id,
+        nome: nomeUsuario,
+        email,
+        cargo: cargoAferido,
+        restaurante_id: userRestauranteId,
+        criado_em: session.user.created_at || new Date().toISOString(),
+      });
+      setCurrentRole(cargoAferido);
+      fetchCloudState();
+
+      if (!event || event === 'SIGNED_IN') {
         if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
           setActiveTab('dashboard');
         } else if (cargoAferido === 'cozinha') {
@@ -599,47 +667,19 @@ export default function AdminApp() {
           setActiveTab('pdv');
         }
       }
+    };
+
+    // Verifica se já existe uma sessão ativa ao carregar a página
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      processSession(session);
     });
 
     // Escuta mudanças de login/logout
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setIsAuthenticated(!!session);
-      if (session) {
-        const email = session.user.email || '';
-        let cargoAferido: any = 'atendente';
-        if (email.startsWith('admin') || email.startsWith('master')) cargoAferido = 'admin';
-        else if (email.startsWith('supervisor') || email.startsWith('vlademir')) cargoAferido = 'supervisor';
-        else if (email.startsWith('cozinha')) cargoAferido = 'cozinha';
-        else if (email.startsWith('garcom')) cargoAferido = 'garcom';
-        else if (email.startsWith('entregador')) cargoAferido = 'entregador';
-
-        setCurrentPerfil({
-          id: session.user.id,
-          nome: email.split('@')[0].toUpperCase(),
-          email,
-          cargo: cargoAferido,
-          criado_em: session.user.created_at || new Date().toISOString(),
-        });
-        setCurrentRole(cargoAferido);
-        fetchCloudState();
-
-        if (event === 'SIGNED_IN') {
-          if (cargoAferido === 'master' || cargoAferido === 'admin' || cargoAferido === 'supervisor') {
-            setActiveTab('dashboard');
-          } else if (cargoAferido === 'cozinha') {
-            setActiveTab('kds');
-          } else if (cargoAferido === 'garcom') {
-            setActiveTab('mesas');
-          } else if (cargoAferido === 'entregador') {
-            setActiveTab('expedicao');
-          } else {
-            setActiveTab('pdv');
-          }
-        }
-      } else {
-        setPedidos([]); 
-        setMesas([]); 
-        setCurrentPerfil(undefined);
+      if (event === 'SIGNED_OUT') {
+        processSession(null);
+      } else if (session) {
+        processSession(session, event);
       }
     });
     return () => subscription.unsubscribe();
@@ -1741,9 +1781,13 @@ export default function AdminApp() {
     return (
       <LoginScreen
         onLoginSuccess={(perfil) => {
+          if (perfil.restaurante_id) {
+            setActiveRestauranteId(perfil.restaurante_id);
+          }
           setIsAuthenticated(true);
           setCurrentPerfil(perfil);
           setCurrentRole(perfil.cargo);
+          fetchCloudState();
         }}
       />
     );

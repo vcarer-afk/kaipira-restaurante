@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Perfil, TipoUsuario } from '../types';
+import { Perfil, TipoUsuario, DEFAULT_RESTAURANTE_ID } from '../types';
 import {
   Lock,
   User,
@@ -10,7 +10,12 @@ import {
   KeyRound,
   ShieldCheck,
 } from 'lucide-react';
-import { loginWithSupabase } from '../services/supabaseClient';
+import {
+  loginWithSupabase,
+  setActiveRestauranteId,
+  fetchRestauranteAtualSupabase,
+  supabase,
+} from '../services/supabaseClient';
 
 interface LoginScreenProps {
   onLoginSuccess?: (perfil: Perfil) => void;
@@ -33,23 +38,83 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
     try {
       const data = await loginWithSupabase(cleanInput, cleanPass);
-      const userEmail =
+      const userEmail = (
         data.user?.email ||
-        (cleanInput.includes('@') ? cleanInput.toLowerCase() : `${cleanInput.toLowerCase()}@kaipira.com`);
+        (cleanInput.includes('@') ? cleanInput.toLowerCase() : `${cleanInput.toLowerCase()}@kaipira.com`)
+      ).toLowerCase();
 
-      // Fallback local para definir o cargo com base no email retornado pelo Supabase
+      // Busca dados cadastrais e restaurante_id do usuário em usuarios_sistema ou usuarios
+      let userRestauranteId: string = DEFAULT_RESTAURANTE_ID;
       let cargoAferido: TipoUsuario = 'atendente';
-      if (userEmail.startsWith('admin') || userEmail.startsWith('master')) cargoAferido = 'admin';
-      else if (userEmail.startsWith('vlademir') || userEmail.startsWith('supervisor')) cargoAferido = 'supervisor';
-      else if (userEmail.startsWith('cozinha')) cargoAferido = 'cozinha';
-      else if (userEmail.startsWith('garcom')) cargoAferido = 'garcom';
-      else if (userEmail.startsWith('entregador')) cargoAferido = 'entregador';
+      let nomeUsuario: string = userEmail.split('@')[0].toUpperCase();
+
+      try {
+        // Tenta buscar primeiro na tabela usuarios_sistema
+        const { data: usrSis } = await supabase
+          .from('usuarios_sistema')
+          .select('id, nome, email, perfil, restaurante_id, ativo')
+          .eq('email', userEmail)
+          .maybeSingle();
+
+        if (usrSis) {
+          if (usrSis.restaurante_id) userRestauranteId = usrSis.restaurante_id;
+          if (usrSis.nome) nomeUsuario = usrSis.nome.toUpperCase();
+          if (usrSis.perfil === 'admin') cargoAferido = 'admin';
+          else if (usrSis.perfil === 'supervisor') cargoAferido = 'supervisor';
+          else if (usrSis.perfil === 'cozinha') cargoAferido = 'cozinha';
+          else if (usrSis.perfil === 'garcom') cargoAferido = 'garcom';
+          else if (usrSis.perfil === 'entregador') cargoAferido = 'entregador';
+        } else {
+          // Tenta buscar na tabela usuarios
+          const { data: usrTab } = await supabase
+            .from('usuarios')
+            .select('id, nome, email, cargo, restaurante_id, status')
+            .eq('email', userEmail)
+            .maybeSingle();
+
+          if (usrTab) {
+            if (usrTab.restaurante_id) userRestauranteId = usrTab.restaurante_id;
+            if (usrTab.nome) nomeUsuario = usrTab.nome.toUpperCase();
+            if (usrTab.cargo) cargoAferido = usrTab.cargo as TipoUsuario;
+          }
+        }
+      } catch (findErr) {
+        console.warn('Aviso ao consultar tenant do usuário no Supabase:', findErr);
+      }
+
+      // Se não encontrou cargo específico na tabela, aplica o fallback por email
+      if (cargoAferido === 'atendente') {
+        if (userEmail.startsWith('admin') || userEmail.startsWith('master')) cargoAferido = 'admin';
+        else if (userEmail.startsWith('vlademir') || userEmail.startsWith('supervisor')) cargoAferido = 'supervisor';
+        else if (userEmail.startsWith('cozinha')) cargoAferido = 'cozinha';
+        else if (userEmail.startsWith('garcom')) cargoAferido = 'garcom';
+        else if (userEmail.startsWith('entregador')) cargoAferido = 'entregador';
+      }
+
+      const isSuperAdmin =
+        userEmail === 'admin@kaipira.com' ||
+        userEmail === 'master@kaipira.com' ||
+        cargoAferido === 'master';
+
+      // Validação de bloqueio/inatividade do restaurante/tenant
+      if (!isSuperAdmin) {
+        const tenant = await fetchRestauranteAtualSupabase(userRestauranteId);
+        if (tenant && (tenant.ativo === false || tenant.status_assinatura === 'bloqueado')) {
+          await supabase.auth.signOut().catch(() => {});
+          setErrorMessage('O acesso desta empresa encontra-se temporariamente suspenso. Entre em contato com o suporte administrativo.');
+          return;
+        }
+      }
+
+      // Atualiza o tenant ativo em memória imediatamente
+      setActiveRestauranteId(userRestauranteId);
 
       const perfil: Perfil = {
         id: data.user?.id || 'usr-' + Date.now(),
-        nome: userEmail.split('@')[0].toUpperCase(),
+        nome: nomeUsuario,
         email: userEmail,
         cargo: cargoAferido,
+        restaurante_id: userRestauranteId,
         criado_em: new Date().toISOString(),
       };
 
