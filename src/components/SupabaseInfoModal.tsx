@@ -36,9 +36,45 @@ DO $$ BEGIN
     CREATE TYPE forma_pagamento AS ENUM ('dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'mensalista');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
--- 2. TABELA DE USUÁRIOS & FUNCIONÁRIOS (COM USUÁRIO MASTER INICIAL)
+-- 2. ARQUITETURA MULTI-EMPRESAS (MULTI-TENANT CORE)
+CREATE TABLE IF NOT EXISTS restaurantes (
+    id UUID PRIMARY KEY DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    nome_fantasia VARCHAR(150) NOT NULL,
+    razao_social VARCHAR(150),
+    cnpj VARCHAR(20),
+    segmento VARCHAR(50) DEFAULT 'restaurante',
+    telefone VARCHAR(25),
+    email_contato VARCHAR(150),
+    cidade VARCHAR(100) DEFAULT 'PIRACICABA',
+    uf VARCHAR(2) DEFAULT 'SP',
+    plano VARCHAR(50) DEFAULT 'profissional',
+    valor_mensalidade NUMERIC(10,2) DEFAULT 0.00,
+    dia_vencimento INT DEFAULT 10,
+    status_assinatura VARCHAR(30) DEFAULT 'ativo',
+    ativo BOOLEAN DEFAULT TRUE,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Inserir Tenant Padrão (Restaurante Kaipira Matriz)
+INSERT INTO restaurantes (id, slug, nome_fantasia, segmento, cidade, uf, status_assinatura, ativo)
+VALUES (
+    '00000000-0000-0000-0000-000000000001'::uuid,
+    'kaipira',
+    'RESTAURANTE KAIPIRA',
+    'restaurante',
+    'PIRACICABA',
+    'SP',
+    'ativo',
+    TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- 3. TABELA DE USUÁRIOS & FUNCIONÁRIOS (COM USUÁRIO MASTER INICIAL)
 CREATE TABLE IF NOT EXISTS usuarios (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     nome VARCHAR(150) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
     telefone VARCHAR(25) NOT NULL,
@@ -50,14 +86,15 @@ CREATE TABLE IF NOT EXISTS usuarios (
 );
 
 -- SEED DO USUÁRIO MASTER INICIAL (master@kaipira.com / DNDIGQOL / CARGO: master)
-INSERT INTO usuarios (nome, email, telefone, cargo, status, senha)
+INSERT INTO usuarios (nome, email, telefone, cargo, status, senha, restaurante_id)
 VALUES (
     'ADMINISTRADOR MASTER GERAL',
     'master@kaipira.com',
     '(19) 9-9999-9999',
     'master',
     'ativo',
-    'DNDIGQOL'
+    'DNDIGQOL',
+    '00000000-0000-0000-0000-000000000001'::uuid
 )
 ON CONFLICT (email) DO UPDATE 
 SET cargo = 'master',
@@ -71,14 +108,16 @@ CREATE POLICY "Acesso publico usuarios" ON usuarios FOR ALL USING (true) WITH CH
 
 CREATE TABLE IF NOT EXISTS perfis (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     nome VARCHAR(100) NOT NULL,
     cargo tipo_usuario DEFAULT 'atendente',
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. CLIENTES & MENSALISTAS (PIRACICABA - SUPORTE A VARCHAR(100))
+-- 4. CLIENTES & MENSALISTAS (PIRACICABA - SUPORTE A VARCHAR(100))
 CREATE TABLE IF NOT EXISTS clientes (
     id VARCHAR(100) PRIMARY KEY,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     nome VARCHAR(100) NOT NULL,
     telefone VARCHAR(20) UNIQUE NOT NULL,
     cep VARCHAR(10) NOT NULL,
@@ -91,15 +130,17 @@ CREATE TABLE IF NOT EXISTS clientes (
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 4. CATEGORIAS & PRODUTOS
+-- 5. CATEGORIAS & PRODUTOS
 CREATE TABLE IF NOT EXISTS categorias (
     id SERIAL PRIMARY KEY,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     nome VARCHAR(50) NOT NULL,
     ordem INT DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS produtos (
     id SERIAL PRIMARY KEY,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     categoria_id INT REFERENCES categorias(id),
     nome VARCHAR(100) NOT NULL,
     descricao TEXT,
@@ -118,9 +159,10 @@ CREATE TABLE IF NOT EXISTS opcionais (
     preco_adicional DECIMAL(10,2) DEFAULT 0.00
 );
 
--- 5. ESTOQUE COM PRECISÃO DE 3 CASAS DECIMAIS (NUMERIC(10,3))
+-- 6. ESTOQUE COM PRECISÃO DE 3 CASAS DECIMAIS (NUMERIC(10,3))
 CREATE TABLE IF NOT EXISTS estoque (
     id SERIAL PRIMARY KEY,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     item_nome VARCHAR(100) NOT NULL,
     quantidade_atual NUMERIC(10,3) NOT NULL DEFAULT 0.000,
     unidade_medida VARCHAR(20) DEFAULT 'un',
@@ -129,7 +171,7 @@ CREATE TABLE IF NOT EXISTS estoque (
     atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 6. FICHA TÉCNICA E COMPOSIÇÃO DE PRODUTOS
+-- 7. FICHA TÉCNICA E COMPOSIÇÃO DE PRODUTOS
 CREATE TABLE IF NOT EXISTS produto_composicao (
     id SERIAL PRIMARY KEY,
     produto_id INT REFERENCES produtos(id) ON DELETE CASCADE,
@@ -139,7 +181,7 @@ CREATE TABLE IF NOT EXISTS produto_composicao (
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 7. AUDITORIA E HISTÓRICO DE MOVIMENTAÇÕES DE ESTOQUE
+-- 8. AUDITORIA E HISTÓRICO DE MOVIMENTAÇÕES DE ESTOQUE
 CREATE TABLE IF NOT EXISTS estoque_movimentacoes (
     id SERIAL PRIMARY KEY,
     item_id INT REFERENCES estoque(id) ON DELETE CASCADE,
@@ -155,9 +197,10 @@ CREATE TABLE IF NOT EXISTS estoque_movimentacoes (
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 8. MESAS & RESERVAS (20 MESAS)
+-- 9. MESAS & RESERVAS (20 MESAS)
 CREATE TABLE IF NOT EXISTS mesas (
     id SERIAL PRIMARY KEY,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     numero INT UNIQUE NOT NULL,
     status VARCHAR(20) DEFAULT 'livre',
     cliente_nome VARCHAR(100),
@@ -166,6 +209,7 @@ CREATE TABLE IF NOT EXISTS mesas (
 
 CREATE TABLE IF NOT EXISTS reservas (
     id SERIAL PRIMARY KEY,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     cliente_nome VARCHAR(100) NOT NULL,
     telefone VARCHAR(20) NOT NULL,
     mesa_id INT REFERENCES mesas(id),
@@ -173,9 +217,10 @@ CREATE TABLE IF NOT EXISTS reservas (
     status VARCHAR(20) DEFAULT 'confirmada'
 );
 
--- 9. PEDIDOS & ITENS (CLIENTE_ID VARCHAR(100))
+-- 10. PEDIDOS & ITENS (CLIENTE_ID VARCHAR(100))
 CREATE TABLE IF NOT EXISTS pedidos (
     id SERIAL PRIMARY KEY,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     codigo_senha SERIAL,
     tipo tipo_pedido NOT NULL,
     status status_pedido DEFAULT 'pendente',
@@ -205,7 +250,7 @@ CREATE TABLE IF NOT EXISTS itens_pedido (
     opcionais_selecionados JSONB
 );
 
--- 10. CAIXA & PAGAMENTOS
+-- 11. CAIXA & PAGAMENTOS
 CREATE TABLE IF NOT EXISTS pagamentos (
     id SERIAL PRIMARY KEY,
     pedido_id INT REFERENCES pedidos(id) ON DELETE CASCADE,
@@ -216,6 +261,7 @@ CREATE TABLE IF NOT EXISTS pagamentos (
 
 CREATE TABLE IF NOT EXISTS caixa_diario (
     id SERIAL PRIMARY KEY,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     data_caixa DATE UNIQUE DEFAULT CURRENT_DATE,
     valor_abertura DECIMAL(10,2) DEFAULT 0.00,
     valor_fechamento DECIMAL(10,2),
@@ -225,9 +271,10 @@ CREATE TABLE IF NOT EXISTS caixa_diario (
     fechado_em TIMESTAMP WITH TIME ZONE
 );
 
--- 11. CONFIGURAÇÕES GERAIS COM POSIÇÃO DE MENU E AUTO-OCULTAR
+-- 12. CONFIGURAÇÕES GERAIS COM POSIÇÃO DE MENU E AUTO-OCULTAR
 CREATE TABLE IF NOT EXISTS configuracoes_sistema (
     id INT PRIMARY KEY DEFAULT 1,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     nome_restaurante VARCHAR(100) DEFAULT 'RESTAURANTE KAIPIRA',
     email VARCHAR(100) DEFAULT 'contato@restaurantekaipira.com.br',
     telefone VARCHAR(30) DEFAULT '(19) 3-4221-1980',
@@ -247,6 +294,7 @@ CREATE TABLE IF NOT EXISTS configuracoes_sistema (
 
 CREATE TABLE IF NOT EXISTS configuracoes (
     id INT PRIMARY KEY DEFAULT 1,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     nome_restaurante VARCHAR(100),
     email VARCHAR(100),
     telefone VARCHAR(30),
@@ -267,12 +315,14 @@ CREATE TABLE IF NOT EXISTS configuracoes (
     atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
 ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS posicao_menu VARCHAR(20) DEFAULT 'direita';
 ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS menu_auto_ocultar BOOLEAN DEFAULT FALSE;
 
--- 12. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (CONTROLE DE ABERTURA E PUBLICAÇÃO)
+-- 13. TABELA DO CARDÁPIO DIÁRIO DO RESTAURANTE (CONTROLE DE ABERTURA E PUBLICAÇÃO)
 CREATE TABLE IF NOT EXISTS cardapio_diario (
     id SERIAL PRIMARY KEY,
+    restaurante_id UUID REFERENCES restaurantes(id) DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
     produto_id INT NOT NULL,
     canal VARCHAR(30) NOT NULL, -- 'delivery_balcao' ou 'mesas'
@@ -286,7 +336,22 @@ ALTER TABLE cardapio_diario ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Acesso publico cardapio_diario" ON cardapio_diario;
 CREATE POLICY "Acesso publico cardapio_diario" ON cardapio_diario FOR ALL USING (true) WITH CHECK (true);
 
--- 13. ATIVAÇÃO DO SUPABASE REALTIME
+-- Script de Migração Idempotente para Bancos Existentes:
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE perfis ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE categorias ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE produtos ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE estoque ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE mesas ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE reservas ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE caixa_diario ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE configuracoes_sistema ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+ALTER TABLE cardapio_diario ADD COLUMN IF NOT EXISTS restaurante_id UUID DEFAULT '00000000-0000-0000-0000-000000000001'::uuid;
+
+-- 14. ATIVAÇÃO DO SUPABASE REALTIME
+ALTER PUBLICATION supabase_realtime ADD TABLE restaurantes;
 ALTER PUBLICATION supabase_realtime ADD TABLE configuracoes_sistema;
 ALTER PUBLICATION supabase_realtime ADD TABLE configuracoes;
 ALTER PUBLICATION supabase_realtime ADD TABLE usuarios;

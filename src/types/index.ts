@@ -1,3 +1,30 @@
+// Multi-Tenant Core (Arquitetura Multi-Empresas)
+export const DEFAULT_RESTAURANTE_ID = '00000000-0000-0000-0000-000000000001';
+
+export type SegmentoEmpresa = 'restaurante' | 'pizzaria' | 'lanchonete' | 'marmitaria';
+
+export type StatusAssinaturaSaaS = 'ativo' | 'trial' | 'inadimplente' | 'bloqueado';
+
+export interface RestauranteTenant {
+  id: string;
+  slug: string;
+  nome_fantasia: string;
+  razao_social?: string;
+  cnpj?: string;
+  segmento: SegmentoEmpresa;
+  telefone?: string;
+  email_contato?: string;
+  cidade?: string;
+  uf?: string;
+  plano?: 'basico' | 'profissional' | 'enterprise';
+  valor_mensalidade?: number;
+  dia_vencimento?: number;
+  status_assinatura: StatusAssinaturaSaaS;
+  ativo: boolean;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
 export type TipoUsuario = 'master' | 'admin' | 'supervisor' | 'atendente' | 'cozinha' | 'garcom' | 'entregador';
 export type TipoPedido = 'salão' | 'retirada' | 'delivery';
 export type StatusPedido = 'pendente' | 'em_preparacao' | 'pronto' | 'a_caminho' | 'entregue' | 'cancelado';
@@ -68,6 +95,7 @@ export type PerfilUsuario = 'admin' | 'gerente' | 'operador' | 'kds';
 
 export interface UsuarioSistema {
   id: number | string;
+  restaurante_id?: string;
   nome: string;
   email: string;
   senha_hash?: string;
@@ -84,6 +112,7 @@ export interface UsuarioSistema {
 
 export interface Perfil {
   id: string;
+  restaurante_id?: string;
   nome: string;
   email?: string;
   telefone?: string;
@@ -94,6 +123,7 @@ export interface Perfil {
 
 export interface Cliente {
   id: string;
+  restaurante_id?: string;
   nome: string;
   telefone: string;
   cep: string;
@@ -109,6 +139,7 @@ export interface Cliente {
 
 export interface Categoria {
   id: number;
+  restaurante_id?: string;
   nome: string;
   ordem: number;
 }
@@ -136,6 +167,7 @@ export interface IngredienteComposicao {
 
 export interface Produto {
   id: number;
+  restaurante_id?: string;
   categoria_id: number;
   nome: string;
   descricao: string;
@@ -163,6 +195,7 @@ export interface ItemCardapioDiario {
 
 export interface CardapioDiarioConfig {
   data: string; // YYYY-MM-DD
+  restaurante_id?: string;
   status: 'aguardando' | 'aberto' | 'publicado';
   confirmado_em?: string;
   confirmado_por?: string;
@@ -171,6 +204,7 @@ export interface CardapioDiarioConfig {
 
 export interface ItemEstoque {
   id: number;
+  restaurante_id?: string;
   item_nome: string;
   quantidade_atual: number;
   unidade_medida: string;
@@ -194,6 +228,7 @@ export interface MovimentacaoEstoque {
 
 export interface Mesa {
   id: number;
+  restaurante_id?: string;
   numero: number;
   status: 'livre' | 'ocupada' | 'reservada' | 'conta';
   cliente_nome?: string;
@@ -202,6 +237,7 @@ export interface Mesa {
 
 export interface Reserva {
   id: number;
+  restaurante_id?: string;
   cliente_nome: string;
   telefone: string;
   mesa_id: number;
@@ -236,6 +272,7 @@ export interface Pagamento {
 
 export interface Pedido {
   id: number;
+  restaurante_id?: string;
   codigo_senha: number;
   tipo: TipoPedido;
   status: StatusPedido;
@@ -273,6 +310,7 @@ export interface MovimentacaoCaixa {
 
 export interface CaixaDiario {
   id: number;
+  restaurante_id?: string;
   data_caixa: string;
   valor_abertura: number;
   valor_fechamento?: number;
@@ -307,6 +345,7 @@ export type PadraoCor =
 export type DashboardLayoutTipo = 'stripe' | 'command' | 'shopify' | 'minimalist' | 'modular';
 
 export interface ConfiguracoesSistema {
+  restaurante_id?: string;
   // Banco de Dados
   supabaseUrl: string;
   supabaseAnonKey: string;
